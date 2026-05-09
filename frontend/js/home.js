@@ -87,7 +87,8 @@ const state = {
   chainId: 1,
   pendingProfileImageUri: "",
   watchlist: loadWatchlist(),
-  moverSignals: new Map()
+  moverSignals: new Map(),
+  hydrateBackoffUntil: new Map()
 };
 
 let walletHub = null;
@@ -702,20 +703,43 @@ function renderExplore() {
 }
 
 async function hydrateVisibleMarketCaps(limit = 12) {
-  // Always re-hydrate visible launches so stale/default market caps are replaced quickly.
-  const visible = filteredLaunches().slice(0, limit);
+  const now = Date.now();
+  const visible = filteredLaunches()
+    .filter((launch) => {
+      const token = getTokenId(launch);
+      if (!token) return false;
+      const blockedUntil = Number(state.hydrateBackoffUntil.get(token) || 0);
+      if (blockedUntil > now) return false;
+
+      const dexMcap = Number(launch?.dexSnapshot?.marketCapUsd || 0);
+      const dexLiq = Number(launch?.dexSnapshot?.liquidityUsd || 0);
+      const poolMcapUsd = weiToUsd(launch?.pool?.marketCapWei || "0", state.ethUsd);
+      const poolMcapEth = Number(launch?.pool?.marketCapEth || 0);
+      const poolMcapUsdFromEth = Number.isFinite(poolMcapEth) && poolMcapEth > 0 ? poolMcapEth * Number(state.ethUsd || 0) : 0;
+      const poolBasis = Math.max(poolMcapUsd, poolMcapUsdFromEth, 0);
+
+      const missing = dexMcap <= 0 && poolBasis <= 0;
+      const inflated = dexMcap > 0 && poolBasis > 0 && (dexMcap / poolBasis > 25 || (dexLiq > 0 && dexMcap / dexLiq > 2500));
+      return missing || inflated;
+    })
+    .slice(0, limit);
 
   if (!visible.length) return;
   const hydrated = [];
   await Promise.all(
     visible.map(async (launch) => {
       try {
-        const payload = await api.token(launch.token, { lite: true, fresh: true, launchId: launch.id });
+        const payload = await api.token(launch.token, { lite: true, fresh: true, chainId: state.chainId });
         if (payload?.launch?.token) {
+          const token = getTokenId(launch);
+          if (token) state.hydrateBackoffUntil.delete(token);
           hydrated.push({ ...payload.launch, dexSnapshot: payload.dex || launch.dexSnapshot || null });
         }
       } catch {
-        // keep the fast feed row
+        const token = getTokenId(launch);
+        if (token) {
+          state.hydrateBackoffUntil.set(token, Date.now() + 60_000);
+        }
       }
     })
   );
