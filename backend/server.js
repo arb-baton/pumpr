@@ -72,7 +72,7 @@ const PARTICIPANTS_CACHE_TTL_MS = 30_000;
 const GECKO_POOL_CACHE_TTL_MS = 15_000;
 const GECKO_TRADES_CACHE_TTL_MS = 10_000;
 const GECKO_SPARKLINE_CACHE_TTL_MS = 45_000;
-const DEX_TOKEN_CACHE_TTL_MS = 12_000;
+const DEX_TOKEN_CACHE_TTL_MS = 4_000;
 const MAX_LAUNCH_READ_CONCURRENCY = 3;
 const MAX_BALANCE_READ_CONCURRENCY = 10;
 const MAX_SOCIAL_POOL_CONCURRENCY = 3;
@@ -2617,18 +2617,39 @@ app.get("/api/launches", async (req, res) => {
         async ({ launch, index }) => {
         let pool = null;
         let dexSnapshot = null;
-        if (lite) {
+        try {
+          // Even in lite mode, read live pool snapshot so home cards don't stick to seeded defaults.
+          pool = await withTimeout(readPoolSnapshot(ctx.provider, launch), lite ? 1800 : RPC_READ_TIMEOUT_MS, "pool snapshot");
+        } catch {
           pool = buildPoolFallbackFromLaunch(launch);
-        } else {
-          try {
-            pool = await readPoolSnapshot(ctx.provider, launch);
-          } catch {
-            pool = buildPoolFallbackFromLaunch(launch);
-          }
         }
-        if (includeDex && index < 8) {
+        if (includeDex && index < Math.min(limit, 24)) {
           try {
             dexSnapshot = await readDexScreenerTokenSnapshot(ctx.chainId, launch.token, pool?.migratedPair || "");
+            const pairHint = normalizeAddress(pool?.migratedPair || dexSnapshot?.pairAddress || "");
+            if ((!dexSnapshot || Number(dexSnapshot?.marketCapUsd || 0) <= 0) && pairHint && pairHint !== ethers.ZeroAddress) {
+              const gecko = await readGeckoPoolStatus(ctx.chainId, pairHint);
+              if (gecko?.snapshot) {
+                const geckoDexShape = {
+                  chainId: dexscreenerChainForChain(ctx.chainId),
+                  dexId: "uniswap_v2",
+                  pairAddress: pairHint,
+                  pairUrl: String(gecko.poolUrl || ""),
+                  baseSymbol: String(launch?.symbol || ""),
+                  quoteSymbol: "WETH",
+                  priceNative: toNumberSafe(gecko.snapshot.priceNative, 0),
+                  priceUsd: toNumberSafe(gecko.snapshot.priceUsd, 0),
+                  marketCapUsd: toNumberSafe(gecko.snapshot.marketCapUsd, 0),
+                  fdvUsd: toNumberSafe(gecko.snapshot.fdvUsd, 0),
+                  liquidityUsd: toNumberSafe(gecko.snapshot.liquidityUsd, 0),
+                  volume24hUsd: toNumberSafe(gecko.snapshot.volume24hUsd, 0),
+                  priceChange24hPct: toNumberSafe(gecko.snapshot.priceChange24hPct, 0),
+                  pairCreatedAt: Number(launch?.createdAt || 0) * 1000,
+                  raw: { source: "gecko_snapshot" }
+                };
+                dexSnapshot = dexSnapshot ? { ...geckoDexShape, ...dexSnapshot } : geckoDexShape;
+              }
+            }
           } catch {
             dexSnapshot = null;
           }
@@ -2971,6 +2992,22 @@ async function handleTokenRequest(req, res, tokenCandidate) {
               snapshot: null
             }
           : null;
+        let liteTrades = [];
+        let liteChart = [];
+        if (!isZeroAddress(effectivePairLite)) {
+          try {
+            const pairPayload = await withTimeout(
+              readPairRecentTrades(ctx.provider, effectivePairLite, safeLaunch.token, poolLite.dexWethAddress, 40),
+              2200,
+              "lite pair trades"
+            );
+            liteTrades = Array.isArray(pairPayload?.trades) ? pairPayload.trades : [];
+            liteChart = Array.isArray(pairPayload?.chart) ? pairPayload.chart : [];
+          } catch {
+            liteTrades = [];
+            liteChart = [];
+          }
+        }
         return {
           launch: {
             ...safeLaunch,
@@ -2980,8 +3017,8 @@ async function handleTokenRequest(req, res, tokenCandidate) {
             pool: poolLite,
             feeSnapshot
           },
-          trades: [],
-          chart: [],
+          trades: liteTrades,
+          chart: liteChart,
           topHolders: null,
           gecko: geckoLite,
           dex: dexLite
