@@ -1512,9 +1512,15 @@ function renderOverview() {
   const all = state.allSeries;
   if (!all.length) {
     const geckoMcapUsd = Number(state.gecko?.snapshot?.marketCapUsd || 0);
-    const dexMcapUsd = Number(state.dex?.marketCapUsd || geckoMcapUsd || 0);
+    const dexMcapRaw = Number(state.dex?.marketCapUsd || geckoMcapUsd || 0);
+    const dexLiqUsd = Number(state.dex?.liquidityUsd || state.gecko?.snapshot?.liquidityUsd || 0);
     const poolMcapEth = Number(state.launch?.pool?.marketCapEth || 0);
     const poolMcapUsd = poolMcapEth > 0 ? ethToUsd(poolMcapEth, state.ethUsd) : 0;
+    const dexLooksInflated =
+      dexMcapRaw > 0 &&
+      poolMcapUsd > 0 &&
+      (dexMcapRaw / poolMcapUsd > 25 || (dexLiqUsd > 0 && dexMcapRaw / dexLiqUsd > 2500));
+    const dexMcapUsd = dexLooksInflated ? 0 : dexMcapRaw;
     const geckoPriceEth = Number(state.gecko?.snapshot?.priceNative || 0);
     const dexPriceEth = Number(state.dex?.priceNative || geckoPriceEth || state.launch?.pool?.spotPriceEth || 0);
     ui.marketCapHeadline.textContent = dexMcapUsd > 0 ? formatCompactUsd(dexMcapUsd) : poolMcapUsd > 0 ? formatCompactUsd(poolMcapUsd) : "-";
@@ -1977,7 +1983,12 @@ async function loadTokenPage(forceFresh = false, lite = false) {
   let payload;
   try {
     // Always try chain-agnostic fetch first so stale preferred-chain state doesn't blank token page.
-    payload = await fetchTokenRaw(state.token, { fresh: forceFresh, lite, launchId: seededLaunchId() });
+    payload = await fetchTokenRaw(state.token, {
+      fresh: forceFresh,
+      lite,
+      launchId: seededLaunchId(),
+      chainId: state.chainId
+    });
   } catch (err) {
     // First, attempt a chain-agnostic recovery for any token-load failure.
     // This fixes stale preferred-chain cases where the token exists on a different chain.
@@ -2005,7 +2016,12 @@ async function loadTokenPage(forceFresh = false, lite = false) {
       next.searchParams.set("token", resolved);
       window.history.replaceState({}, "", next.toString());
       try {
-        payload = await api.token(state.token, { fresh: forceFresh, lite, launchId: seededLaunchId() });
+        payload = await fetchTokenRaw(state.token, {
+          fresh: forceFresh,
+          lite,
+          launchId: seededLaunchId(),
+          chainId: state.chainId
+        });
       } catch {
         const discovered = await discoverTokenAcrossChains(state.token);
         if (!discovered?.payload) throw err;

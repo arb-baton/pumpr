@@ -342,7 +342,8 @@ function setProfileMenuOpen(open) {
 }
 
 function formatLaunchMarketCap(launch) {
-  const dexMcap = Number(launch?.dexSnapshot?.marketCapUsd || 0);
+  const dexMcapRaw = Number(launch?.dexSnapshot?.marketCapUsd || 0);
+  const dexLiqUsd = Number(launch?.dexSnapshot?.liquidityUsd || 0);
   const poolMcapWei = launch?.pool?.marketCapWei || "0";
   const poolMcapEth = Number(launch?.pool?.marketCapEth || 0);
   const poolMcapUsdFromEth = Number.isFinite(poolMcapEth) && poolMcapEth > 0 ? poolMcapEth * Number(state.ethUsd || 0) : 0;
@@ -350,6 +351,11 @@ function formatLaunchMarketCap(launch) {
   // Do not trust launch-level marketCapUsd here; it may be a seeded/default value (e.g. 1M target cap),
   // not a live value. Prefer pool/dex-derived numbers only.
   const fallbackUsd = Math.max(poolMcapUsd, poolMcapUsdFromEth, 0);
+  const dexLooksInflated =
+    dexMcapRaw > 0 &&
+    fallbackUsd > 0 &&
+    (dexMcapRaw / fallbackUsd > 25 || (dexLiqUsd > 0 && dexMcapRaw / dexLiqUsd > 2500));
+  const dexMcap = dexLooksInflated ? 0 : dexMcapRaw;
   const usd = dexMcap > 0 ? dexMcap : fallbackUsd;
   if (usd <= 0) return "Syncing MC";
   let label = "";
