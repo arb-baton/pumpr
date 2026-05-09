@@ -347,7 +347,9 @@ function formatLaunchMarketCap(launch) {
   const poolMcapEth = Number(launch?.pool?.marketCapEth || 0);
   const poolMcapUsdFromEth = Number.isFinite(poolMcapEth) && poolMcapEth > 0 ? poolMcapEth * Number(state.ethUsd || 0) : 0;
   const poolMcapUsd = weiToUsd(poolMcapWei, state.ethUsd);
-  const fallbackUsd = Math.max(poolMcapUsd, poolMcapUsdFromEth, Number(launch?.marketCapUsd || 0), 0);
+  // Do not trust launch-level marketCapUsd here; it may be a seeded/default value (e.g. 1M target cap),
+  // not a live value. Prefer pool/dex-derived numbers only.
+  const fallbackUsd = Math.max(poolMcapUsd, poolMcapUsdFromEth, 0);
   const usd = dexMcap > 0 ? dexMcap : fallbackUsd;
   return usd > 0 ? `${formatCompactUsd(usd)} MC` : "Syncing MC";
 }
