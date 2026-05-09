@@ -696,13 +696,8 @@ function renderExplore() {
 }
 
 async function hydrateVisibleMarketCaps(limit = 12) {
-  const visible = filteredLaunches()
-    .filter((launch) => {
-      const dexMcap = Number(launch?.dexSnapshot?.marketCapUsd || 0);
-      const poolMcap = BigInt(String(launch?.pool?.marketCapWei || "0"));
-      return dexMcap <= 0 && poolMcap <= 0n;
-    })
-    .slice(0, limit);
+  // Always re-hydrate visible launches so stale/default market caps are replaced quickly.
+  const visible = filteredLaunches().slice(0, limit);
 
   if (!visible.length) return;
   const hydrated = [];

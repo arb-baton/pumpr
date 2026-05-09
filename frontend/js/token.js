@@ -1422,7 +1422,10 @@ function ensureChart() {
 }
 
 function renderChart() {
-  if (geckoPoolUrl(state.launch)) {
+  const hasLocalSeries = Array.isArray(state.allSeries) && state.allSeries.length > 1;
+  const hasLocalTrades = Array.isArray(state.trades) && state.trades.length > 0;
+  // Prefer local live chart first for speed/freshness; fall back to Gecko embed only when local data is unavailable.
+  if (!hasLocalSeries && !hasLocalTrades && geckoPoolUrl(state.launch)) {
     const rendered = renderGeckoChart(state.launch);
     if (rendered) return;
   }
