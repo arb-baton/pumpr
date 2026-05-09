@@ -351,7 +351,10 @@ function formatLaunchMarketCap(launch) {
   // not a live value. Prefer pool/dex-derived numbers only.
   const fallbackUsd = Math.max(poolMcapUsd, poolMcapUsdFromEth, 0);
   const usd = dexMcap > 0 ? dexMcap : fallbackUsd;
-  return usd > 0 ? `${formatCompactUsd(usd)} MC` : "Syncing MC";
+  if (usd <= 0) return "Syncing MC";
+  const digits = usd >= 1000 ? 0 : usd >= 1 ? 2 : 4;
+  const exact = usd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits });
+  return `$${exact} MC`;
 }
 
 function addLaunchMetrics(launch) {

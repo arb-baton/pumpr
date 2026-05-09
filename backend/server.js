@@ -2963,6 +2963,7 @@ async function handleTokenRequest(req, res, tokenCandidate) {
         const geckoUrlsLite = buildGeckoPoolUrls(ctx.chainId, effectivePairLite);
         const geckoLite = geckoUrlsLite.embedUrl
           ? {
+              indexed: false,
               network: geckoUrlsLite.network,
               poolUrl: geckoUrlsLite.poolUrl,
               embedUrl: geckoUrlsLite.embedUrl,

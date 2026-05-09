@@ -333,7 +333,9 @@ function hasDexMarket(launch) {
 }
 
 function geckoPoolUrl(launch) {
-  if (state.gecko?.embedUrl) return String(state.gecko.embedUrl);
+  const geckoIndexed = Boolean(state.gecko?.indexed) || Boolean(state.gecko?.snapshot);
+  if (geckoIndexed && state.gecko?.embedUrl) return String(state.gecko.embedUrl);
+  if (!geckoIndexed) return "";
   const pair = String(launch?.pool?.migratedPair || state.dex?.pairAddress || "");
   if (!pair || pair.toLowerCase() === ZERO_ADDRESS) return "";
   const network = GECKO_NETWORK_BY_CHAIN[Number(state.chainId)] || "eth";
