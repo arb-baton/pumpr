@@ -1508,8 +1508,8 @@ function renderDelta(el, delta) {
 function renderOverview() {
   const all = state.allSeries;
   if (!all.length) {
-    const geckoMcapUsd = Number(state.gecko?.snapshot?.marketCapUsd || state.gecko?.snapshot?.fdvUsd || 0);
-    const dexMcapUsd = Number(state.dex?.marketCapUsd || state.dex?.fdvUsd || geckoMcapUsd || 0);
+    const geckoMcapUsd = Number(state.gecko?.snapshot?.marketCapUsd || 0);
+    const dexMcapUsd = Number(state.dex?.marketCapUsd || geckoMcapUsd || 0);
     const poolMcapEth = Number(state.launch?.pool?.marketCapEth || 0);
     const poolMcapUsd = poolMcapEth > 0 ? ethToUsd(poolMcapEth, state.ethUsd) : 0;
     const geckoPriceEth = Number(state.gecko?.snapshot?.priceNative || 0);
@@ -2507,10 +2507,11 @@ async function init() {
   }
 
   renderSeededLaunch();
-  refreshTokenFull(true).catch(() => {
-    // The lite payload already rendered the token; keep rich market data best-effort.
-  });
+  // Render fast lite payload first, then enrich with full payload to avoid stale-lite overwrite races.
   await loadTokenPage(true, true);
+  refreshTokenFull(true).catch(() => {
+    // Keep rich market data best-effort.
+  });
 
   setInterval(() => {
     loadTokenPage(true, true).catch(() => {

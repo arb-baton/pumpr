@@ -342,7 +342,7 @@ function setProfileMenuOpen(open) {
 }
 
 function formatLaunchMarketCap(launch) {
-  const dexMcap = Number(launch?.dexSnapshot?.marketCapUsd || launch?.dexSnapshot?.fdvUsd || 0);
+  const dexMcap = Number(launch?.dexSnapshot?.marketCapUsd || 0);
   const poolMcapWei = launch?.pool?.marketCapWei || "0";
   const poolMcapEth = Number(launch?.pool?.marketCapEth || 0);
   const poolMcapUsdFromEth = Number.isFinite(poolMcapEth) && poolMcapEth > 0 ? poolMcapEth * Number(state.ethUsd || 0) : 0;
@@ -698,7 +698,7 @@ function renderExplore() {
 async function hydrateVisibleMarketCaps(limit = 12) {
   const visible = filteredLaunches()
     .filter((launch) => {
-      const dexMcap = Number(launch?.dexSnapshot?.marketCapUsd || launch?.dexSnapshot?.fdvUsd || 0);
+      const dexMcap = Number(launch?.dexSnapshot?.marketCapUsd || 0);
       const poolMcap = BigInt(String(launch?.pool?.marketCapWei || "0"));
       return dexMcap <= 0 && poolMcap <= 0n;
     })
