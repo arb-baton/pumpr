@@ -352,9 +352,22 @@ function formatLaunchMarketCap(launch) {
   const fallbackUsd = Math.max(poolMcapUsd, poolMcapUsdFromEth, 0);
   const usd = dexMcap > 0 ? dexMcap : fallbackUsd;
   if (usd <= 0) return "Syncing MC";
-  const digits = usd >= 1000 ? 0 : usd >= 1 ? 2 : 4;
-  const exact = usd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: digits });
-  return `$${exact} MC`;
+  let label = "";
+  if (usd >= 1_000_000_000) {
+    const v = usd / 1_000_000_000;
+    label = `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}B`;
+  } else if (usd >= 1_000_000) {
+    const v = usd / 1_000_000;
+    label = `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}M`;
+  } else if (usd >= 1_000) {
+    const v = usd / 1_000;
+    label = `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}k`;
+  } else if (usd >= 1) {
+    label = `${Math.round(usd)}`;
+  } else {
+    label = usd.toFixed(2);
+  }
+  return `$${label} MC`;
 }
 
 function addLaunchMetrics(launch) {
