@@ -28,9 +28,9 @@ const SUPABASE_FOLLOW_TABLE = String(process.env.SUPABASE_FOLLOW_TABLE || "user_
 const SUPABASE_SCHEMA = String(process.env.SUPABASE_SCHEMA || "public").trim();
 const SUPABASE_STORAGE_BUCKET = String(process.env.SUPABASE_STORAGE_BUCKET || "uploads").trim();
 const PROFILE_IMAGE_URI_MAX_LENGTH = 2 * 1024 * 1024;
-const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || (IS_VERCEL_RUNTIME ? "1" : "0")) === "1";
+const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || "0") === "1";
 const STRICT_SOCIAL_STORE = String(process.env.STRICT_SOCIAL_STORE || (STRICT_PROFILE_STORE ? "1" : "0")) === "1";
-const STRICT_UPLOAD_STORE = String(process.env.STRICT_UPLOAD_STORE || (IS_VERCEL_RUNTIME ? "1" : "0")) === "1";
+const STRICT_UPLOAD_STORE = String(process.env.STRICT_UPLOAD_STORE || "0") === "1";
 // Vercel runtime filesystem is ephemeral/read-only for project paths. Force inline mode there.
 const USE_DISK_UPLOADS = !IS_VERCEL_RUNTIME && UPLOAD_MODE !== "inline";
 
@@ -109,6 +109,7 @@ const geckoSparklineCache = new Map();
 const dexTokenCache = new Map();
 const geckoIndexedSticky = new Set();
 const pairTradesCache = new Map();
+const tokenLaunchHintCache = new Map();
 let profileDbCache = null;
 let followDbCache = null;
 let supportDbCache = null;
@@ -2045,8 +2046,12 @@ async function readPoolSnapshot(provider, launch) {
   }
 
   const circulating = totalSupply > tokenReserveWei ? totalSupply - tokenReserveWei : 0n;
-  const fdvWei = (currentPriceWei * totalSupply) / 10n ** 18n;
-  const marketCapWei = (currentPriceWei * circulating) / 10n ** 18n;
+  const hasActiveLiquidity = BigInt(ethReserve || 0n) > 0n || dexWethReserveWei > 0n;
+  // When no ETH liquidity exists yet (pre-trade launch), bonding spot price can
+  // imply inflated pseudo-market-caps. Keep MC/FDV at zero until liquidity exists.
+  const valuationPriceWei = hasActiveLiquidity ? currentPriceWei : 0n;
+  const fdvWei = (valuationPriceWei * totalSupply) / 10n ** 18n;
+  const marketCapWei = (valuationPriceWei * circulating) / 10n ** 18n;
 
   const snapshot = {
     feeBps: Number(feeBps),
@@ -2501,6 +2506,16 @@ async function readLaunchList(ctx) {
   });
 }
 
+function cacheLaunchHints(chainId, factoryAddress, launches = []) {
+  const prefix = `${chainId}:${String(factoryAddress || "").toLowerCase()}:`;
+  for (const row of launches) {
+    const token = normalizeAddress(row?.token || row?.tokenAddress || "");
+    if (!token) continue;
+    const key = `${prefix}${token.toLowerCase()}`;
+    setCachedValue(tokenLaunchHintCache, key, row, 30_000);
+  }
+}
+
 async function readLaunchPage(ctx, limit, offset) {
   const count = await readFactoryLaunchCount(ctx.factory);
   const total = Number.isFinite(count) && count > 0 ? count : 0;
@@ -2664,6 +2679,7 @@ app.get("/api/launches", async (req, res) => {
           dexSnapshot: dexSnapshot || null
         };
       });
+      cacheLaunchHints(ctx.chainId, ctx.factoryAddress, launches);
       return { total: page.total, launches };
     };
     const payload = forceFresh ? await builder() : await withCache(launchesCache, launchesKey, LAUNCHES_CACHE_TTL_MS, builder);
@@ -2938,6 +2954,13 @@ async function handleTokenRequest(req, res, tokenCandidate) {
       if (!launch) {
         const launchList = await readLaunchList(ctx);
         launch = launchList.find((row) => String(row.token || "").toLowerCase() === tokenAddress.toLowerCase()) || null;
+      }
+      if (!launch) {
+        const hintKey = `${ctx.chainId}:${ctx.factoryAddress.toLowerCase()}:${tokenAddress.toLowerCase()}`;
+        const hinted = getCachedValue(tokenLaunchHintCache, hintKey);
+        if (hinted && String(hinted?.token || "").toLowerCase() === tokenAddress.toLowerCase()) {
+          launch = hinted;
+        }
       }
       if (!launch) {
         return null;

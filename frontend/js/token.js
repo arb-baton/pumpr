@@ -1515,6 +1515,8 @@ function renderOverview() {
     const dexMcapRaw = Number(state.dex?.marketCapUsd || geckoMcapUsd || 0);
     const dexLiqUsd = Number(state.dex?.liquidityUsd || state.gecko?.snapshot?.liquidityUsd || 0);
     const poolMcapEth = Number(state.launch?.pool?.marketCapEth || 0);
+    const poolEthReserve = Number(state.launch?.pool?.ethReserveEth || 0);
+    const graduated = Boolean(state.launch?.pool?.graduated);
     const poolMcapUsd = poolMcapEth > 0 ? ethToUsd(poolMcapEth, state.ethUsd) : 0;
     const dexLooksInflated =
       dexMcapRaw > 0 &&
@@ -1523,7 +1525,8 @@ function renderOverview() {
     const dexMcapUsd = dexLooksInflated ? 0 : dexMcapRaw;
     const geckoPriceEth = Number(state.gecko?.snapshot?.priceNative || 0);
     const dexPriceEth = Number(state.dex?.priceNative || geckoPriceEth || state.launch?.pool?.spotPriceEth || 0);
-    ui.marketCapHeadline.textContent = dexMcapUsd > 0 ? formatCompactUsd(dexMcapUsd) : poolMcapUsd > 0 ? formatCompactUsd(poolMcapUsd) : "-";
+    const hasLiveSignal = dexMcapUsd > 0 || poolEthReserve > 0 || graduated;
+    ui.marketCapHeadline.textContent = !hasLiveSignal ? "Syncing MC" : dexMcapUsd > 0 ? formatCompactUsd(dexMcapUsd) : poolMcapUsd > 0 ? formatCompactUsd(poolMcapUsd) : "-";
     ui.lastPrice.textContent = dexPriceEth > 0 ? formatEthDisplay(dexPriceEth) : "-";
     const raw24hChange = state.dex?.priceChange24hPct ?? state.gecko?.snapshot?.priceChange24hPct;
     const pct24hChange = Number(raw24hChange ?? 0);

@@ -362,7 +362,7 @@ function formatLaunchMarketCap(launch) {
     (dexMcapRaw / fallbackUsd > 25 || (dexLiqUsd > 0 && dexMcapRaw / dexLiqUsd > 2500));
   const dexMcap = dexLooksInflated ? 0 : dexMcapRaw;
   const hasDexSignal = dexLiqUsd > 0 || dexVolUsd > 0;
-  const hasPoolSignal = poolEthReserve > 0 || poolTokenReserve > 0n;
+  const hasPoolSignal = poolEthReserve > 0;
   if (!isGraduated && !hasDexSignal && !hasPoolSignal) {
     return "Syncing MC";
   }
@@ -1234,7 +1234,10 @@ async function init() {
 
   await loadConfig();
   try {
-    await refreshLaunches();
+    await refreshLaunches({ enrich: false });
+    refreshLaunches({ enrich: true }).catch(() => {
+      // keep fast-first content if enrich pass fails
+    });
   } catch (err) {
     const cached = loadCachedLaunches();
     if (cached.length) {
@@ -1251,10 +1254,10 @@ async function init() {
 
   setInterval(() => {
     refreshCycle += 1;
-    refreshLaunches({ enrich: refreshCycle % 4 === 0 }).catch(() => {
+    refreshLaunches({ enrich: refreshCycle % 3 === 0 }).catch(() => {
       // ignore transient polling failures
     });
-  }, 12000);
+  }, 10000);
 
   setInterval(() => {
     refreshEthUsd(true)

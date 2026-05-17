@@ -1075,6 +1075,14 @@ async function loadProfile(address) {
     setSummary(payload);
     renderActiveTab();
     await refreshFollowState();
+  } catch (error) {
+    if (requestSeq !== state.profileLoadSeq) return;
+    state.payload = warmPayload;
+    state.socialLoaded = false;
+    state.socialLoading = false;
+    setSummary(warmPayload);
+    renderActiveTab();
+    setAlert(ui.alert, parseUiError(error), true);
   } finally {
     if (requestSeq === state.profileLoadSeq) {
       state.profileLoading = false;
