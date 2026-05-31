@@ -1030,7 +1030,7 @@ function writeCommunityDb(store) {
 }
 
 function sanitizeCommunityText(value, max = 280) {
-  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+  return Array.from(String(value || "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
 }
 
 function normalizeXHandle(value) {

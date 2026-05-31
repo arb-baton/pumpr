@@ -74,6 +74,10 @@ function escapeHtml(value) {
   })[char]);
 }
 
+function truncateCharacters(value, max) {
+  return Array.from(String(value || "").trim()).slice(0, max).join("");
+}
+
 function loadXAuth() {
   try {
     const parsed = JSON.parse(localStorage.getItem(X_AUTH_KEY) || "{}");
@@ -90,7 +94,7 @@ function normalizeXProfile(value) {
   return {
     authorized: true,
     username,
-    name: String(value.name || username || "X user").trim().slice(0, 80),
+    name: truncateCharacters(value.name || username || "X user", 80),
     image: String(value.image || value.profile_image_url || "").trim().slice(0, 1024),
     followers: Math.max(0, Number(value.followers || value.xFollowers || 0) || 0)
   };
@@ -100,7 +104,8 @@ function decodeBase64UrlJson(value) {
   try {
     const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
     const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), "=");
-    return JSON.parse(atob(padded));
+    const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+    return JSON.parse(new TextDecoder("utf-8").decode(bytes));
   } catch {
     return null;
   }
