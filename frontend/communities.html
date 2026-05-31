@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Etherpump.fun | Communities</title>
+    <link rel="icon" type="image/png" href="/assets/favicon.png?v=20260426b" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260504k" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="appSidebar">
+        <div class="sidebar-top">
+          <a class="logo" href="/">
+            <img class="logo-mark" src="/assets/etherpump-logo.png?v=20260423c" alt="Etherpump logo" />
+            <span class="logo-title">
+              <span class="logo-name">Etherpump</span><span class="logo-sep">.</span><span class="logo-tld">fun</span>
+            </span>
+          </a>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
+            <svg viewBox="0 0 20 12" aria-hidden="true">
+              <rect x="1.5" y="1" width="1.5" height="10" rx="0.75"></rect>
+              <rect x="17" y="1" width="1.5" height="10" rx="0.75"></rect>
+              <path d="M11.2 3.2L8.2 6l3 2.8"></path>
+            </svg>
+          </button>
+        </div>
+        <nav class="side-nav">
+          <a class="side-link side-link-home" href="/">
+            <span class="side-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 10.5L12 3l9 7.5"></path>
+                <path d="M5.5 9.8V21h13V9.8"></path>
+              </svg>
+            </span>
+            <span class="side-link-label">Home</span>
+          </a>
+          <a class="side-link side-link-profile" id="profileNavSide" href="/profile">
+            <span class="side-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8.2" r="3.7"></circle>
+                <path d="M4.6 20c1.8-3.9 4.4-5.9 7.4-5.9s5.6 2 7.4 5.9"></path>
+              </svg>
+            </span>
+            <span class="side-link-label">Profile</span>
+          </a>
+          <a class="side-link active" href="/communities">
+            <span class="side-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 11.5a4 4 0 1 1 8 0"></path>
+                <path d="M4.5 20c1.2-3 3.7-4.5 6.5-4.5s5.3 1.5 6.5 4.5"></path>
+                <path d="M17 8.2a3 3 0 0 1 3 3"></path>
+                <path d="M18.5 15.2c1.2.6 2 1.7 2.5 3.1"></path>
+              </svg>
+            </span>
+            <span class="side-link-label">Communities</span>
+          </a>
+          <a class="side-link" href="https://trade.padre.gg/" target="_blank" rel="noreferrer noopener">
+            <span class="side-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 7h16"></path>
+                <path d="M7 7v10"></path>
+                <path d="M17 7v10"></path>
+                <path d="M4 17h16"></path>
+              </svg>
+            </span>
+            <span class="side-link-label">Terminal</span>
+          </a>
+        </nav>
+        <a class="side-create-btn" href="/create">Create</a>
+        <div class="side-footer">
+          <span id="networkChip">Chain -</span>
+          <span id="factoryChip">Factory -</span>
+        </div>
+      </aside>
+
+      <main class="main-pane">
+        <div class="promo-strip">beta testing</div>
+        <header class="topbar create-topbar">
+          <div class="create-searchbar">
+            <a href="/" class="create-back-btn" aria-label="Back to home">&larr;</a>
+            <input id="tokenSearchInput" placeholder="Search for coins..." />
+          </div>
+          <div class="top-actions">
+            <button id="signInBtn" class="btn-primary top-action-btn sign-in-btn" type="button">Sign in</button>
+            <select id="walletChoice" hidden aria-hidden="true" tabindex="-1"></select>
+            <button id="connectBtn" hidden type="button">Connect</button>
+            <button id="disconnectBtn" hidden type="button">Disconnect</button>
+            <span id="walletAddress" hidden></span>
+            <a class="btn-ghost top-action-btn" href="/create">+ Create</a>
+          </div>
+        </header>
+
+        <section id="communityLayout" class="community-layout community-global">
+          <div class="community-main">
+            <article class="community-hero panel-card">
+              <div class="community-cover" id="communityCover"></div>
+              <div class="community-identity">
+                <img id="communityImage" class="community-token-img" alt="Token image" />
+                <div>
+                  <small>Communities</small>
+                  <h1 id="communityTitle">Coin communities</h1>
+                  <p id="communityMeta">Latest posts from token communities, with X sharing.</p>
+                </div>
+                <button id="communityShareBtn" class="btn-ghost small" type="button">Share</button>
+              </div>
+              <nav class="community-tabs" aria-label="Community tabs">
+                <button class="active" type="button" data-community-tab="top">Top</button>
+                <button type="button" data-community-tab="recent">Recent</button>
+                <button type="button" data-community-tab="media">Media</button>
+              </nav>
+            </article>
+
+            <article id="communityComposer" class="panel-card community-composer">
+              <div class="community-compose-head">
+                <div>
+                  <small id="composerKicker">Post in community</small>
+                  <strong>Two quick steps to share with the community.</strong>
+                </div>
+                <span id="xIdentityPill" class="community-x-pill">X disconnected</span>
+              </div>
+              <ol class="community-steps">
+                <li>Connect your X account</li>
+                <li id="communityHoldStep">Hold token or join the launch conversation</li>
+              </ol>
+              <div id="xConnectRow" class="community-x-connect">
+                <button id="connectXBtn" class="btn-primary" type="button">Connect X</button>
+                <button id="composerWalletBtn" class="btn-ghost" type="button">Connect wallet</button>
+              </div>
+              <textarea id="communityPostInput" maxlength="280" placeholder="What is happening in this community?"></textarea>
+              <div class="community-compose-actions">
+                <span id="communityCharCount">0/280</span>
+                <label class="community-share-toggle">
+                  <input id="shareToXCheck" type="checkbox" checked />
+                  <span>Share to X</span>
+                </label>
+                <button id="publishPostBtn" class="btn-primary" type="button">Post</button>
+              </div>
+            </article>
+
+            <div id="communityFeed" class="community-feed"></div>
+          </div>
+
+          <aside class="community-side">
+            <article class="panel-card tokenpf-side-card">
+              <div class="tokenpf-side-head">
+                <h3 id="communitySideTitle">Top communities</h3>
+                <b id="communityLiveBadge">LIVE</b>
+              </div>
+              <div class="community-stats">
+                <span><b id="statPosts">0</b> posts</span>
+                <span><b id="statPosts24h">0</b> last 24h</span>
+                <span><b id="statMembers">0</b> members</span>
+              </div>
+              <div id="topCommunitiesList" class="community-top-list"></div>
+            </article>
+            <article class="panel-card tokenpf-side-card community-voice-card">
+              <div class="tokenpf-side-head">
+                <h3>Voice chat</h3>
+              </div>
+              <p>Talk live with other token holders</p>
+              <button class="btn-primary tokenpf-claim-btn" type="button">Join voice chat</button>
+            </article>
+            <article class="panel-card tokenpf-side-card">
+              <div class="tokenpf-side-head">
+                <h3>Top members</h3>
+              </div>
+              <div id="topMembersList" class="community-members-list"></div>
+            </article>
+          </aside>
+        </section>
+
+        <p id="alert" class="alert"></p>
+      </main>
+    </div>
+    <script type="module" src="/js/sidebar.js?v=20260504a"></script>
+    <script type="module" src="/js/communities.js?v=20260530b"></script>
+  </body>
+</html>

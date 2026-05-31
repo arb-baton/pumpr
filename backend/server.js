@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -19,6 +20,7 @@ const UPLOAD_MODE = String(process.env.UPLOAD_MODE || (IS_VERCEL_RUNTIME ? "inli
 const PROFILE_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-profiles.json") : path.join(ROOT, "cache", "profiles.json");
 const FOLLOW_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-follows.json") : path.join(ROOT, "cache", "follows.json");
 const SUPPORT_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-support.json") : path.join(ROOT, "cache", "support.json");
+const COMMUNITY_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-community.json") : path.join(ROOT, "cache", "community.json");
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || ""
@@ -55,6 +57,7 @@ const DEXSCREENER_CHAIN_BY_ID = {
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
+app.set("trust proxy", true);
 
 if (USE_DISK_UPLOADS && !fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -113,7 +116,9 @@ const tokenLaunchHintCache = new Map();
 let profileDbCache = null;
 let followDbCache = null;
 let supportDbCache = null;
+let communityDbCache = null;
 const profileLastKnownCache = new Map();
+const xOauthStates = new Map();
 
 function resolvePlatformSupportAddress() {
   const candidates = [
@@ -994,6 +999,256 @@ function writeFollowDb(store) {
   fs.mkdirSync(path.dirname(FOLLOW_DB_PATH), { recursive: true });
   fs.writeFileSync(FOLLOW_DB_PATH, JSON.stringify(store, null, 2));
   followDbCache = store;
+}
+
+function readCommunityDb() {
+  if (communityDbCache && typeof communityDbCache === "object") {
+    return communityDbCache;
+  }
+
+  try {
+    if (fs.existsSync(COMMUNITY_DB_PATH)) {
+      const raw = fs.readFileSync(COMMUNITY_DB_PATH, "utf8");
+      const parsed = JSON.parse(raw || "{}");
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        communityDbCache = parsed;
+        return communityDbCache;
+      }
+    }
+  } catch {
+    // fall through to empty store
+  }
+
+  communityDbCache = { posts: [], comments: {}, likes: {} };
+  return communityDbCache;
+}
+
+function writeCommunityDb(store) {
+  fs.mkdirSync(path.dirname(COMMUNITY_DB_PATH), { recursive: true });
+  fs.writeFileSync(COMMUNITY_DB_PATH, JSON.stringify(store, null, 2));
+  communityDbCache = store;
+}
+
+function sanitizeCommunityText(value, max = 280) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function normalizeXHandle(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/^https?:\/\/(www\.)?(x|twitter)\.com\//i, "")
+    .split(/[/?#]/)[0]
+    .replace(/[^a-zA-Z0-9_]/g, "")
+    .slice(0, 15);
+}
+
+function pseudoAddressForXHandle(handle) {
+  const normalized = normalizeXHandle(handle);
+  if (!normalized) return "";
+  const digest = crypto.createHash("sha256").update(`x:${normalized.toLowerCase()}`).digest("hex").slice(0, 40);
+  return normalizeAddress(`0x${digest}`);
+}
+
+function communityPostId() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeCommunityPost(row = {}) {
+  const token = normalizeAddress(row.token || row.tokenAddress || "");
+  const author = normalizeAddress(row.author || row.address || "");
+  if (!token || !author) return null;
+  const id = String(row.id || communityPostId());
+  const createdAt = Number(row.createdAt || Math.floor(Date.now() / 1000));
+  const likes = Array.isArray(row.likes) ? row.likes.map(normalizeAddress).filter(Boolean) : [];
+  const comments = Array.isArray(row.comments) ? row.comments : [];
+  return {
+    id,
+    token,
+    author,
+    xHandle: normalizeXHandle(row.xHandle || ""),
+    body: sanitizeCommunityText(row.body || ""),
+    createdAt: Number.isFinite(createdAt) ? createdAt : Math.floor(Date.now() / 1000),
+    likes: [...new Set(likes.map((address) => address.toLowerCase()))],
+    comments: comments
+      .map((comment) => normalizeCommunityComment(comment, id))
+      .filter(Boolean)
+      .slice(0, 100)
+  };
+}
+
+function normalizeCommunityComment(row = {}, postId = "") {
+  const author = normalizeAddress(row.author || row.address || "");
+  if (!author) return null;
+  const createdAt = Number(row.createdAt || Math.floor(Date.now() / 1000));
+  return {
+    id: String(row.id || communityPostId()),
+    postId: String(row.postId || postId || ""),
+    author,
+    xHandle: normalizeXHandle(row.xHandle || ""),
+    body: sanitizeCommunityText(row.body || "", 180),
+    createdAt: Number.isFinite(createdAt) ? createdAt : Math.floor(Date.now() / 1000)
+  };
+}
+
+function listCommunityPosts(tokenAddress, limit = 60) {
+  const token = normalizeAddress(tokenAddress || "");
+  if (!token) return [];
+  const store = readCommunityDb();
+  const posts = Array.isArray(store.posts) ? store.posts : [];
+  return posts
+    .map(normalizeCommunityPost)
+    .filter((post) => post && post.token.toLowerCase() === token.toLowerCase())
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    .slice(0, Math.max(1, Math.min(100, Number(limit || 60))));
+}
+
+function listAllCommunityPosts(limit = 80) {
+  const store = readCommunityDb();
+  const posts = Array.isArray(store.posts) ? store.posts : [];
+  return posts
+    .map(normalizeCommunityPost)
+    .filter(Boolean)
+    .sort((a, b) => {
+      const bScore = (Array.isArray(b.likes) ? b.likes.length : 0) + (Array.isArray(b.comments) ? b.comments.length : 0) * 2;
+      const aScore = (Array.isArray(a.likes) ? a.likes.length : 0) + (Array.isArray(a.comments) ? a.comments.length : 0) * 2;
+      if (bScore !== aScore) return bScore - aScore;
+      return Number(b.createdAt || 0) - Number(a.createdAt || 0);
+    })
+    .slice(0, Math.max(1, Math.min(120, Number(limit || 80))));
+}
+
+function communityStatsForToken(tokenAddress) {
+  const posts = listCommunityPosts(tokenAddress, 500);
+  const now = Math.floor(Date.now() / 1000);
+  const posts24h = posts.filter((post) => Number(post.createdAt || 0) >= now - 24 * 60 * 60).length;
+  const comments = posts.reduce((sum, post) => sum + (Array.isArray(post.comments) ? post.comments.length : 0), 0);
+  const members = new Set();
+  for (const post of posts) {
+    members.add(post.author.toLowerCase());
+    for (const comment of post.comments || []) members.add(comment.author.toLowerCase());
+  }
+  return { posts: posts.length, posts24h, comments, members: members.size };
+}
+
+function communityStatsByToken() {
+  const out = new Map();
+  for (const post of listAllCommunityPosts(1000)) {
+    const key = post.token.toLowerCase();
+    const prev = out.get(key) || { token: post.token, posts: 0, likes: 0, comments: 0, latestAt: 0, members: new Set() };
+    prev.posts += 1;
+    prev.likes += Array.isArray(post.likes) ? post.likes.length : 0;
+    prev.comments += Array.isArray(post.comments) ? post.comments.length : 0;
+    prev.latestAt = Math.max(prev.latestAt, Number(post.createdAt || 0));
+    prev.members.add(post.author.toLowerCase());
+    for (const comment of post.comments || []) prev.members.add(String(comment.author || "").toLowerCase());
+    out.set(key, prev);
+  }
+  return out;
+}
+
+function createCommunityPost(value = {}) {
+  const token = normalizeAddress(value.token || value.tokenAddress || "");
+  const xHandle = normalizeXHandle(value.xHandle || "");
+  const author = normalizeAddress(value.author || value.address || "") || pseudoAddressForXHandle(xHandle);
+  const body = sanitizeCommunityText(value.body || "");
+  if (!token) throw new Error("token is required");
+  if (!author) throw new Error("author is required");
+  if (!body) throw new Error("post text is required");
+  const store = readCommunityDb();
+  const post = normalizeCommunityPost({
+    id: communityPostId(),
+    token,
+    author,
+    xHandle,
+    body,
+    createdAt: Math.floor(Date.now() / 1000),
+    likes: [],
+    comments: []
+  });
+  store.posts = [post, ...(Array.isArray(store.posts) ? store.posts : [])].slice(0, 2000);
+  writeCommunityDb(store);
+  return post;
+}
+
+function createCommunityComment(postId, value = {}) {
+  const id = String(postId || "");
+  const xHandle = normalizeXHandle(value.xHandle || "");
+  const author = normalizeAddress(value.author || value.address || "") || pseudoAddressForXHandle(xHandle);
+  const body = sanitizeCommunityText(value.body || "", 180);
+  if (!id) throw new Error("post id is required");
+  if (!author) throw new Error("author is required");
+  if (!body) throw new Error("comment text is required");
+  const store = readCommunityDb();
+  const posts = Array.isArray(store.posts) ? store.posts : [];
+  const post = posts.find((row) => String(row?.id || "") === id);
+  if (!post) throw new Error("post not found");
+  const comment = normalizeCommunityComment({
+    id: communityPostId(),
+    postId: id,
+    author,
+    xHandle,
+    body,
+    createdAt: Math.floor(Date.now() / 1000)
+  }, id);
+  post.comments = [...(Array.isArray(post.comments) ? post.comments : []), comment].slice(-100);
+  writeCommunityDb(store);
+  return normalizeCommunityPost(post);
+}
+
+function setCommunityLike(postId, address, liked) {
+  const id = String(postId || "");
+  const viewer = normalizeAddress(address || "");
+  if (!id) throw new Error("post id is required");
+  if (!viewer) throw new Error("address is required");
+  const store = readCommunityDb();
+  const posts = Array.isArray(store.posts) ? store.posts : [];
+  const post = posts.find((row) => String(row?.id || "") === id);
+  if (!post) throw new Error("post not found");
+  const likes = new Set((Array.isArray(post.likes) ? post.likes : []).map((row) => String(row || "").toLowerCase()));
+  if (liked) likes.add(viewer.toLowerCase());
+  else likes.delete(viewer.toLowerCase());
+  post.likes = [...likes];
+  writeCommunityDb(store);
+  return normalizeCommunityPost(post);
+}
+
+function base64Url(buffer) {
+  return Buffer.from(buffer).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function makePkceVerifier() {
+  return base64Url(crypto.randomBytes(64)).slice(0, 96);
+}
+
+function makePkceChallenge(verifier) {
+  return base64Url(crypto.createHash("sha256").update(verifier).digest());
+}
+
+function pruneXOAuthStates() {
+  const now = Date.now();
+  for (const [key, value] of xOauthStates.entries()) {
+    if (!value?.expiresAt || value.expiresAt <= now) xOauthStates.delete(key);
+  }
+}
+
+function safeLocalReturnTo(value) {
+  const requested = String(value || "/communities");
+  return requested.startsWith("/") && !requested.startsWith("//") ? requested : "/communities";
+}
+
+function publicOriginFromRequest(req) {
+  const forwardedProto = String(req.get("x-forwarded-proto") || "").split(",")[0].trim();
+  const forwardedHost = String(req.get("x-forwarded-host") || "").split(",")[0].trim();
+  const proto = forwardedProto || req.protocol || "http";
+  const host = forwardedHost || req.get("host") || `localhost:${PORT}`;
+  return `${proto}://${host}`;
+}
+
+function xCallbackUrl(req) {
+  const configured = String(process.env.X_CALLBACK_URL || "").trim();
+  if (configured) return configured;
+  return `${publicOriginFromRequest(req)}/api/x/oauth/callback`;
 }
 
 function followEdgeKey(followerAddress, followeeAddress) {
@@ -2828,6 +3083,172 @@ app.post("/api/follow", async (req, res) => {
   }
 });
 
+app.get("/api/communities", async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(120, Number(req.query.limit || 80)));
+    const posts = listAllCommunityPosts(limit);
+    const byToken = communityStatsByToken();
+    const topCommunities = [...byToken.values()]
+      .map((row) => ({
+        token: row.token,
+        posts: row.posts,
+        comments: row.comments,
+        likes: row.likes,
+        members: row.members.size,
+        latestAt: row.latestAt,
+        score: row.posts * 3 + row.comments * 2 + row.likes + row.members.size
+      }))
+      .sort((a, b) => b.score - a.score || b.latestAt - a.latestAt)
+      .slice(0, 10);
+    res.json({ posts, topCommunities });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load communities" });
+  }
+});
+
+app.get("/api/community/:token", async (req, res) => {
+  try {
+    const token = normalizeAddress(req.params.token || "");
+    if (!token) return res.status(400).json({ error: "Invalid token address" });
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit || 60)));
+    res.json({
+      token,
+      stats: communityStatsForToken(token),
+      posts: listCommunityPosts(token, limit)
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load community" });
+  }
+});
+
+app.get("/api/x/oauth/start", (req, res) => {
+  try {
+    const returnTo = safeLocalReturnTo(req.query.returnTo || "/communities");
+    const callbackUrl = xCallbackUrl(req);
+    const clientId = String(process.env.X_CLIENT_ID || process.env.TWITTER_CLIENT_ID || "").trim();
+    if (!clientId) {
+      return res.status(500).json({ error: "X_CLIENT_ID is not configured" });
+    }
+    pruneXOAuthStates();
+    const stateId = base64Url(crypto.randomBytes(24));
+    const codeVerifier = makePkceVerifier();
+    xOauthStates.set(stateId, {
+      returnTo,
+      codeVerifier,
+      expiresAt: Date.now() + 10 * 60 * 1000
+    });
+    const url = new URL("https://x.com/i/oauth2/authorize");
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("client_id", clientId);
+    url.searchParams.set("redirect_uri", callbackUrl);
+    url.searchParams.set("scope", "tweet.read users.read offline.access");
+    url.searchParams.set("state", stateId);
+    url.searchParams.set("code_challenge", makePkceChallenge(codeVerifier));
+    url.searchParams.set("code_challenge_method", "S256");
+    res.redirect(url.toString());
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to start X OAuth" });
+  }
+});
+
+app.get("/api/x/oauth/callback", async (req, res) => {
+  let returnTo = "/communities";
+  try {
+    pruneXOAuthStates();
+    const stateId = String(req.query.state || "");
+    const row = xOauthStates.get(stateId);
+    if (!row) {
+      const target = new URL(returnTo, publicOriginFromRequest(req));
+      target.searchParams.set("x", "expired");
+      return res.redirect(target.toString());
+    }
+    xOauthStates.delete(stateId);
+    returnTo = safeLocalReturnTo(row.returnTo);
+
+    if (req.query.error) {
+      const target = new URL(returnTo, publicOriginFromRequest(req));
+      target.searchParams.set("x", "cancelled");
+      return res.redirect(target.toString());
+    }
+
+    const code = String(req.query.code || "");
+    const clientId = String(process.env.X_CLIENT_ID || process.env.TWITTER_CLIENT_ID || "").trim();
+    const clientSecret = String(process.env.X_CLIENT_SECRET || process.env.TWITTER_CLIENT_SECRET || "").trim();
+    const callbackUrl = xCallbackUrl(req);
+    if (!code || !clientId || !clientSecret) {
+      throw new Error("X OAuth callback is missing code or credentials");
+    }
+
+    const params = new URLSearchParams();
+    params.set("code", code);
+    params.set("grant_type", "authorization_code");
+    params.set("client_id", clientId);
+    params.set("redirect_uri", callbackUrl);
+    params.set("code_verifier", row.codeVerifier);
+
+    const response = await fetch("https://api.x.com/2/oauth2/token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: params
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`X token exchange failed: ${response.status} ${text}`.trim());
+    }
+
+    const target = new URL(returnTo, publicOriginFromRequest(req));
+    target.searchParams.set("x", "authorized");
+    res.redirect(target.toString());
+  } catch (error) {
+    const target = new URL(returnTo, publicOriginFromRequest(req));
+    target.searchParams.set("x", "failed");
+    target.searchParams.set("reason", String(error?.message || "oauth_failed").slice(0, 120));
+    res.redirect(target.toString());
+  }
+});
+
+app.post("/api/community/:token/post", async (req, res) => {
+  try {
+    const token = normalizeAddress(req.params.token || "");
+    const post = createCommunityPost({ ...(req.body || {}), token });
+    res.json({ post, stats: communityStatsForToken(token) });
+  } catch (error) {
+    const text = String(error?.message || "Failed to create post");
+    const status = text.toLowerCase().includes("required") || text.toLowerCase().includes("invalid") ? 400 : 500;
+    res.status(status).json({ error: text });
+  }
+});
+
+app.post("/api/community/:token/posts/:postId/comment", async (req, res) => {
+  try {
+    const token = normalizeAddress(req.params.token || "");
+    if (!token) return res.status(400).json({ error: "Invalid token address" });
+    const post = createCommunityComment(req.params.postId, req.body || {});
+    res.json({ post, stats: communityStatsForToken(token) });
+  } catch (error) {
+    const text = String(error?.message || "Failed to add comment");
+    const status = text.toLowerCase().includes("required") || text.toLowerCase().includes("not found") ? 400 : 500;
+    res.status(status).json({ error: text });
+  }
+});
+
+app.post("/api/community/:token/posts/:postId/like", async (req, res) => {
+  try {
+    const token = normalizeAddress(req.params.token || "");
+    if (!token) return res.status(400).json({ error: "Invalid token address" });
+    const post = setCommunityLike(req.params.postId, req.body?.address, Boolean(req.body?.liked));
+    res.json({ post, stats: communityStatsForToken(token) });
+  } catch (error) {
+    const text = String(error?.message || "Failed to update like");
+    const status = text.toLowerCase().includes("required") || text.toLowerCase().includes("not found") ? 400 : 500;
+    res.status(status).json({ error: text });
+  }
+});
+
 app.get("/api/support/config", async (_req, res) => {
   try {
     const platformAddress = resolvePlatformSupportAddress();
@@ -3411,6 +3832,10 @@ app.get("/create", (_req, res) => {
 
 app.get("/token", (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "token.html"));
+});
+
+app.get(["/communities", "/communities/:token"], (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "communities.html"));
 });
 
 app.get("/profile", (_req, res) => {

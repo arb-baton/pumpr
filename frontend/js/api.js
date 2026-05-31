@@ -88,6 +88,20 @@ export const api = {
       target,
       follow: Boolean(follow)
     }),
+  communities: (limit = 80) => apiGet(`/api/communities?limit=${encodeURIComponent(String(limit || 80))}`),
+  community: (token, limit = 60) =>
+    apiGet(`/api/community/${encodeURIComponent(String(token || ""))}?limit=${encodeURIComponent(String(limit || 60))}`),
+  communityPost: (token, body = {}) => apiPost(`/api/community/${encodeURIComponent(String(token || ""))}/post`, body),
+  communityComment: (token, postId, body = {}) =>
+    apiPost(
+      `/api/community/${encodeURIComponent(String(token || ""))}/posts/${encodeURIComponent(String(postId || ""))}/comment`,
+      body
+    ),
+  communityLike: (token, postId, address, liked) =>
+    apiPost(`/api/community/${encodeURIComponent(String(token || ""))}/posts/${encodeURIComponent(String(postId || ""))}/like`, {
+      address,
+      liked: Boolean(liked)
+    }),
   supportConfig: () => apiGet("/api/support/config"),
   supportMessages: (address) => apiGet(`/api/support/messages?address=${encodeURIComponent(String(address || ""))}`),
   supportInbox: (address) => apiGet(`/api/support/inbox?address=${encodeURIComponent(String(address || ""))}`),

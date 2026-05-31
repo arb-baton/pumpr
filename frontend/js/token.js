@@ -107,6 +107,11 @@ const ui = {
   bondingProgressFill: document.getElementById("bondingProgressFill"),
   bondingStatusText: document.getElementById("bondingStatusText"),
   topHoldersList: document.getElementById("topHoldersList"),
+  communityNavSide: document.getElementById("communityNavSide"),
+  communityMiniTitle: document.getElementById("communityMiniTitle"),
+  communityMiniMeta: document.getElementById("communityMiniMeta"),
+  communityMiniPreview: document.getElementById("communityMiniPreview"),
+  visitCommunityBtn: document.getElementById("visitCommunityBtn"),
   terminalLink: document.getElementById("terminalLink"),
   profileNav: document.getElementById("profileNav"),
   profileNavSide: document.getElementById("profileNavSide"),
@@ -177,6 +182,7 @@ const state = {
   optimisticTrades: [],
   forceLocalChartUntil: 0,
   pairMeta: null,
+  community: null,
   fullRefreshInFlight: false,
   lastFullRefreshAt: 0
 };
@@ -1179,6 +1185,7 @@ function setTokenHeader(launch) {
     const copyTarget = String(launch.token || "");
     ui.copyTokenBtn.innerHTML = `${COPY_PILL_ICON}<span>${shortAddress(copyTarget)}</span>`;
   }
+  renderCommunityMini();
   recordViewedLaunch(launch);
 }
 function setSideMetrics(launch) {
@@ -1608,6 +1615,45 @@ function renderTopHolders(list) {
       `;
     })
     .join("");
+}
+
+function renderCommunityMini() {
+  const token = String(state.launch?.token || state.token || "");
+  const symbol = String(state.launch?.symbol || "coin").toUpperCase();
+  const posts = Array.isArray(state.community?.posts) ? state.community.posts : [];
+  const stats = state.community?.stats || {};
+  const href = token ? `/communities/${encodeURIComponent(token)}` : "/communities";
+  if (ui.communityNavSide) ui.communityNavSide.href = href;
+  if (ui.visitCommunityBtn) ui.visitCommunityBtn.href = href;
+  if (ui.communityMiniTitle) ui.communityMiniTitle.textContent = `$${symbol} community`;
+  if (ui.communityMiniMeta) {
+    const posts24h = Number(stats.posts24h || 0);
+    const total = Number(stats.posts || posts.length || 0);
+    ui.communityMiniMeta.textContent = `${posts24h} posts in the last 24h · ${total} total`;
+  }
+  if (!ui.communityMiniPreview) return;
+  const first = posts[0];
+  if (!first) {
+    ui.communityMiniPreview.innerHTML = `<p class="muted">Connect X and start the first post for this coin.</p>`;
+    return;
+  }
+  const author = first.xHandle ? `@${escapeHtml(first.xHandle)}` : shortAddress(first.author);
+  ui.communityMiniPreview.innerHTML = `
+    <div class="token-community-mini-post">
+      <span>${author}</span>
+      <p>${escapeHtml(first.body)}</p>
+    </div>
+  `;
+}
+
+async function refreshCommunityMini() {
+  if (!state.token) return;
+  try {
+    state.community = await api.community(state.token, 3);
+  } catch {
+    state.community = { posts: [], stats: { posts: 0, posts24h: 0 } };
+  }
+  renderCommunityMini();
 }
 
 function tradeFilterThreshold() {
@@ -2081,6 +2127,11 @@ async function loadTokenPage(forceFresh = false, lite = false) {
   renderOverview();
   await refreshWalletBalance();
   renderTradePanel();
+  if (!lite) {
+    refreshCommunityMini().catch(() => {
+      // community preview is best-effort
+    });
+  }
 }
 
 
