@@ -67,6 +67,14 @@
       "dest": "/frontend/profile.html"
     },
     {
+      "src": "/communities$",
+      "dest": "/frontend/communities.html"
+    },
+    {
+      "src": "/communities/(.*)",
+      "dest": "/frontend/communities.html"
+    },
+    {
       "src": "/home$",
       "dest": "/frontend/index.html"
     },
