@@ -3594,7 +3594,8 @@ button:disabled {
   display: grid;
   gap: 0.62rem;
   border-color: rgba(111, 238, 171, 0.28);
-  background: linear-gradient(145deg, rgba(23, 52, 38, 0.72), rgba(18, 22, 38, 0.96));
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(18, 45, 32, 0.86), rgba(14, 20, 22, 0.98));
 }
 
 .community-composer.is-hidden,
@@ -3617,6 +3618,10 @@ button:disabled {
   justify-content: space-between;
 }
 
+.community-post-head {
+  justify-content: flex-start;
+}
+
 .community-x-pill {
   border: 1px solid rgba(137, 243, 194, 0.35);
   border-radius: 999px;
@@ -3633,11 +3638,87 @@ button:disabled {
 
 .community-steps {
   margin: 0;
-  padding-left: 1.24rem;
+  padding: 0;
   color: #dce6ff;
   display: grid;
   gap: 0.28rem;
   font-size: 0.86rem;
+  list-style: none;
+  counter-reset: community-step;
+}
+
+.community-steps li {
+  counter-increment: community-step;
+  display: flex;
+  align-items: center;
+  gap: 0.48rem;
+}
+
+.community-steps li::before {
+  content: counter(community-step);
+  width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(154, 166, 205, 0.45);
+  color: #a8b2cf;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.community-steps li.complete {
+  color: #aeb8d4;
+  text-decoration: line-through;
+}
+
+.community-steps li.complete::before {
+  content: "✓";
+  color: #07120b;
+  background: #67edae;
+  border-color: #67edae;
+  text-decoration: none;
+}
+
+.community-x-profile {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.66rem;
+  padding: 0.6rem;
+  border-radius: 8px;
+  background: rgba(7, 13, 18, 0.42);
+  border: 1px solid rgba(103, 237, 174, 0.24);
+}
+
+.community-x-profile[hidden] {
+  display: none;
+}
+
+.community-x-profile img {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 2px solid #67edae;
+}
+
+.community-x-profile strong,
+.community-x-profile small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-x-profile small {
+  margin-top: 0.08rem;
+  color: #aeb8d4;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .community-x-connect {
@@ -3711,6 +3792,16 @@ button:disabled {
   gap: 0.42rem;
 }
 
+.community-post-avatar {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 2px solid rgba(103, 237, 174, 0.78);
+  background: #101622;
+}
+
 .community-coin-pill {
   display: inline-flex;
   align-items: center;
@@ -3755,9 +3846,17 @@ button:disabled {
 
 .community-comment {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 24px auto minmax(0, 1fr);
+  align-items: start;
   gap: 0.42rem;
   font-size: 0.82rem;
+}
+
+.community-comment img {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  object-fit: cover;
 }
 
 .community-comment a {
@@ -3834,12 +3933,18 @@ button:disabled {
 
 .community-stats span,
 .community-member-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 18px 38px minmax(0, 1fr);
+  align-items: center;
   gap: 0.6rem;
   color: #dbe4ff;
   border-bottom: 1px solid rgba(124, 136, 170, 0.2);
   padding-bottom: 0.36rem;
+}
+
+.community-stats span {
+  display: flex;
+  justify-content: space-between;
 }
 
 .community-stats span:last-child,
@@ -3851,6 +3956,28 @@ button:disabled {
 .community-stats b,
 .community-member-row b {
   color: #89f3c2;
+}
+
+.community-member-row img {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 2px solid rgba(103, 237, 174, 0.75);
+}
+
+.community-member-row strong,
+.community-member-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-member-row small {
+  color: #9ea8ce;
+  font-size: 0.72rem;
+  margin-top: 0.08rem;
 }
 
 .tokenpf-side .bonding-line {

@@ -10,7 +10,7 @@ import {
 import { initWalletControls, setAlert, showCopyToast } from "./ui.js";
 import { initCoinSearchOverlay } from "./searchModal.js?v=20260504e";
 
-const X_AUTH_KEY = "etherpump.community.xauth.v1";
+const X_AUTH_KEY = "etherpump.community.xauth.v2";
 
 const ui = {
   alert: document.getElementById("alert"),
@@ -23,9 +23,11 @@ const ui = {
   shareBtn: document.getElementById("communityShareBtn"),
   composer: document.getElementById("communityComposer"),
   composerKicker: document.getElementById("composerKicker"),
+  xStep: document.getElementById("communityXStep"),
   holdStep: document.getElementById("communityHoldStep"),
   xIdentityPill: document.getElementById("xIdentityPill"),
   connectXBtn: document.getElementById("connectXBtn"),
+  xProfileCard: document.getElementById("xProfileCard"),
   composerWalletBtn: document.getElementById("composerWalletBtn"),
   postInput: document.getElementById("communityPostInput"),
   charCount: document.getElementById("communityCharCount"),
@@ -57,7 +59,7 @@ const state = {
   topCommunities: [],
   stats: null,
   launchesByToken: new Map(),
-  xAuthorized: loadXAuth(),
+  xProfile: loadXAuth(),
   activeTab: "top",
   walletControls: null
 };
@@ -75,16 +77,43 @@ function escapeHtml(value) {
 function loadXAuth() {
   try {
     const parsed = JSON.parse(localStorage.getItem(X_AUTH_KEY) || "{}");
-    return Boolean(parsed?.authorized);
+    return normalizeXProfile(parsed);
   } catch {
-    return false;
+    return null;
   }
 }
 
-function saveXAuth(authorized) {
-  state.xAuthorized = Boolean(authorized);
+function normalizeXProfile(value) {
+  if (!value || typeof value !== "object") return null;
+  const username = String(value.username || value.xHandle || "").replace(/^@+/, "").trim().slice(0, 32);
+  if (!username && !value.authorized) return null;
+  return {
+    authorized: true,
+    username,
+    name: String(value.name || username || "X user").trim().slice(0, 80),
+    image: String(value.image || value.profile_image_url || "").trim().slice(0, 1024),
+    followers: Math.max(0, Number(value.followers || value.xFollowers || 0) || 0)
+  };
+}
+
+function decodeBase64UrlJson(value) {
   try {
-    localStorage.setItem(X_AUTH_KEY, JSON.stringify({ authorized: state.xAuthorized, ts: Date.now() }));
+    const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), "=");
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
+function saveXAuth(profile) {
+  state.xProfile = normalizeXProfile(profile);
+  try {
+    if (state.xProfile) {
+      localStorage.setItem(X_AUTH_KEY, JSON.stringify({ ...state.xProfile, ts: Date.now() }));
+    } else {
+      localStorage.removeItem(X_AUTH_KEY);
+    }
   } catch {
     // ignore
   }
@@ -142,6 +171,28 @@ function authorLabel(address, xHandle = "") {
   return profile.username || defaultUsername(address) || shortAddress(address);
 }
 
+function formatFollowers(value) {
+  const count = Math.max(0, Number(value || 0) || 0);
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(count >= 10_000 ? 0 : 1)}K`;
+  return count.toLocaleString();
+}
+
+function fallbackAvatar(seed = "") {
+  const text = encodeURIComponent(String(seed || "X").slice(0, 2).toUpperCase() || "X");
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'%3E%3Crect width='96' height='96' rx='48' fill='%23141a22'/%3E%3Ccircle cx='48' cy='48' r='45' fill='none' stroke='%2358e595' stroke-width='4'/%3E%3Ctext x='48' y='57' text-anchor='middle' font-family='Arial,sans-serif' font-size='28' font-weight='700' fill='%23f5fff9'%3E${text}%3C/text%3E%3C/svg%3E`;
+}
+
+function xProfilePayload() {
+  const profile = state.xProfile || {};
+  return {
+    xHandle: profile.username || "",
+    xName: profile.name || "",
+    xImage: profile.image || "",
+    xFollowers: profile.followers || 0
+  };
+}
+
 function coinPill(post) {
   const launch = tokenMetaFor(post.token);
   const symbol = String(launch?.symbol || "coin").toUpperCase();
@@ -151,18 +202,37 @@ function coinPill(post) {
 function renderGates() {
   const ws = walletState();
   const connected = Boolean(ws.signer && ws.address);
+  const xConnected = Boolean(state.xProfile?.authorized && state.xProfile?.username);
   if (ui.signInBtn) ui.signInBtn.textContent = connected ? shortAddress(ws.address) : "Sign in";
   if (ui.profileNavSide && connected) ui.profileNavSide.href = `/profile?address=${ws.address}`;
   if (ui.xIdentityPill) {
-    ui.xIdentityPill.textContent = state.xAuthorized ? "X authorized" : "X disconnected";
-    ui.xIdentityPill.classList.toggle("connected", state.xAuthorized);
+    ui.xIdentityPill.textContent = xConnected ? `@${state.xProfile.username}` : "X disconnected";
+    ui.xIdentityPill.classList.toggle("connected", xConnected);
   }
-  if (ui.connectXBtn) ui.connectXBtn.textContent = state.xAuthorized ? "Reconnect X" : "Connect X";
+  if (ui.connectXBtn) ui.connectXBtn.textContent = xConnected ? "Reconnect X" : "Connect X";
   if (ui.composerWalletBtn) {
     ui.composerWalletBtn.hidden = connected;
     ui.composerWalletBtn.textContent = "Connect wallet";
   }
-  const canPost = Boolean(state.token && connected && state.xAuthorized);
+  if (ui.xStep) ui.xStep.classList.toggle("complete", xConnected);
+  if (ui.holdStep) {
+    ui.holdStep.textContent = connected ? "Wallet connected" : "Connect your wallet";
+    ui.holdStep.classList.toggle("complete", connected);
+  }
+  if (ui.xProfileCard) {
+    ui.xProfileCard.hidden = !xConnected;
+    if (xConnected) {
+      const src = state.xProfile.image || fallbackAvatar(state.xProfile.username);
+      ui.xProfileCard.innerHTML = `
+        <img src="${escapeHtml(src)}" alt="" />
+        <span>
+          <strong>${escapeHtml(state.xProfile.name || `@${state.xProfile.username}`)}</strong>
+          <small>Posting as @${escapeHtml(state.xProfile.username)} · ${formatFollowers(state.xProfile.followers)} followers</small>
+        </span>
+      `;
+    }
+  }
+  const canPost = Boolean(state.token && connected && xConnected);
   if (ui.postInput) ui.postInput.disabled = !canPost;
   if (ui.publishBtn) ui.publishBtn.disabled = !canPost;
 }
@@ -192,7 +262,6 @@ function renderShell() {
       : "Latest posts from every coin community, in one timeline.";
   }
   if (ui.composerKicker) ui.composerKicker.textContent = `Post in $${symbol}`;
-  if (ui.holdStep) ui.holdStep.textContent = `Hold at least $8.00 of $${symbol}`;
   renderGates();
 }
 
@@ -248,16 +317,21 @@ function postCard(post) {
   const liked = ws.address && (post.likes || []).includes(String(ws.address).toLowerCase());
   const comments = (post.comments || []).map((comment) => `
     <div class="community-comment">
+      <img src="${escapeHtml(comment.xImage || fallbackAvatar(comment.xHandle || comment.author))}" alt="" />
       <a href="${profileHref(comment.author)}">${escapeHtml(authorLabel(comment.author, comment.xHandle))}</a>
       <span>${escapeHtml(comment.body)}</span>
     </div>
   `).join("");
   const shareText = `${post.body}\n\n${window.location.origin}${communityHref(post.token || state.token)}`;
+  const avatar = post.xImage || fallbackAvatar(post.xHandle || post.author);
   return `
     <article class="panel-card community-post" data-post-id="${escapeHtml(post.id)}" data-token="${escapeHtml(post.token || state.token)}">
       <div class="community-post-head">
+        <img class="community-post-avatar" src="${escapeHtml(avatar)}" alt="" />
         <div class="community-author-line">
           <a href="${profileHref(post.author)}">${escapeHtml(authorLabel(post.author, post.xHandle))}</a>
+          ${post.xHandle ? "<span>X</span>" : ""}
+          <span>${formatFollowers(post.xFollowers)} followers</span>
           <span>${coinPill(post)}</span>
           <span>${humanAgo(post.createdAt)}</span>
         </div>
@@ -332,18 +406,33 @@ function renderMembers() {
   const counts = new Map();
   for (const post of state.posts) {
     const key = String(post.author || "").toLowerCase();
-    if (key) counts.set(key, { address: post.author, xHandle: post.xHandle, count: (counts.get(key)?.count || 0) + 1 });
+    if (key) counts.set(key, {
+      address: post.author,
+      xHandle: post.xHandle,
+      xName: post.xName,
+      xImage: post.xImage,
+      xFollowers: post.xFollowers,
+      count: (counts.get(key)?.count || 0) + 1
+    });
     for (const comment of post.comments || []) {
       const commentKey = String(comment.author || "").toLowerCase();
-      if (commentKey) counts.set(commentKey, { address: comment.author, xHandle: comment.xHandle, count: (counts.get(commentKey)?.count || 0) + 1 });
+      if (commentKey) counts.set(commentKey, {
+        address: comment.author,
+        xHandle: comment.xHandle,
+        xName: comment.xName,
+        xImage: comment.xImage,
+        xFollowers: comment.xFollowers,
+        count: (counts.get(commentKey)?.count || 0) + 1
+      });
     }
   }
-  const rows = [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 8);
+  const rows = [...counts.values()].sort((a, b) => Number(b.xFollowers || 0) - Number(a.xFollowers || 0) || b.count - a.count).slice(0, 8);
   ui.topMembersList.innerHTML = rows.length
-    ? rows.map((row) => `
+    ? rows.map((row, index) => `
         <a class="community-member-row" href="${profileHref(row.address)}">
-          <span>${escapeHtml(authorLabel(row.address, row.xHandle))}</span>
-          <b>${row.count}</b>
+          <b>${index + 1}</b>
+          <img src="${escapeHtml(row.xImage || fallbackAvatar(row.xHandle || row.address))}" alt="" />
+          <span><strong>${escapeHtml(authorLabel(row.address, row.xHandle))}</strong><small>X ${formatFollowers(row.xFollowers)} · ${row.count} posts</small></span>
         </a>
       `).join("")
     : `<p class="muted">No community members yet.</p>`;
@@ -419,11 +508,11 @@ async function publishPost() {
   const body = String(ui.postInput?.value || "").trim();
   if (!state.token) throw new Error("Open a token community first");
   if (!ws.signer || !ws.address) throw new Error("Connect wallet first");
-  if (!state.xAuthorized) throw new Error("Authorize X first");
+  if (!state.xProfile?.username) throw new Error("Authorize X first");
   if (!body) throw new Error("Write a post first");
   const payload = await api.communityPost(state.token, {
     author: ws.address,
-    xHandle: "",
+    ...xProfilePayload(),
     body
   });
   if (ui.shareToXCheck?.checked) {
@@ -486,7 +575,7 @@ function setupEvents() {
       setAlert(ui.alert, "Connect wallet first", true);
       return;
     }
-    if (!state.xAuthorized) {
+    if (!state.xProfile?.username) {
       setAlert(ui.alert, "Authorize X first", true);
       return;
     }
@@ -495,7 +584,7 @@ function setupEvents() {
     if (!body) return;
     const payload = await api.communityComment(state.token, postEl?.dataset?.postId || "", {
       author: ws.address,
-      xHandle: "",
+      ...xProfilePayload(),
       body
     });
     if (input) input.value = "";
@@ -517,9 +606,16 @@ function setupEvents() {
 }
 
 async function init() {
-  state.xAuthorized = loadXAuth();
+  state.xProfile = loadXAuth();
   const params = new URLSearchParams(window.location.search);
-  if (params.get("x") === "authorized") saveXAuth(true);
+  if (params.get("x") === "authorized") {
+    const xUser = decodeBase64UrlJson(params.get("x_user"));
+    saveXAuth(xUser || { authorized: true });
+    params.delete("x");
+    params.delete("x_user");
+    const qs = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`);
+  }
   renderGates();
   updateCharCount();
   setupEvents();

@@ -1067,6 +1067,9 @@ function normalizeCommunityPost(row = {}) {
     token,
     author,
     xHandle: normalizeXHandle(row.xHandle || ""),
+    xName: sanitizeCommunityText(row.xName || "", 80),
+    xImage: String(row.xImage || "").trim().slice(0, 1024),
+    xFollowers: Math.max(0, Number(row.xFollowers || 0) || 0),
     body: sanitizeCommunityText(row.body || ""),
     createdAt: Number.isFinite(createdAt) ? createdAt : Math.floor(Date.now() / 1000),
     likes: [...new Set(likes.map((address) => address.toLowerCase()))],
@@ -1086,6 +1089,9 @@ function normalizeCommunityComment(row = {}, postId = "") {
     postId: String(row.postId || postId || ""),
     author,
     xHandle: normalizeXHandle(row.xHandle || ""),
+    xName: sanitizeCommunityText(row.xName || "", 80),
+    xImage: String(row.xImage || "").trim().slice(0, 1024),
+    xFollowers: Math.max(0, Number(row.xFollowers || 0) || 0),
     body: sanitizeCommunityText(row.body || "", 180),
     createdAt: Number.isFinite(createdAt) ? createdAt : Math.floor(Date.now() / 1000)
   };
@@ -1161,6 +1167,9 @@ function createCommunityPost(value = {}) {
     token,
     author,
     xHandle,
+    xName: value.xName || "",
+    xImage: value.xImage || "",
+    xFollowers: value.xFollowers || 0,
     body,
     createdAt: Math.floor(Date.now() / 1000),
     likes: [],
@@ -1188,6 +1197,9 @@ function createCommunityComment(postId, value = {}) {
     postId: id,
     author,
     xHandle,
+    xName: value.xName || "",
+    xImage: value.xImage || "",
+    xFollowers: value.xFollowers || 0,
     body,
     createdAt: Math.floor(Date.now() / 1000)
   }, id);
@@ -1217,6 +1229,11 @@ function base64Url(buffer) {
   return Buffer.from(buffer).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+function decodeBase64UrlText(value) {
+  const text = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(text.padEnd(text.length + ((4 - text.length % 4) % 4), "="), "base64").toString("utf8");
+}
+
 function makePkceVerifier() {
   return base64Url(crypto.randomBytes(64)).slice(0, 96);
 }
@@ -1235,6 +1252,43 @@ function pruneXOAuthStates() {
 function safeLocalReturnTo(value) {
   const requested = String(value || "/communities");
   return requested.startsWith("/") && !requested.startsWith("//") ? requested : "/communities";
+}
+
+function parseCookieHeader(header = "") {
+  return String(header || "").split(";").reduce((cookies, entry) => {
+    const index = entry.indexOf("=");
+    if (index <= 0) return cookies;
+    const key = entry.slice(0, index).trim();
+    const value = entry.slice(index + 1).trim();
+    if (key) cookies[key] = decodeURIComponent(value);
+    return cookies;
+  }, {});
+}
+
+function xOAuthCookieOptions(req) {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: publicOriginFromRequest(req).startsWith("https://"),
+    maxAge: 10 * 60 * 1000,
+    path: "/api/x/oauth"
+  };
+}
+
+function readXOAuthCookie(req, stateId) {
+  try {
+    const cookies = parseCookieHeader(req.headers.cookie || "");
+    const payload = JSON.parse(decodeBase64UrlText(cookies.etherpump_x_oauth || ""));
+    if (String(payload?.stateId || "") !== String(stateId || "")) return null;
+    if (!payload?.expiresAt || Number(payload.expiresAt) <= Date.now()) return null;
+    return {
+      returnTo: safeLocalReturnTo(payload.returnTo),
+      codeVerifier: String(payload.codeVerifier || ""),
+      expiresAt: Number(payload.expiresAt || 0)
+    };
+  } catch {
+    return null;
+  }
 }
 
 function publicOriginFromRequest(req) {
@@ -3132,11 +3186,14 @@ app.get("/api/x/oauth/start", (req, res) => {
     pruneXOAuthStates();
     const stateId = base64Url(crypto.randomBytes(24));
     const codeVerifier = makePkceVerifier();
-    xOauthStates.set(stateId, {
+    const oauthState = {
+      stateId,
       returnTo,
       codeVerifier,
       expiresAt: Date.now() + 10 * 60 * 1000
-    });
+    };
+    xOauthStates.set(stateId, oauthState);
+    res.cookie("etherpump_x_oauth", base64Url(Buffer.from(JSON.stringify(oauthState))), xOAuthCookieOptions(req));
     const url = new URL("https://x.com/i/oauth2/authorize");
     url.searchParams.set("response_type", "code");
     url.searchParams.set("client_id", clientId);
@@ -3156,13 +3213,15 @@ app.get("/api/x/oauth/callback", async (req, res) => {
   try {
     pruneXOAuthStates();
     const stateId = String(req.query.state || "");
-    const row = xOauthStates.get(stateId);
+    const row = xOauthStates.get(stateId) || readXOAuthCookie(req, stateId);
     if (!row) {
       const target = new URL(returnTo, publicOriginFromRequest(req));
       target.searchParams.set("x", "expired");
+      res.clearCookie("etherpump_x_oauth", { path: "/api/x/oauth" });
       return res.redirect(target.toString());
     }
     xOauthStates.delete(stateId);
+    res.clearCookie("etherpump_x_oauth", { path: "/api/x/oauth" });
     returnTo = safeLocalReturnTo(row.returnTo);
 
     if (req.query.error) {
@@ -3199,9 +3258,34 @@ app.get("/api/x/oauth/callback", async (req, res) => {
       const text = await response.text().catch(() => "");
       throw new Error(`X token exchange failed: ${response.status} ${text}`.trim());
     }
+    const tokenPayload = await response.json().catch(() => ({}));
+    const accessToken = String(tokenPayload?.access_token || "");
+    let xUser = null;
+    if (accessToken) {
+      const userRes = await fetch("https://api.x.com/2/users/me?user.fields=profile_image_url,public_metrics,username,name", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json"
+        }
+      });
+      if (userRes.ok) {
+        const userPayload = await userRes.json().catch(() => ({}));
+        const data = userPayload?.data || {};
+        xUser = {
+          id: String(data.id || ""),
+          username: normalizeXHandle(data.username || ""),
+          name: sanitizeCommunityText(data.name || "", 80),
+          image: String(data.profile_image_url || "").trim().slice(0, 1024),
+          followers: Math.max(0, Number(data?.public_metrics?.followers_count || 0) || 0)
+        };
+      }
+    }
 
     const target = new URL(returnTo, publicOriginFromRequest(req));
     target.searchParams.set("x", "authorized");
+    if (xUser?.username) {
+      target.searchParams.set("x_user", base64Url(Buffer.from(JSON.stringify(xUser))));
+    }
     res.redirect(target.toString());
   } catch (error) {
     const target = new URL(returnTo, publicOriginFromRequest(req));
