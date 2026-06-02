@@ -2180,7 +2180,8 @@ async function loadTokenPage(forceFresh = false, lite = false) {
   const previousSeries = Array.isArray(state.allSeries) ? state.allSeries : [];
   state.launch = payload.launch;
   const incomingTrades = Array.isArray(payload.trades) ? payload.trades : [];
-  if (!lite || incomingTrades.length || !previousTrades.length) {
+  const shouldReplaceTrades = Boolean(forceFresh && incomingTrades.length) || !lite || incomingTrades.length || !previousTrades.length;
+  if (shouldReplaceTrades) {
     state.trades = mergeTradesWithOptimistic(incomingTrades);
   } else {
     state.trades = mergeTradesWithOptimistic(previousTrades);
@@ -2200,10 +2201,13 @@ async function loadTokenPage(forceFresh = false, lite = false) {
 
   appendLivePoint(payload.launch);
   const incomingChart = Array.isArray(payload.chart) ? payload.chart : [];
-  if (incomingChart.length || !lite || !previousSeries.length) {
+  if (incomingChart.length || !lite || !previousSeries.length || forceFresh) {
     state.allSeries = buildSeries(payload);
   } else {
     state.allSeries = previousSeries;
+  }
+  if (!lite) {
+    state.lastFullRefreshAt = Date.now();
   }
   renderOverview();
   await refreshWalletBalance();
@@ -2488,7 +2492,7 @@ async function onBuy() {
         renderOverview();
       }
       setAlert(ui.alert, "Buy complete on bonding curve");
-      await loadTokenPage(true, true);
+      await loadTokenPage(true, false);
       return;
     }
 
@@ -2530,7 +2534,7 @@ async function onBuy() {
       renderOverview();
     }
     setAlert(ui.alert, "Buy complete on Uniswap");
-    await loadTokenPage(true, true);
+    await loadTokenPage(true, false);
   } catch (err) {
     setAlert(ui.alert, parseUiError(err), true);
   }
@@ -2591,7 +2595,7 @@ async function onSell() {
         renderOverview();
       }
       setAlert(ui.alert, "Sell complete on bonding curve");
-      await loadTokenPage(true, true);
+      await loadTokenPage(true, false);
       return;
     }
 
@@ -2642,7 +2646,7 @@ async function onSell() {
       renderOverview();
     }
     setAlert(ui.alert, "Sell complete on Uniswap");
-    await loadTokenPage(true, true);
+    await loadTokenPage(true, false);
   } catch (err) {
     setAlert(ui.alert, parseUiError(err), true);
   }
@@ -2801,6 +2805,28 @@ async function init() {
         // ignore ETH/USD polling failures
       });
   }, 60_000);
+
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    loadTokenPage(true, true)
+      .then(() => refreshTokenFull(true))
+      .catch(() => {
+        // ignore transient resume refresh failures
+      });
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    loadTokenPage(true, true)
+      .then(() => {
+        const staleFull = Date.now() - Number(state.lastFullRefreshAt || 0) > 5_000;
+        if (staleFull) return refreshTokenFull(true);
+        return null;
+      })
+      .catch(() => {
+        // ignore transient foreground refresh failures
+      });
+  });
 }
 
 init().catch((err) => {

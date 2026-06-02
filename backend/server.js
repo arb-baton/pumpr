@@ -59,6 +59,12 @@ const DEXSCREENER_CHAIN_BY_ID = {
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.set("trust proxy", true);
+app.use("/api", (_req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  next();
+});
 
 if (USE_DISK_UPLOADS && !fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -67,9 +73,9 @@ if (USE_DISK_UPLOADS && !fs.existsSync(UPLOADS_DIR)) {
 const contextCache = new Map();
 
 const LAUNCHES_CACHE_TTL_MS = 4_000;
-const POOL_SNAPSHOT_CACHE_TTL_MS = 10_000;
+const POOL_SNAPSHOT_CACHE_TTL_MS = Math.max(0, Number(process.env.POOL_SNAPSHOT_CACHE_TTL_MS || 2_500));
 const STATS_CACHE_TTL_MS = 20_000;
-const TOKEN_CACHE_TTL_MS = 6_000;
+const TOKEN_CACHE_TTL_MS = Math.max(0, Number(process.env.TOKEN_CACHE_TTL_MS || 2_000));
 const PROFILE_CACHE_TTL_MS = 15_000;
 const PROFILE_SOCIAL_CACHE_TTL_MS = 45_000;
 const PARTICIPANTS_CACHE_TTL_MS = 30_000;
@@ -81,6 +87,10 @@ const MAX_LAUNCH_READ_CONCURRENCY = 3;
 const MAX_BALANCE_READ_CONCURRENCY = 10;
 const MAX_SOCIAL_POOL_CONCURRENCY = 3;
 const LOG_LOOKBACK_BLOCKS = Math.max(120, Number(process.env.LOG_LOOKBACK_BLOCKS || 1200));
+const POOL_TRADE_LOOKBACK_BLOCKS = Math.max(
+  LOG_LOOKBACK_BLOCKS,
+  Number(process.env.POOL_TRADE_LOOKBACK_BLOCKS || 45000)
+);
 const DEX_LOG_LOOKBACK_BLOCKS = Math.max(40, Number(process.env.DEX_LOG_LOOKBACK_BLOCKS || 220));
 const DEX_LOG_DEEP_LOOKBACK_BLOCKS = Math.max(
   DEX_LOG_LOOKBACK_BLOCKS,
@@ -2342,9 +2352,9 @@ function buildPoolFallbackFromLaunch(launch) {
   };
 }
 
-async function readPoolSnapshot(provider, launch) {
+async function readPoolSnapshot(provider, launch, options = {}) {
   const snapshotCacheKey = String(launch.pool || "").toLowerCase();
-  const cachedSnapshot = getCachedValue(poolSnapshotCache, snapshotCacheKey);
+  const cachedSnapshot = options.fresh ? null : getCachedValue(poolSnapshotCache, snapshotCacheKey);
   if (cachedSnapshot) {
     return cachedSnapshot;
   }
@@ -2476,7 +2486,7 @@ async function readPoolSnapshot(provider, launch) {
 async function readRecentTrades(provider, poolAddress, limit = 400) {
   const pool = new ethers.Contract(poolAddress, POOL_ARTIFACT.abi, provider);
   const latestBlock = await provider.getBlockNumber();
-  const fromBlock = Math.max(0, latestBlock - LOG_LOOKBACK_BLOCKS);
+  const fromBlock = Math.max(0, latestBlock - POOL_TRADE_LOOKBACK_BLOCKS);
 
   let buyEvents = [];
   let sellEvents = [];
@@ -3559,7 +3569,7 @@ async function handleTokenRequest(req, res, tokenCandidate) {
         ...launch,
         imageURI: sanitizeLaunchImageUri(launch.imageURI)
       };
-      const poolBase = await readPoolSnapshot(ctx.provider, safeLaunch).catch(() => buildPoolFallbackFromLaunch(safeLaunch));
+      const poolBase = await readPoolSnapshot(ctx.provider, safeLaunch, { fresh: forceFresh }).catch(() => buildPoolFallbackFromLaunch(safeLaunch));
       const emptyFeeSnapshot = {
         creator: ethers.ZeroAddress,
         platformFeeRecipient: ethers.ZeroAddress,
@@ -3606,7 +3616,20 @@ async function handleTokenRequest(req, res, tokenCandidate) {
           : null;
         let liteTrades = [];
         let liteChart = [];
-        if (!isZeroAddress(effectivePairLite)) {
+        if (!poolLite.graduated) {
+          try {
+            const localPayload = await withTimeout(
+              readRecentTrades(ctx.provider, safeLaunch.pool, 60),
+              2600,
+              "lite pool trades"
+            );
+            liteTrades = Array.isArray(localPayload?.trades) ? localPayload.trades : [];
+            liteChart = Array.isArray(localPayload?.chart) ? localPayload.chart : [];
+          } catch {
+            liteTrades = [];
+            liteChart = [];
+          }
+        } else if (!isZeroAddress(effectivePairLite)) {
           try {
             const pairPayload = await withTimeout(
               readPairRecentTrades(ctx.provider, effectivePairLite, safeLaunch.token, poolLite.dexWethAddress, 40),
