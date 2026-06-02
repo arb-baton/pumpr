@@ -302,14 +302,14 @@ function readFactoryMapFromEnv() {
 }
 
 function resolveFactoryAddress(chainId, deployment) {
-  const envMap = readFactoryMapFromEnv();
-  if (envMap.has(chainId)) {
-    return envMap.get(chainId);
-  }
-
   const deploymentChain = parseChainId(deployment?.chainId);
   if (deploymentChain === chainId && ethers.isAddress(deployment?.memeLaunchFactory)) {
     return ethers.getAddress(deployment.memeLaunchFactory);
+  }
+
+  const envMap = readFactoryMapFromEnv();
+  if (envMap.has(chainId)) {
+    return envMap.get(chainId);
   }
 
   throw new Error(`No factory configured for chain ${chainId}`);
@@ -339,7 +339,7 @@ function resolveRequestedChainId(req, deployment) {
 function resolveSupportedChains(deployment) {
   const map = readFactoryMapFromEnv();
   const deploymentChain = parseChainId(deployment?.chainId);
-  if (deploymentChain && ethers.isAddress(deployment?.memeLaunchFactory) && !map.has(deploymentChain)) {
+  if (deploymentChain && ethers.isAddress(deployment?.memeLaunchFactory)) {
     map.set(deploymentChain, ethers.getAddress(deployment.memeLaunchFactory));
   }
 
@@ -3652,7 +3652,7 @@ async function handleTokenRequest(req, res, tokenCandidate) {
 
       // Keep token page indexer-first, but allow on-chain pair trades to improve
       // freshness and avoid missing multiple recent swaps.
-      const useOnchainPoolTrades = String(process.env.USE_ONCHAIN_POOL_TRADES || "0") === "1";
+      const useOnchainPoolTrades = String(process.env.USE_ONCHAIN_POOL_TRADES || "1") === "1";
       const useOnchainPairTrades = true;
       const useOnchainTopHolders = String(process.env.USE_ONCHAIN_TOP_HOLDERS || "0") === "1";
 

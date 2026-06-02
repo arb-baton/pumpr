@@ -13,6 +13,7 @@ import {
   hydrateUserProfiles,
   loadCachedFollowerCount,
   loadUserProfile,
+  makePoolContract,
   makeRouterContract,
   makeTokenContract,
   parseUiError,
@@ -31,6 +32,9 @@ const RANGE_MS = {
   "5m": 5 * 60 * 1000,
   "1h": 60 * 60 * 1000,
   "4h": 4 * 60 * 60 * 1000,
+  "1d": 24 * 60 * 60 * 1000,
+  "5d": 5 * 24 * 60 * 60 * 1000,
+  "1m": 30 * 24 * 60 * 60 * 1000,
   "6h": 6 * 60 * 60 * 1000,
   "24h": 24 * 60 * 60 * 1000
 };
@@ -38,6 +42,9 @@ const RANGE_MS = {
 const CANDLE_BUCKET_SEC = {
   "1h": 60,
   "4h": 5 * 60,
+  "1d": 15 * 60,
+  "5d": 60 * 60,
+  "1m": 4 * 60 * 60,
   "24h": 15 * 60,
   all: 60 * 60
 };
@@ -168,7 +175,7 @@ const state = {
   resizeObserver: null,
   explorerBaseUrl: "",
   mode: "mcap",
-  range: "4h",
+  range: "1d",
   livePoints: [],
   allSeries: [],
   chainId: 1,
@@ -336,6 +343,19 @@ function hasDexMarket(launch) {
   const pair = String(pool.migratedPair || state.dex?.pairAddress || "").toLowerCase();
   const router = String(pool.dexRouter || "").toLowerCase();
   return graduated && pair && pair !== ZERO_ADDRESS && router && router !== ZERO_ADDRESS;
+}
+
+function poolAddressFromLaunch(launch = state.launch) {
+  return normalizeAddress(String(launch?.poolAddress || launch?.pool || ""));
+}
+
+function hasBondingMarket(launch = state.launch) {
+  const pool = launch?.pool || {};
+  return Boolean(poolAddressFromLaunch(launch)) && !Boolean(pool.graduated) && String(pool.priceSource || "bonding").toLowerCase() !== "dex";
+}
+
+function hasTradeMarket(launch = state.launch) {
+  return hasDexMarket(launch) || hasBondingMarket(launch);
 }
 
 function geckoPoolUrl(launch) {
@@ -1190,13 +1210,23 @@ function setTokenHeader(launch) {
 }
 function setSideMetrics(launch) {
   const dexReady = hasDexMarket(launch);
-  if (ui.bondingProgressLabel) ui.bondingProgressLabel.textContent = dexReady ? "Live" : "Pending";
-  if (ui.bondingProgressFill) ui.bondingProgressFill.style.width = `${dexReady ? 100 : 8}%`;
+  const bondingReady = hasBondingMarket(launch);
+  const progressPct = dexReady ? 100 : Math.max(0, Math.min(100, Number(launch?.pool?.bondingProgressPct || 0)));
+  if (ui.bondingProgressLabel) {
+    ui.bondingProgressLabel.textContent = dexReady ? "DEX live" : bondingReady ? `${progressPct.toFixed(1)}%` : "Pending";
+  }
+  if (ui.bondingProgressFill) ui.bondingProgressFill.style.width = `${dexReady ? 100 : Math.max(4, progressPct)}%`;
   if (ui.bondingStatusText) {
-    ui.bondingStatusText.textContent = dexReady ? "Uniswap pair is live and tradable." : "Waiting for Uniswap pair indexing.";
+    const target = Number(launch?.pool?.graduationTargetEth || 0);
+    const reserve = Number(launch?.pool?.ethReserveEth || 0);
+    ui.bondingStatusText.textContent = dexReady
+      ? "Graduated to Uniswap. Trading now routes through the DEX pair."
+      : bondingReady
+        ? `${formatTradeNumber(reserve, 4)} / ${formatTradeNumber(target, 4)} ETH raised before automatic Uniswap graduation.`
+        : "Bonding pool is syncing.";
   }
 
-  const disabled = !dexReady;
+  const disabled = !hasTradeMarket(launch);
   if (ui.buyBtn) ui.buyBtn.disabled = disabled;
   if (ui.sellBtn) ui.sellBtn.disabled = disabled;
   if (ui.buyInput) ui.buyInput.disabled = disabled;
@@ -1335,6 +1365,30 @@ function buildVolumeBars(trades) {
     }));
 }
 
+function buildTradeMarkers(trades) {
+  const bucketSec = CANDLE_BUCKET_SEC[state.range] || CANDLE_BUCKET_SEC.all;
+  const cutoff = state.range === "all" ? 0 : Date.now() - (RANGE_MS[state.range] || RANGE_MS["24h"]);
+  return [...(trades || [])]
+    .filter((trade) => {
+      const tsMs = Number(trade.timestamp || 0) * 1000;
+      return tsMs && tsMs >= cutoff;
+    })
+    .sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0))
+    .slice(-90)
+    .map((trade) => {
+      const tsMs = Number(trade.timestamp || 0) * 1000;
+      const eth = Number(ethers.formatUnits(trade.ethAmountWei || "0", 18));
+      const isBuy = trade.side === "buy";
+      return {
+        time: bucketTimeSec(tsMs, bucketSec),
+        position: isBuy ? "belowBar" : "aboveBar",
+        color: isBuy ? "#5af0a4" : "#ff6b8a",
+        shape: isBuy ? "circle" : "square",
+        text: Number.isFinite(eth) && eth >= 0.1 ? eth.toFixed(eth >= 1 ? 1 : 2) : ""
+      };
+    });
+}
+
 function destroyLocalChart() {
   if (state.resizeObserver) {
     state.resizeObserver.disconnect();
@@ -1378,39 +1432,64 @@ function ensureChart() {
   if (state.chartApi) return;
 
   state.chartApi = window.LightweightCharts.createChart(ui.priceChart, {
+    autoSize: true,
     layout: {
-      background: { color: "#131722" },
-      textColor: "#97a4c2"
+      background: { color: "#101114" },
+      textColor: "#9ca3af",
+      fontFamily: "Sora, Inter, system-ui, sans-serif",
+      fontSize: 11
     },
     grid: {
-      vertLines: { color: "rgba(63,71,94,0.45)" },
-      horzLines: { color: "rgba(63,71,94,0.45)" }
+      vertLines: { color: "rgba(255,255,255,0.045)" },
+      horzLines: { color: "rgba(255,255,255,0.055)" }
     },
     crosshair: {
-      mode: window.LightweightCharts.CrosshairMode.Normal
+      mode: window.LightweightCharts.CrosshairMode.Normal,
+      vertLine: { color: "rgba(126, 240, 176, 0.35)", width: 1, style: 3 },
+      horzLine: { color: "rgba(126, 240, 176, 0.35)", width: 1, style: 3 }
     },
     rightPriceScale: {
-      borderColor: "rgba(80, 90, 115, 0.8)"
+      borderColor: "rgba(255,255,255,0.08)",
+      scaleMargins: { top: 0.08, bottom: 0.22 }
     },
     timeScale: {
-      borderColor: "rgba(80, 90, 115, 0.8)",
+      borderColor: "rgba(255,255,255,0.08)",
       timeVisible: true,
-      secondsVisible: false
+      secondsVisible: false,
+      rightOffset: 6,
+      barSpacing: 10,
+      minBarSpacing: 3
+    },
+    handleScroll: {
+      mouseWheel: true,
+      pressedMouseMove: true,
+      horzTouchDrag: true,
+      vertTouchDrag: false
+    },
+    handleScale: {
+      axisPressedMouseMove: true,
+      mouseWheel: true,
+      pinch: true
     }
   });
 
   state.candleSeries = state.chartApi.addCandlestickSeries({
-    upColor: "#1cd6a3",
-    downColor: "#ff5f78",
-    borderVisible: false,
-    wickUpColor: "#1cd6a3",
-    wickDownColor: "#ff5f78"
+    upColor: "#57e389",
+    downColor: "#ff6b6b",
+    borderUpColor: "#57e389",
+    borderDownColor: "#ff6b6b",
+    wickUpColor: "#57e389",
+    wickDownColor: "#ff6b6b",
+    priceLineColor: "#57e389",
+    priceLineWidth: 1,
+    lastValueVisible: true,
+    priceLineVisible: true
   });
 
   state.volumeSeries = state.chartApi.addHistogramSeries({
     priceFormat: { type: "volume" },
     priceScaleId: "",
-    scaleMargins: { top: 0.8, bottom: 0 },
+    scaleMargins: { top: 0.78, bottom: 0 },
     base: 0
   });
 
@@ -1446,6 +1525,7 @@ function renderChart() {
 
   const candles = buildCandles(state.allSeries);
   const volumes = buildVolumeBars(state.trades);
+  const markers = buildTradeMarkers(state.trades);
 
   state.chartApi.applyOptions({
     localization: {
@@ -1454,20 +1534,21 @@ function renderChart() {
   });
 
   state.candleSeries.setData(candles);
+  state.candleSeries.setMarkers(markers);
   state.volumeSeries.setData(volumes);
-  state.chartApi.timeScale().fitContent();
+  if (candles.length > 1) {
+    state.chartApi.timeScale().fitContent();
+  }
 
   const latest = candles[candles.length - 1];
   const latestVol = volumes[volumes.length - 1];
-  ui.chartPairLabel.textContent = `${state.launch?.symbol || "TOKEN"}/ETH ${state.mode === "price" ? "Price (ETH)" : "Market Cap (USD)"} - ${state.range}`;
+  const rangeLabel = String(state.range || "").toUpperCase();
+  ui.chartPairLabel.textContent = `${state.launch?.symbol || "TOKEN"}/ETH ${state.mode === "price" ? "Price (ETH)" : "Market Cap (USD)"} - ${rangeLabel}`;
   ui.chartOpen.textContent = latest ? priceFormat(latest.open) : "-";
   ui.chartHigh.textContent = latest ? priceFormat(latest.high) : "-";
   ui.chartLow.textContent = latest ? priceFormat(latest.low) : "-";
   ui.chartClose.textContent = latest ? priceFormat(latest.close) : "-";
   ui.chartVolume.textContent = latestVol ? volumeFormat(latestVol.value) : "-";
-  if (geckoPoolUrl(state.launch)) {
-    ui.chartPairLabel.textContent = `${state.launch?.symbol || "TOKEN"}/ETH - GeckoTerminal`;
-  }
 }
 
 function computeDelta(series, field, periodMs) {
@@ -2195,6 +2276,15 @@ async function syncBuyTokenFromEth() {
   try {
     const ethIn = parseUnitsSafe(raw, 18);
     if (ethIn <= 0n) throw new Error("invalid eth");
+    if (hasBondingMarket(state.launch)) {
+      const pool = makePoolContract(poolAddressFromLaunch());
+      const quoted = await pool.quoteBuy(ethIn);
+      if (ui.buyTokenInput) {
+        ui.buyTokenInput.value = formatAmountForInput(quoted?.[0] || 0n, 18, 4);
+      }
+      renderTradePanel();
+      return;
+    }
     const { router, path } = await resolveDexPathBuy();
     const quoted = await router.getAmountsOut(ethIn, path);
     if (ui.buyTokenInput) {
@@ -2232,6 +2322,17 @@ async function syncBuyEthFromToken() {
   try {
     const tokenOut = parseUnitsSafe(raw, 18);
     if (tokenOut <= 0n) throw new Error("invalid token");
+    if (hasBondingMarket(state.launch)) {
+      const price = spotPriceWei();
+      if (price <= 0n) throw new Error("price unavailable");
+      const grossEth = (tokenOut * price) / 10n ** 18n;
+      const feeBps = BigInt(Number(state.launch?.pool?.feeBps || 0));
+      const feeDenom = 10000n;
+      const ethIn = feeBps > 0n ? (grossEth * feeDenom + (feeDenom - feeBps - 1n)) / (feeDenom - feeBps) : grossEth;
+      ui.buyInput.value = formatAmountForInput(ethIn, 18, 6);
+      renderTradePanel();
+      return;
+    }
     const { router, path } = await resolveDexPathBuy();
     const quotedIn = await router.getAmountsIn(tokenOut, path);
     ui.buyInput.value = formatAmountForInput(quotedIn?.[0] || 0n, 18, 6);
@@ -2267,6 +2368,15 @@ async function syncSellEthFromToken() {
   try {
     const tokenIn = parseUnitsSafe(raw, 18);
     if (tokenIn <= 0n) throw new Error("invalid token");
+    if (hasBondingMarket(state.launch)) {
+      const pool = makePoolContract(poolAddressFromLaunch());
+      const quoted = await pool.quoteSell(tokenIn);
+      if (ui.sellEthInput) {
+        ui.sellEthInput.value = formatAmountForInput(quoted?.[0] || 0n, 18, 6);
+      }
+      renderTradePanel();
+      return;
+    }
     const { router, path } = await resolveDexPathSell();
     const quotedOut = await router.getAmountsOut(tokenIn, path);
     if (ui.sellEthInput) {
@@ -2304,6 +2414,14 @@ async function syncSellTokenFromEth() {
   try {
     const ethOut = parseUnitsSafe(raw, 18);
     if (ethOut <= 0n) throw new Error("invalid eth");
+    if (hasBondingMarket(state.launch)) {
+      const price = spotPriceWei();
+      if (price <= 0n) throw new Error("price unavailable");
+      const tokenIn = (ethOut * 10n ** 18n) / price;
+      ui.sellInput.value = formatAmountForInput(tokenIn, 18, 4);
+      renderTradePanel();
+      return;
+    }
     const { router, path } = await resolveDexPathSell();
     const quotedIn = await router.getAmountsIn(ethOut, path);
     ui.sellInput.value = formatAmountForInput(quotedIn?.[0] || 0n, 18, 4);
@@ -2331,7 +2449,7 @@ async function syncSellTokenFromEth() {
 async function onBuy() {
   try {
     if (!walletState().signer) throw new Error("Connect wallet first");
-    if (!hasDexMarket(state.launch)) throw new Error("Uniswap pair not ready yet");
+    if (!hasTradeMarket(state.launch)) throw new Error("Trading is not ready yet");
     if (!String(ui.buyInput.value || "").trim() && String(ui.buyTokenInput?.value || "").trim()) {
       await syncBuyEthFromToken();
     }
@@ -2342,6 +2460,38 @@ async function onBuy() {
     if (ethIn <= 0n) throw new Error("Amount must be > 0");
 
     const ws = walletState();
+    if (hasBondingMarket(state.launch)) {
+      const pool = makePoolContract(poolAddressFromLaunch());
+      const quoted = await pool.quoteBuy(ethIn);
+      const quotedTokens = BigInt(quoted?.[0] || 0n);
+      const minTokensOut = quotedTokens > 0n ? (quotedTokens * 97n) / 100n : 0n;
+
+      setAlert(ui.alert, "Buying on bonding curve...");
+      const tx = await sendTxWithFallback({
+        label: "Bonding Buy",
+        populatedTx: pool.buy.populateTransaction(minTokensOut, { value: ethIn }),
+        walletNativeSend: () => pool.buy(minTokensOut, { value: ethIn })
+      });
+      const receipt = await tx.wait();
+      const optimistic = buildSyntheticOptimisticTrade({
+        side: "buy",
+        account: ws.address,
+        txHash: String(receipt?.hash || tx?.hash || ""),
+        ethAmountWei: ethIn,
+        tokenAmountWei: quotedTokens,
+        timestamp: Math.floor(Date.now() / 1000)
+      });
+      if (optimistic?.txHash) {
+        pushOptimisticTrade(optimistic);
+        state.trades = mergeTradesWithOptimistic(state.trades);
+        renderTrades(state.trades);
+        renderOverview();
+      }
+      setAlert(ui.alert, "Buy complete on bonding curve");
+      await loadTokenPage(true, true);
+      return;
+    }
+
     const { router, path } = await resolveDexPathBuy();
     const quoted = await router.getAmountsOut(ethIn, path);
     const amountOutMin = quoted?.[1] ? (quoted[1] * 97n) / 100n : 0n;
@@ -2390,7 +2540,7 @@ async function onSell() {
   try {
     const ws = walletState();
     if (!ws.signer || !ws.address) throw new Error("Connect wallet first");
-    if (!hasDexMarket(state.launch)) throw new Error("Uniswap pair not ready yet");
+    if (!hasTradeMarket(state.launch)) throw new Error("Trading is not ready yet");
 
     if (!String(ui.sellInput.value || "").trim() && String(ui.sellEthInput?.value || "").trim()) {
       await syncSellTokenFromEth();
@@ -2402,6 +2552,49 @@ async function onSell() {
     if (tokenIn <= 0n) throw new Error("Amount must be > 0");
 
     const token = makeTokenContract(state.launch.token);
+    if (hasBondingMarket(state.launch)) {
+      const poolAddress = poolAddressFromLaunch();
+      const pool = makePoolContract(poolAddress);
+      const quoted = await pool.quoteSell(tokenIn);
+      const quotedEth = BigInt(quoted?.[0] || 0n);
+      const minEthOut = quotedEth > 0n ? (quotedEth * 96n) / 100n : 0n;
+      const allowance = await token.allowance(ws.address, poolAddress);
+      if (allowance < tokenIn) {
+        setAlert(ui.alert, "Approving bonding pool...");
+        const approval = await sendTxWithFallback({
+          label: "Approve Pool",
+          populatedTx: token.approve.populateTransaction(poolAddress, ethers.MaxUint256),
+          walletNativeSend: () => token.approve(poolAddress, ethers.MaxUint256)
+        });
+        await approval.wait();
+      }
+
+      setAlert(ui.alert, "Selling on bonding curve...");
+      const tx = await sendTxWithFallback({
+        label: "Bonding Sell",
+        populatedTx: pool.sell.populateTransaction(tokenIn, minEthOut),
+        walletNativeSend: () => pool.sell(tokenIn, minEthOut)
+      });
+      const receipt = await tx.wait();
+      const optimistic = buildSyntheticOptimisticTrade({
+        side: "sell",
+        account: ws.address,
+        txHash: String(receipt?.hash || tx?.hash || ""),
+        ethAmountWei: quotedEth,
+        tokenAmountWei: tokenIn,
+        timestamp: Math.floor(Date.now() / 1000)
+      });
+      if (optimistic?.txHash) {
+        pushOptimisticTrade(optimistic);
+        state.trades = mergeTradesWithOptimistic(state.trades);
+        renderTrades(state.trades);
+        renderOverview();
+      }
+      setAlert(ui.alert, "Sell complete on bonding curve");
+      await loadTokenPage(true, true);
+      return;
+    }
+
     const { router, path } = await resolveDexPathSell();
     const allowance = await token.allowance(ws.address, state.launch.pool.dexRouter);
     if (allowance < tokenIn) {

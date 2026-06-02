@@ -2849,7 +2849,10 @@ button:disabled {
 
 .tokenpf-chart-card {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.55rem;
+  background: #151719;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
 }
 
 .tokenpf-mcap-head {
@@ -2867,7 +2870,8 @@ button:disabled {
 
 .tokenpf-mcap-head h2 {
   margin: 0.18rem 0 0;
-  font-size: clamp(1.55rem, 2.7vw, 2.2rem);
+  font-size: clamp(1.75rem, 2.9vw, 2.45rem);
+  letter-spacing: 0;
 }
 
 .tokenpf-ath-wrap {
@@ -2911,12 +2915,35 @@ button:disabled {
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+  padding-top: 0.2rem;
 }
 
 .toolbar-group {
   display: flex;
-  gap: 0.38rem;
+  gap: 0.1rem;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.toolbar-group .tag {
+  border: 0;
+  background: transparent;
+  color: #f4f5f7;
+  border-radius: 0;
+  padding: 0.42rem 0.58rem;
+  min-height: 31px;
+  font-size: 0.76rem;
+}
+
+.toolbar-group .tag:hover {
+  color: #7df0ad;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.toolbar-group .tag.active {
+  color: #7df0ad;
+  background: transparent;
+  box-shadow: inset 0 -2px 0 #5af0a4;
 }
 
 .tokenpf-ohlc {
@@ -2926,9 +2953,10 @@ button:disabled {
   flex-wrap: wrap;
   color: #aeb6d1;
   font-size: 0.75rem;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  padding: 0.44rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0.5rem 0 0.46rem;
+  min-height: 34px;
 }
 
 .tokenpf-ohlc b {
@@ -2943,27 +2971,31 @@ button:disabled {
 
 .tokenpf-chart-shell {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  gap: 0.5rem;
-  min-height: 510px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 0;
+  min-height: 560px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .tokenpf-tools {
-  border-right: 1px solid var(--line);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
   display: grid;
   align-content: start;
-  gap: 0.35rem;
-  padding-top: 0.3rem;
+  justify-items: center;
+  gap: 0.25rem;
+  padding-top: 0.55rem;
+  background: #111315;
 }
 
 .tokenpf-tools button {
   border: 1px solid transparent;
   background: transparent;
-  color: #b3bfd9;
-  width: 28px;
-  height: 28px;
+  color: #aeb4bc;
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .tokenpf-tools button:hover {
@@ -2972,16 +3004,30 @@ button:disabled {
 }
 
 .tokenpf-chart-wrap {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #131722;
-  min-height: 510px;
+  position: relative;
+  border: 0;
+  border-radius: 0;
+  background: #101114;
+  min-height: 560px;
   overflow: hidden;
 }
 
 .tokenpf-chart-canvas {
   width: 100%;
   height: 100%;
+  min-height: 560px;
+}
+
+.tokenpf-chart-watermark {
+  position: absolute;
+  left: 1rem;
+  bottom: 0.85rem;
+  z-index: 1;
+  pointer-events: none;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .tokenpf-stat-strip {

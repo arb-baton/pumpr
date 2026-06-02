@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260504k" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260602a" />
   </head>
   <body>
     <div class="app-shell">
@@ -248,12 +248,14 @@
 
               <div class="tokenpf-chart-topline">
                 <div class="toolbar-group">
-                  <button class="tag active" type="button" data-range="4h">4h</button>
-                  <button class="tag" type="button" data-range="1h">1h</button>
-                  <button class="tag" type="button" data-range="24h">24h</button>
+                  <button class="tag active" type="button" data-range="1d">1D</button>
+                  <button class="tag" type="button" data-range="5d">5D</button>
+                  <button class="tag" type="button" data-range="1m">1M</button>
                   <button class="tag" type="button" data-range="all">All</button>
                 </div>
                 <div class="toolbar-group">
+                  <button class="tag" type="button" data-range="4h">4h</button>
+                  <button class="tag" type="button" data-range="1h">1h</button>
                   <button class="tag active" type="button" data-mode="mcap">Price/MCap</button>
                   <button class="tag" type="button" data-mode="price">Price</button>
                 </div>
@@ -270,15 +272,15 @@
 
               <div class="tokenpf-chart-shell">
                 <aside class="tokenpf-tools">
-                  <button type="button">&#9474;</button>
-                  <button type="button">/</button>
-                  <button type="button">~</button>
-                  <button type="button">T</button>
-                  <button type="button">+</button>
-                  <button type="button">o</button>
+                  <button type="button" title="Candles">|</button>
+                  <button type="button" title="Trend line">/</button>
+                  <button type="button" title="Measure">+</button>
+                  <button type="button" title="Text">T</button>
+                  <button type="button" title="Reset">R</button>
                 </aside>
                 <div class="tokenpf-chart-wrap">
                   <div id="priceChart" class="tokenpf-chart-canvas"></div>
+                  <div class="tokenpf-chart-watermark">ETH / USD</div>
                 </div>
               </div>
             </article>
@@ -415,7 +417,7 @@
                 <b id="bondingProgressLabel">-</b>
               </div>
               <div class="bonding-line"><div id="bondingProgressFill" style="width: 0%"></div></div>
-              <p id="bondingStatusText" class="muted">Waiting for Uniswap pair.</p>
+              <p id="bondingStatusText" class="muted">Bonding pool is syncing.</p>
             </article>
 
             <article class="panel-card tokenpf-side-card">
@@ -490,7 +492,7 @@
 
     <script src="/js/sidebar.js?v=20260425n"></script>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-    <script type="module" src="/js/token.js?v=20260509d"></script>
+    <script type="module" src="/js/token.js?v=20260602a"></script>
   </body>
 </html>
 
