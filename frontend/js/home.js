@@ -630,7 +630,7 @@ function buildExploreCard(launch) {
           <img class="coin-image" src="${image}" alt="${launch.symbol} logo" onerror="this.onerror=null;this.src='${escapeHtml(fallback)}';" />
           <span class="coin-image-spark" data-explore-spark="${sparkKey}" aria-hidden="true"></span>
         </a>
-        <span class="coin-badge">Uniswap</span>
+        <span class="coin-badge">PumpSwap</span>
         <button class="watch-btn ${watched ? "active" : ""}" type="button" data-watch-token="${launch.token}" aria-label="Toggle watchlist">
           &#9733;
         </button>

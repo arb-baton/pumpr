@@ -595,7 +595,7 @@ function renderCoinsTab(created = []) {
             <article class="coin-card">
               <a href="/token?token=${item.token}" class="coin-image-wrap">
                 <img class="coin-image" src="${image}" alt="${item.symbol}" />
-                <span class="coin-badge">Uniswap</span>
+                <span class="coin-badge">PumpSwap</span>
               </a>
               <div class="coin-body">
                 <div class="coin-head">
