@@ -81,7 +81,7 @@
       </aside>
 
       <main class="main-pane">
-        <div class="promo-strip">beta testing</div>
+        <div class="promo-strip">Launch instantly to Uniswap on Ethereum.</div>
 
         <header class="topbar create-topbar">
           <div class="create-searchbar">
@@ -298,7 +298,7 @@
                     <input id="supply" type="number" min="1" step="1" value="1000000000" required />
                   </label>
                   <label>
-                    Creator wallet buy amount (disabled in beta)
+                    Creator wallet buy amount (ETH)
                     <input id="creatorBuyEth" type="number" min="0" step="any" value="0" required />
                   </label>
                 </div>
@@ -306,10 +306,10 @@
                   <p class="create-creator-title">You (creator wallet) will receive</p>
                   <p class="create-creator-main" id="creatorAllocationPreview">0.00% of total supply</p>
                   <p class="create-creator-sub" id="creatorAllocationTokens">0 TOKEN</p>
-                  <p class="create-creator-sub" id="creatorAllocationHint">Creator allocation is disabled during beta safe launch.</p>
+                  <p class="create-creator-sub" id="creatorAllocationHint">Max allowed is 20% based on your liquidity setting.</p>
                 </div>
                 <label>
-                  Optional future liquidity target (ETH)
+                  Initial Uniswap liquidity (ETH)
                   <input id="devBuyEth" type="number" step="any" min="0.001" placeholder="0.001" value="0.001" />
                 </label>
                 <label>
@@ -318,7 +318,7 @@
                 </label>
                 <div class="create-launch-math" id="launchMathCard">
                   <p id="launchMathPrimary">Estimated launch market cap: $0</p>
-                  <p id="launchMathSecondary">Initial liquidity is added after creation during beta.</p>
+                  <p id="launchMathSecondary">Minimum launch liquidity: 0.001 ETH</p>
                   <p id="launchMathTertiary">Estimated market cap at minimum liquidity: -</p>
                   <p id="launchMathQuaternary">At your settings, 1 ETH liquidity ≈ - market cap</p>
                 </div>
@@ -375,8 +375,8 @@
 
     <div id="createdModal" class="modal-overlay" aria-hidden="true">
       <div class="modal-card">
-        <h3>Token Created</h3>
-        <p>Your coin is live on EtherPump. Buyers can trade from the token page.</p>
+        <h3>Token Launched</h3>
+        <p>Your coin is now live on Uniswap and ready to trade.</p>
         <div class="modal-grid">
           <span id="createdTokenName">-</span>
           <code id="createdTokenAddress">-</code>
@@ -426,7 +426,7 @@
     </div>
 
     <script src="/js/sidebar.js?v=20260425n"></script>
-    <script type="module" src="/js/create.js?v=20260602a"></script>
+    <script type="module" src="/js/create.js?v=20260505a"></script>
   </body>
 </html>
 

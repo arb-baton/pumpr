@@ -165,22 +165,8 @@ describe("MemeLaunchFactory", function () {
     expect(after - before).to.equal(launchFeeWei);
   });
 
-  it("disables instant launches by default", async function () {
-    const { creator, factory } = await deployFixture({ withDex: true, targetEth: "1" });
-
-    await expect(
-      factory
-        .connect(creator)
-        .createLaunchInstant("Safe Token", "SAFE", "", "locked", ethers.parseUnits("1000000", 18), 0, {
-          value: ethers.parseEther("0.1")
-        })
-    ).to.be.revertedWith("instant launch disabled");
-  });
-
   it("applies 0.5% trade tax on dex transfers and supports creator/platform claims", async function () {
     const { creator, trader, platformRecipient, factory } = await deployFixture({ withDex: true, targetEth: "1" });
-
-    await factory.setInstantLaunchEnabled(true);
 
     await factory
       .connect(creator)
@@ -227,8 +213,6 @@ describe("MemeLaunchFactory", function () {
   it("burns LP and renounces factory control for non-platform instant launches", async function () {
     const { creator, factory } = await deployFixture({ withDex: true, targetEth: "1" });
 
-    await factory.setInstantLaunchEnabled(true);
-
     await factory
       .connect(creator)
       .createLaunchInstant("Safe Token", "SAFE", "", "locked", ethers.parseUnits("1000000", 18), 1000, {
@@ -245,8 +229,6 @@ describe("MemeLaunchFactory", function () {
 
   it("keeps configured LP recipient for platform wallet launches", async function () {
     const { lpRecipient, platformRecipient, factory } = await deployFixture({ withDex: true, targetEth: "1" });
-
-    await factory.setInstantLaunchEnabled(true);
 
     await factory
       .connect(platformRecipient)

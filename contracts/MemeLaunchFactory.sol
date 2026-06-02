@@ -35,7 +35,6 @@ contract MemeLaunchFactory {
     uint256 public defaultGraduationTargetEth;
     address public defaultDexRouter;
     address public defaultLpRecipient;
-    bool public instantLaunchEnabled;
 
     LaunchInfo[] private launches;
     mapping(address token => address pool) public poolByToken;
@@ -67,7 +66,6 @@ contract MemeLaunchFactory {
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event InstantLaunchRequested(address indexed creator, uint256 ethLiquidity);
-    event InstantLaunchEnabledUpdated(bool enabled);
     event LaunchFeePaid(address indexed payer, address indexed recipient, uint256 amountWei);
 
     modifier onlyOwner() {
@@ -107,7 +105,6 @@ contract MemeLaunchFactory {
         defaultGraduationTargetEth = _defaultGraduationTargetEth;
         defaultDexRouter = _defaultDexRouter;
         defaultLpRecipient = _defaultLpRecipient;
-        instantLaunchEnabled = false;
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
@@ -193,7 +190,6 @@ contract MemeLaunchFactory {
         uint256 totalSupply,
         uint256 creatorAllocationBps
     ) external payable returns (uint256 launchId, address tokenAddress, address poolAddress) {
-        require(instantLaunchEnabled, "instant launch disabled");
         require(defaultDexRouter != address(0), "dex router not set");
         require(defaultLpRecipient != address(0), "lp recipient not set");
         require(msg.value > launchFeeWei, "insufficient eth for fee+liquidity");
@@ -213,11 +209,6 @@ contract MemeLaunchFactory {
             initialLiquidity,
             true
         );
-    }
-
-    function setInstantLaunchEnabled(bool enabled) external onlyOwner {
-        instantLaunchEnabled = enabled;
-        emit InstantLaunchEnabledUpdated(enabled);
     }
 
     function _createLaunch(

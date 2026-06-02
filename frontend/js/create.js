@@ -418,9 +418,11 @@ function parseNumberInput(value, fallback = 0) {
 }
 
 function deriveCreatorAllocationPct(liquidityEth, creatorBuyEth) {
-  void liquidityEth;
-  void creatorBuyEth;
-  return 0;
+  const safeLiquidityEth = Math.max(0, liquidityEth);
+  const safeCreatorBuyEth = Math.max(0, creatorBuyEth);
+  const totalEth = safeLiquidityEth + safeCreatorBuyEth;
+  if (totalEth <= 0) return 0;
+  return (safeCreatorBuyEth / totalEth) * 100;
 }
 
 function getLaunchEconomics(
@@ -478,31 +480,36 @@ function updateLaunchMath({ source = "liquidity" } = {}) {
     ui.launchMcapUsd.value = nextTarget.toFixed(2);
   }
 
-  ui.launchMathCard.classList.toggle("invalid", false);
+  const creatorWithinCap = economics.creatorPct <= 20;
+  const meetsMin = economics.marketCapUsd >= economics.minTargetMcapUsd;
+  ui.launchMathCard.classList.toggle("invalid", !meetsMin || !creatorWithinCap);
 
   if (ui.launchMathPrimary) {
-    ui.launchMathPrimary.textContent = `Future liquidity estimate: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ETH)`;
+    ui.launchMathPrimary.textContent = `Estimated launch market cap: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ETH)`;
   }
   if (ui.launchMathSecondary) {
-    ui.launchMathSecondary.textContent = "Initial liquidity is added after creation during beta.";
+    ui.launchMathSecondary.textContent = `Minimum launch liquidity: ${economics.minLiquidityEth.toFixed(4)} ETH`;
   }
   if (ui.launchMathTertiary) {
-    ui.launchMathTertiary.textContent = "The create transaction only sends the launch fee.";
+    ui.launchMathTertiary.textContent = `Estimated market cap at minimum liquidity: ${formatUsd(economics.minTargetMcapUsd)}`;
   }
   if (ui.launchMathQuaternary) {
     ui.launchMathQuaternary.textContent = `At your settings, 1 ETH liquidity ~ ${formatUsd(economics.oneEthMcapUsd)} market cap`;
   }
   if (ui.creatorAllocationPreview) {
     const symbol = String(ui.symbol?.value || "TOKEN").trim().toUpperCase() || "TOKEN";
-    const creatorTokens = 0;
-    ui.creatorAllocationPreview.textContent = "0.00% of total supply";
+    const creatorTokens = economics.totalSupply * (economics.creatorPct / 100);
+    const maxCreatorBuyEth = economics.liquidityEth * 0.25;
+    ui.creatorAllocationPreview.textContent = `${economics.creatorPct.toFixed(2)}% of total supply`;
     if (ui.creatorAllocationTokens) {
       ui.creatorAllocationTokens.textContent = `${formatTokenAmount(creatorTokens)} ${symbol}`;
     }
     if (ui.creatorAllocationHint) {
-      ui.creatorAllocationHint.textContent = "Creator allocation is disabled during beta safe launch.";
+      ui.creatorAllocationHint.textContent = creatorWithinCap
+        ? `At current liquidity, up to ${maxCreatorBuyEth.toFixed(4)} ETH keeps creator at/below 20%.`
+        : `Too high: lower creator buy to ${maxCreatorBuyEth.toFixed(4)} ETH or less (20% max).`;
     }
-    ui.creatorAllocationPreviewWrap?.classList.toggle("invalid", false);
+    ui.creatorAllocationPreviewWrap?.classList.toggle("invalid", !creatorWithinCap);
   }
 }
 
@@ -707,6 +714,7 @@ async function onCreate(event) {
     const creatorBuyEth = parseNumberInput(ui.creatorBuyEth?.value, 0);
     let imageUri = ui.image.value.trim();
     const description = composeDescription();
+    const initialLiquidityEthInput = ui.devBuyEth.value.trim();
 
     if (!name || !symbol) throw new Error("Coin name and ticker are required");
     if (!Number.isFinite(creatorBuyEth) || creatorBuyEth < 0) {
@@ -735,14 +743,27 @@ async function onCreate(event) {
     const totalSupply = ethers.parseUnits(totalSupplyInput, 18);
     const factory = makeFactoryContract(state.config.factoryAddress);
 
-    if (creatorBuyEth > 0) {
-      setAlert(ui.alert, "Creator buy is disabled during beta safe launch. Create first, then buy from the token page.");
+    const initialLiquidityEth = ethers.parseEther(initialLiquidityEthInput || "0");
+    if (initialLiquidityEth <= 0n) {
+      throw new Error("Initial ETH liquidity is required for instant Uniswap launch");
     }
-    const creatorBps = 0n;
+    const minLiquidityEthRequired = requiredMinLiquidityEth(ws.address);
+    const minLiquidityWei = ethers.parseEther(String(minLiquidityEthRequired));
+    if (initialLiquidityEth < minLiquidityWei) {
+      throw new Error(`Minimum launch liquidity is ${minLiquidityEthRequired} ETH`);
+    }
+    const creatorPct = deriveCreatorAllocationPct(parseNumberInput(initialLiquidityEthInput, 0), creatorBuyEth);
+    if (creatorPct > 20) {
+      const maxCreatorBuyEth = parseNumberInput(initialLiquidityEthInput, 0) * 0.25;
+      throw new Error(
+        `Creator buy amount is too high for launch liquidity. Max ${maxCreatorBuyEth.toFixed(4)} ETH keeps allocation at or below 20%.`
+      );
+    }
+    const creatorBps = BigInt(Math.round(creatorPct * 100));
     const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
-    const totalValue = launchFeeWei;
+    const totalValue = initialLiquidityEth + launchFeeWei;
 
-    const simulated = await factory.createLaunch.staticCall(
+    const simulated = await factory.createLaunchInstant.staticCall(
       name,
       symbol,
       imageUri,
@@ -754,13 +775,13 @@ async function onCreate(event) {
 
     if (launchFeeWei > 0n) {
       const launchFeeEth = Number(ethers.formatEther(launchFeeWei)).toFixed(6);
-      setAlert(ui.alert, `Creating launch (launch fee ${launchFeeEth} ETH)...`);
+      setAlert(ui.alert, `Launching to Uniswap (launch fee ${launchFeeEth} ETH)...`);
     } else {
-      setAlert(ui.alert, "Creating launch...");
+      setAlert(ui.alert, "Launching directly to Uniswap...");
     }
     const tx = await sendTxWithFallback({
-      label: "Create Launch",
-      populatedTx: factory.createLaunch.populateTransaction(
+      label: "Create Instant Launch",
+      populatedTx: factory.createLaunchInstant.populateTransaction(
         name,
         symbol,
         imageUri,
@@ -770,7 +791,7 @@ async function onCreate(event) {
         { value: totalValue }
       ),
       walletNativeSend: () =>
-        factory.createLaunch(name, symbol, imageUri, description, totalSupply, creatorBps, {
+        factory.createLaunchInstant(name, symbol, imageUri, description, totalSupply, creatorBps, {
           value: totalValue
         })
     });
@@ -792,7 +813,7 @@ async function onCreate(event) {
     ui.createForm.reset();
     updatePreview();
     updateLaunchMath({ source: "liquidity" });
-    setAlert(ui.alert, "Launch created successfully. Buyers can trade from the token page.");
+    setAlert(ui.alert, "Launch created on Uniswap successfully");
   } catch (err) {
     setAlert(ui.alert, parseUiError(err), true);
   }
