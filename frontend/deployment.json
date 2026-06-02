@@ -1,7 +1,7 @@
 {
   "chainId": 1,
-  "deployedAt": "2026-04-24T22:05:28.018Z",
-  "memeLaunchFactory": "0x509ef7FFc39c63c3e4F6d1b04C28f2AE44256a0a",
+  "deployedAt": "2026-06-02T21:05:04.145Z",
+  "memeLaunchFactory": "0xBf9ADC68abC43f00310fE81DE54F3AF6a3075477",
   "feeRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3",
   "platformFeeRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3",
   "feeBps": 50,

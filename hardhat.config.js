@@ -4,6 +4,7 @@ require("dotenv").config();
 const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL || "";
 const MAINNET_RPC_URL = process.env.MAINNET_RPC_URL || process.env.RPC_URL || "";
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
+const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "";
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
@@ -29,5 +30,13 @@ module.exports = {
       url: MAINNET_RPC_URL,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : []
     }
+  },
+  etherscan: {
+    apiKey: {
+      mainnet: ETHERSCAN_API_KEY
+    }
+  },
+  sourcify: {
+    enabled: true
   }
 };
