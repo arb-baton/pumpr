@@ -68,6 +68,7 @@ const ui = {
   launchChainLabel: document.getElementById("launchChainLabel"),
   launchChainHint: document.getElementById("launchChainHint"),
   createForm: document.getElementById("createForm"),
+  launchSubmitBtn: document.getElementById("launchSubmitBtn"),
   name: document.getElementById("name"),
   symbol: document.getElementById("symbol"),
   description: document.getElementById("description"),
@@ -99,6 +100,7 @@ const ui = {
   previewSymbol: document.getElementById("previewSymbol"),
   previewDescription: document.getElementById("previewDescription"),
   resultLink: document.getElementById("resultLink"),
+  launchResultList: document.getElementById("launchResultList"),
   createdModal: document.getElementById("createdModal"),
   createdTokenName: document.getElementById("createdTokenName"),
   createdTokenAddress: document.getElementById("createdTokenAddress"),
@@ -121,12 +123,22 @@ const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 const state = {
   config: null,
   selectedChainId: 1,
+  selectedLaunchMode: "1",
   supportedChains: [],
-  ethUsd: 3000
+  ethUsd: 3000,
+  lastPumpVerseDetails: null,
+  lastPumpVerseResults: []
 };
 const LAUNCH_CHAIN_CHOICES = [
   { chainId: 1, name: "Ethereum", shortName: "ETH", networkLabel: "Mainnet" },
-  { chainId: 8453, name: "Base", shortName: "BASE", networkLabel: "Mainnet" }
+  { chainId: 8453, name: "Base", shortName: "BASE", networkLabel: "Mainnet" },
+  {
+    mode: "pumpverse",
+    name: "PumpVerse",
+    shortName: "ETH + BASE",
+    networkLabel: "Multiverse launch",
+    requiredChains: [1, 8453]
+  }
 ];
 
 let pendingProfileImageUri = "";
@@ -184,6 +196,10 @@ function selectedChain() {
   return state.supportedChains.find((row) => Number(row.chainId) === Number(state.selectedChainId)) || state.supportedChains[0] || null;
 }
 
+function isPumpVerseMode() {
+  return state.selectedLaunchMode === "pumpverse";
+}
+
 function configuredChainMap() {
   const map = new Map();
   for (const row of state.supportedChains) {
@@ -199,7 +215,9 @@ function renderChainSelector() {
   const supported = configuredChainMap();
   const baseConfigured = supported.has(8453);
   if (ui.launchChainLabel) {
-    ui.launchChainLabel.textContent = current?.name || state.config?.chainName || "Ethereum";
+    ui.launchChainLabel.textContent = isPumpVerseMode()
+      ? "PumpVerse"
+      : current?.name || state.config?.chainName || "Ethereum";
   }
   if (ui.netChip && state.config) {
     ui.netChip.textContent = state.config.chainShortName || `Chain ${state.config.chainId}`;
@@ -208,20 +226,28 @@ function renderChainSelector() {
     ui.factoryChip.textContent = shortAddress(state.config.factoryAddress);
   }
   if (ui.launchChainHint) {
-    ui.launchChainHint.textContent = baseConfigured
+    ui.launchChainHint.textContent = isPumpVerseMode()
+      ? "PumpVerse launches the same token details on Ethereum and Base. MetaMask will ask for separate confirmations."
+      : baseConfigured
       ? "Wallet will switch to the selected network before launch."
       : "Base launches are ready once the Base factory address is configured.";
   }
   if (!ui.launchChainOptions) return;
   ui.launchChainOptions.innerHTML = LAUNCH_CHAIN_CHOICES
     .map((choice) => {
-      const row = supported.get(choice.chainId);
-      const enabled = Boolean(row);
-      const active = enabled && Number(choice.chainId) === Number(state.selectedChainId);
+      const mode = choice.mode || String(choice.chainId);
+      const requiredChains = Array.isArray(choice.requiredChains) ? choice.requiredChains : [choice.chainId];
+      const enabled = requiredChains.every((chainId) => supported.has(Number(chainId)));
+      const row = choice.chainId ? supported.get(choice.chainId) : null;
+      const active = enabled && String(mode) === String(state.selectedLaunchMode);
+      const chainAttr = choice.chainId ? `data-chain-id="${choice.chainId}"` : "";
+      const description = choice.mode === "pumpverse"
+        ? "ETH + BASE one guided flow"
+        : `${row?.shortName || choice.shortName} ${choice.networkLabel}${enabled ? "" : " - configure factory"}`;
       return `
-        <button class="create-chain-option${active ? " active" : ""}${enabled ? "" : " disabled"}" type="button" data-chain-id="${choice.chainId}" role="tab" aria-selected="${active ? "true" : "false"}" ${enabled ? "" : "disabled aria-disabled=\"true\""}>
+        <button class="create-chain-option${choice.mode === "pumpverse" ? " pumpverse" : ""}${active ? " active" : ""}${enabled ? "" : " disabled"}" type="button" ${chainAttr} data-launch-mode="${mode}" role="tab" aria-selected="${active ? "true" : "false"}" ${enabled ? "" : "disabled aria-disabled=\"true\""}>
           <strong>${row?.name || choice.name}</strong>
-          <span>${row?.shortName || choice.shortName} ${choice.networkLabel}${enabled ? "" : " - configure factory"}</span>
+          <span>${description}</span>
         </button>
       `;
     })
@@ -241,7 +267,8 @@ async function loadChainConfig(chainId = state.selectedChainId) {
 
 async function selectLaunchChain(chainId) {
   const target = Number(chainId || 0);
-  if (!Number.isFinite(target) || target <= 0 || target === Number(state.selectedChainId)) return;
+  if (!Number.isFinite(target) || target <= 0) return;
+  if (String(state.selectedLaunchMode) === String(target) && target === Number(state.selectedChainId)) return;
   if (!state.supportedChains.some((row) => Number(row.chainId) === target)) {
     setAlert(ui.alert, `${target === 8453 ? "Base" : "Selected network"} factory is not configured yet.`, true);
     return;
@@ -249,6 +276,8 @@ async function selectLaunchChain(chainId) {
   try {
     setAlert(ui.alert, `Loading ${target === 8453 ? "Base" : "Ethereum"} launch settings...`);
     await loadChainConfig(target);
+    state.selectedLaunchMode = String(target);
+    renderChainSelector();
     const ws = walletState();
     if (ws.signer) {
       await ensureWalletChain(state.selectedChainId);
@@ -259,6 +288,20 @@ async function selectLaunchChain(chainId) {
     setAlert(ui.alert, parseUiError(err), true);
     await loadChainConfig(state.selectedChainId).catch(() => {});
   }
+}
+
+async function selectPumpVerseMode() {
+  const supported = configuredChainMap();
+  if (!supported.has(1) || !supported.has(8453)) {
+    setAlert(ui.alert, "PumpVerse needs both Ethereum and Base factories configured.", true);
+    return;
+  }
+  state.selectedChainId = 1;
+  state.selectedLaunchMode = "pumpverse";
+  await loadChainConfig(1);
+  state.selectedLaunchMode = "pumpverse";
+  renderChainSelector();
+  setAlert(ui.alert, "PumpVerse selected. One form will launch on Ethereum and Base.");
 }
 
 function setAvatarNode(node, text, imageUri = "") {
@@ -683,23 +726,10 @@ async function assertLaunchBalance({ launchFeeWei, starterBuyEth }) {
   const ws = walletState();
   if (!ws.provider || !ws.address) return;
   const balance = await ws.provider.getBalance(ws.address);
-  const chainId = Number(state.config?.chainId || state.selectedChainId || 0);
-  let gasBuffer = chainId === 8453 ? ethers.parseEther("0.0002") : ethers.parseEther("0.005");
-  try {
-    const fee = await ws.provider.getFeeData();
-    const gasPrice = fee.maxFeePerGas || fee.gasPrice || 0n;
-    if (gasPrice > 0n) {
-      const estimatedBuffer = 3500000n * gasPrice;
-      const bufferCap = chainId === 8453 ? ethers.parseEther("0.0005") : ethers.parseEther("0.02");
-      gasBuffer = estimatedBuffer > bufferCap ? bufferCap : estimatedBuffer;
-    }
-  } catch {
-    // Keep conservative fallback buffer.
-  }
-  const required = launchFeeWei + starterBuyEth + gasBuffer;
+  const required = launchFeeWei + starterBuyEth;
   if (balance < required) {
     throw new Error(
-      `Not enough ${state.config?.chainName || "network"} ETH. Need about ${formatEthAmount(required)} for launch fee and gas; wallet has ${formatEthAmount(balance)}.`
+      `Not enough ${state.config?.chainName || "network"} ETH. Need about ${formatEthAmount(required)} for launch fee${starterBuyEth > 0n ? " and starter buy" : ""}; wallet has ${formatEthAmount(balance)}.`
     );
   }
 }
@@ -824,17 +854,64 @@ function extractLaunchCreated(receipt) {
   return null;
 }
 
+function escapeHtml(value = "") {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function chainLabel(chainId) {
+  const n = Number(chainId || 0);
+  if (n === 8453) return "Base";
+  if (n === 1) return "Ethereum";
+  return `Chain ${n}`;
+}
+
+function setSubmitting(active, label = "") {
+  if (!ui.launchSubmitBtn) return;
+  ui.launchSubmitBtn.disabled = Boolean(active);
+  ui.launchSubmitBtn.textContent = active ? label || "Launching..." : "Launch coin";
+}
+
+function renderLaunchResults(results = []) {
+  if (!ui.launchResultList) return;
+  const rows = results.filter(Boolean);
+  if (!rows.length) {
+    ui.launchResultList.innerHTML = "";
+    return;
+  }
+  ui.launchResultList.innerHTML = rows
+    .map((row) => {
+      const ok = Boolean(row.ok && row.token);
+      const label = chainLabel(row.chainId);
+      const href = ok ? `/token?token=${encodeURIComponent(row.token)}&chainId=${encodeURIComponent(String(row.chainId))}` : "#";
+      const body = ok
+        ? `<a href="${href}">Open ${escapeHtml(label)} token ${escapeHtml(shortAddress(row.token))}</a>`
+        : `<span>${escapeHtml(row.error || "Launch failed")}</span><button class="btn-ghost small" type="button" data-retry-chain="${escapeHtml(row.chainId)}">Retry</button>`;
+      return `
+        <div class="create-result-row ${ok ? "success" : "error"}">
+          <strong>${escapeHtml(label)}</strong>
+          ${body}
+        </div>
+      `;
+    })
+    .join("");
+}
+
 function hideCreatedModal() {
   if (!ui.createdModal) return;
   ui.createdModal.classList.remove("open");
   ui.createdModal.setAttribute("aria-hidden", "true");
 }
 
-function showCreatedModal({ name, symbol, token }) {
+function showCreatedModal({ name, symbol, token, chainId = state.selectedChainId }) {
   if (!ui.createdModal || !token) return;
   ui.createdTokenName.textContent = `${name} ($${symbol})`;
   ui.createdTokenAddress.textContent = token;
-  ui.openTokenBtn.href = `/token?token=${token}&chainId=${state.selectedChainId}`;
+  ui.openTokenBtn.href = `/token?token=${token}&chainId=${chainId}`;
   ui.createdModal.classList.add("open");
   ui.createdModal.setAttribute("aria-hidden", "false");
 }
@@ -858,127 +935,245 @@ function setupCreatedModal() {
   });
 }
 
+async function prepareLaunchDetails() {
+  const name = ui.name.value.trim();
+  const symbol = ui.symbol.value.trim().toUpperCase();
+  const totalSupplyInput = ui.supply.value.trim();
+  const creatorAllocationPct = parseNumberInput(ui.creatorBuyEth?.value, 0);
+  let imageUri = ui.image.value.trim();
+  const description = composeDescription();
+  const initialLiquidityEthInput = ui.devBuyEth.value.trim();
+
+  if (!name || !symbol) throw new Error("Coin name and ticker are required");
+  if (!Number.isFinite(creatorAllocationPct) || creatorAllocationPct < 0) {
+    throw new Error("Creator allocation must be 0 or higher");
+  }
+  if (creatorAllocationPct > 20) {
+    throw new Error("Creator allocation must be 20% or lower.");
+  }
+
+  if (!imageUri) {
+    imageUri = makeFallbackImage(name, symbol);
+  }
+
+  if (imageUri.startsWith("data:image/")) {
+    const uploaded = await api.uploadImage(imageUri);
+    imageUri = uploaded.url;
+    ui.image.value = imageUri;
+  }
+
+  if (imageUri.startsWith("data:image/")) {
+    imageUri = `${window.location.origin}/assets/etherpump-logo.png`;
+    ui.image.value = imageUri;
+    setAlert(
+      ui.alert,
+      "Image upload returned inline data. Using hosted fallback image to avoid gas-estimation failure."
+    );
+  }
+
+  return {
+    name,
+    symbol,
+    imageUri,
+    description,
+    totalSupply: ethers.parseUnits(totalSupplyInput, 18),
+    creatorBps: BigInt(Math.round(creatorAllocationPct * 100)),
+    starterBuyEth: ethers.parseEther(initialLiquidityEthInput || "0")
+  };
+}
+
+async function launchOnChain(chainId, details, { showModal = true } = {}) {
+  const target = Number(chainId || 0);
+  await loadChainConfig(target);
+  state.selectedChainId = Number(state.config?.chainId || target);
+  await ensureWalletChain(state.selectedChainId);
+  await walletHub?.refresh();
+
+  const factory = makeFactoryContract(state.config.factoryAddress);
+  const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
+  const totalValue = launchFeeWei;
+  await assertLaunchBalance({ launchFeeWei, starterBuyEth: details.starterBuyEth });
+
+  const simulated = await factory.createLaunch.staticCall(
+    details.name,
+    details.symbol,
+    details.imageUri,
+    details.description,
+    details.totalSupply,
+    details.creatorBps,
+    { value: totalValue }
+  );
+
+  const chainName = state.config.chainName || chainLabel(state.selectedChainId);
+  if (launchFeeWei > 0n) {
+    const launchFeeEth = Number(ethers.formatEther(launchFeeWei)).toFixed(6);
+    setAlert(ui.alert, `Creating bonding-curve launch on ${chainName} (launch fee ${launchFeeEth} ETH)...`);
+  } else {
+    setAlert(ui.alert, `Creating bonding-curve launch on ${chainName}...`);
+  }
+
+  const tx = await sendTxWithFallback({
+    label: `Create ${chainName} Bonding Launch`,
+    populatedTx: factory.createLaunch.populateTransaction(
+      details.name,
+      details.symbol,
+      details.imageUri,
+      details.description,
+      details.totalSupply,
+      details.creatorBps,
+      { value: totalValue }
+    ),
+    walletNativeSend: () =>
+      factory.createLaunch(details.name, details.symbol, details.imageUri, details.description, details.totalSupply, details.creatorBps, {
+        value: totalValue
+      })
+  });
+
+  const receipt = await tx.wait();
+  const launchInfo = extractLaunchCreated(receipt) || {
+    launchId: simulated?.[0],
+    token: simulated?.[1],
+    pool: simulated?.[2]
+  };
+
+  if (details.starterBuyEth > 0n && launchInfo?.pool) {
+    setAlert(ui.alert, `${chainName} launch created. Sending starter buy on bonding curve...`);
+    const pool = makePoolContract(launchInfo.pool);
+    const quoted = await pool.quoteBuy(details.starterBuyEth);
+    const quotedTokens = BigInt(quoted?.[0] || 0n);
+    const minTokensOut = quotedTokens > 0n ? (quotedTokens * 97n) / 100n : 0n;
+    const buyTx = await sendTxWithFallback({
+      label: `${chainName} Starter Bonding Buy`,
+      populatedTx: pool.buy.populateTransaction(minTokensOut, { value: details.starterBuyEth }),
+      walletNativeSend: () => pool.buy(minTokensOut, { value: details.starterBuyEth })
+    });
+    await buyTx.wait();
+  }
+
+  if (launchInfo?.token) {
+    ui.resultLink.href = `/token?token=${launchInfo.token}&chainId=${state.selectedChainId}`;
+    ui.resultLink.textContent = `Open ${chainName} ${shortAddress(launchInfo.token)} token page`;
+    ui.resultLink.style.display = "inline-block";
+    if (showModal) {
+      showCreatedModal({ name: details.name, symbol: details.symbol, token: launchInfo.token, chainId: state.selectedChainId });
+    }
+  }
+
+  return {
+    ok: true,
+    chainId: state.selectedChainId,
+    token: launchInfo?.token || "",
+    pool: launchInfo?.pool || "",
+    launchId: launchInfo?.launchId
+  };
+}
+
+async function launchPumpVerse(details) {
+  const targets = [1, 8453];
+  const results = [];
+  state.lastPumpVerseDetails = details;
+  state.lastPumpVerseResults = results;
+  renderLaunchResults(results);
+
+  for (const chainId of targets) {
+    try {
+      setSubmitting(true, `Launching ${chainLabel(chainId)}...`);
+      setAlert(ui.alert, `PumpVerse: launching on ${chainLabel(chainId)}...`);
+      const result = await launchOnChain(chainId, details, { showModal: false });
+      results.push(result);
+      state.lastPumpVerseResults = [...results];
+      renderLaunchResults(results);
+    } catch (error) {
+      results.push({ ok: false, chainId, error: parseUiError(error) });
+      state.lastPumpVerseResults = [...results];
+      renderLaunchResults(results);
+      break;
+    }
+  }
+
+  const successes = results.filter((row) => row.ok);
+  const failures = results.filter((row) => !row.ok);
+  if (successes.length) {
+    ui.resultLink.href = `/token?token=${successes[0].token}&chainId=${successes[0].chainId}`;
+    ui.resultLink.textContent = `Open ${chainLabel(successes[0].chainId)} ${shortAddress(successes[0].token)} token page`;
+    ui.resultLink.style.display = "inline-block";
+  }
+  if (failures.length) {
+    setAlert(
+      ui.alert,
+      `PumpVerse partially completed: ${successes.length}/2 launched. ${chainLabel(failures[0].chainId)} failed: ${failures[0].error}`,
+      true
+    );
+    return results;
+  }
+  setAlert(ui.alert, "PumpVerse launch complete on Ethereum and Base.");
+  return results;
+}
+
+async function retryPumpVerseChain(chainId) {
+  const details = state.lastPumpVerseDetails;
+  const target = Number(chainId || 0);
+  if (!details || !target) {
+    setAlert(ui.alert, "No PumpVerse launch details available to retry.", true);
+    return;
+  }
+  try {
+    setSubmitting(true, `Retrying ${chainLabel(target)}...`);
+    setAlert(ui.alert, `Retrying PumpVerse launch on ${chainLabel(target)}...`);
+    const result = await launchOnChain(target, details, { showModal: false });
+    const existing = Array.isArray(state.lastPumpVerseResults) ? state.lastPumpVerseResults : [];
+    const next = existing.filter((row) => Number(row.chainId) !== target).concat(result).sort((a, b) => Number(a.chainId) - Number(b.chainId));
+    state.lastPumpVerseResults = next;
+    renderLaunchResults(next);
+    setAlert(ui.alert, `${chainLabel(target)} retry succeeded.`);
+  } catch (error) {
+    const existing = Array.isArray(state.lastPumpVerseResults) ? state.lastPumpVerseResults : [];
+    const failed = { ok: false, chainId: target, error: parseUiError(error) };
+    const next = existing.filter((row) => Number(row.chainId) !== target).concat(failed).sort((a, b) => Number(a.chainId) - Number(b.chainId));
+    state.lastPumpVerseResults = next;
+    renderLaunchResults(next);
+    setAlert(ui.alert, `${chainLabel(target)} retry failed: ${failed.error}`, true);
+  } finally {
+    setSubmitting(false);
+  }
+}
+
 async function onCreate(event) {
   event.preventDefault();
 
   try {
+    setSubmitting(true, isPumpVerseMode() ? "Launching PumpVerse..." : "Launching...");
+    renderLaunchResults([]);
+    if (ui.resultLink) {
+      ui.resultLink.style.display = "none";
+      ui.resultLink.removeAttribute("href");
+      ui.resultLink.textContent = "";
+    }
+
     const ws = walletState();
     if (!ws.signer) throw new Error("Connect wallet first");
-    await loadChainConfig(state.selectedChainId);
-    await ensureWalletChain(state.selectedChainId);
-
-    const name = ui.name.value.trim();
-    const symbol = ui.symbol.value.trim().toUpperCase();
-    const totalSupplyInput = ui.supply.value.trim();
-    const creatorAllocationPct = parseNumberInput(ui.creatorBuyEth?.value, 0);
-    let imageUri = ui.image.value.trim();
-    const description = composeDescription();
-    const initialLiquidityEthInput = ui.devBuyEth.value.trim();
-
-    if (!name || !symbol) throw new Error("Coin name and ticker are required");
-    if (!Number.isFinite(creatorAllocationPct) || creatorAllocationPct < 0) {
-      throw new Error("Creator allocation must be 0 or higher");
-    }
-
-    if (!imageUri) {
-      imageUri = makeFallbackImage(name, symbol);
-    }
-
-    if (imageUri.startsWith("data:image/")) {
-      const uploaded = await api.uploadImage(imageUri);
-      imageUri = uploaded.url;
-      ui.image.value = imageUri;
-    }
-
-    if (imageUri.startsWith("data:image/")) {
-      imageUri = `${window.location.origin}/assets/etherpump-logo.png`;
-      ui.image.value = imageUri;
-      setAlert(
-        ui.alert,
-        "Image upload returned inline data. Using hosted fallback image to avoid gas-estimation failure."
-      );
-    }
-
-    const totalSupply = ethers.parseUnits(totalSupplyInput, 18);
-    const factory = makeFactoryContract(state.config.factoryAddress);
-
-    const starterBuyEth = ethers.parseEther(initialLiquidityEthInput || "0");
-    const creatorPct = creatorAllocationPct;
-    if (creatorPct > 20) {
-      throw new Error("Creator allocation must be 20% or lower.");
-    }
-    const creatorBps = BigInt(Math.round(creatorPct * 100));
-    const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
-    const totalValue = launchFeeWei;
-    await assertLaunchBalance({ launchFeeWei, starterBuyEth });
-
-    const simulated = await factory.createLaunch.staticCall(
-      name,
-      symbol,
-      imageUri,
-      description,
-      totalSupply,
-      creatorBps,
-      { value: totalValue }
-    );
-
-    if (launchFeeWei > 0n) {
-      const launchFeeEth = Number(ethers.formatEther(launchFeeWei)).toFixed(6);
-      setAlert(ui.alert, `Creating bonding-curve launch on ${state.config.chainName || "selected chain"} (launch fee ${launchFeeEth} ETH)...`);
+    const details = await prepareLaunchDetails();
+    const pumpVerse = isPumpVerseMode();
+    if (pumpVerse) {
+      const results = await launchPumpVerse(details);
+      if (results.some((row) => !row.ok)) {
+        return;
+      }
     } else {
-      setAlert(ui.alert, `Creating bonding-curve launch on ${state.config.chainName || "selected chain"}...`);
-    }
-    const tx = await sendTxWithFallback({
-      label: "Create Bonding Launch",
-      populatedTx: factory.createLaunch.populateTransaction(
-        name,
-        symbol,
-        imageUri,
-        description,
-        totalSupply,
-        creatorBps,
-        { value: totalValue }
-      ),
-      walletNativeSend: () =>
-        factory.createLaunch(name, symbol, imageUri, description, totalSupply, creatorBps, {
-          value: totalValue
-        })
-    });
-
-    const receipt = await tx.wait();
-    const launchInfo = extractLaunchCreated(receipt) || {
-      launchId: simulated?.[0],
-      token: simulated?.[1],
-      pool: simulated?.[2]
-    };
-
-    if (launchInfo?.token) {
-      ui.resultLink.href = `/token?token=${launchInfo.token}&chainId=${state.selectedChainId}`;
-      ui.resultLink.textContent = `Open ${shortAddress(launchInfo.token)} token page`;
-      ui.resultLink.style.display = "inline-block";
-      showCreatedModal({ name, symbol, token: launchInfo.token });
-    }
-
-    if (starterBuyEth > 0n && launchInfo?.pool) {
-      setAlert(ui.alert, "Launch created. Sending starter buy on bonding curve...");
-      const pool = makePoolContract(launchInfo.pool);
-      const quoted = await pool.quoteBuy(starterBuyEth);
-      const quotedTokens = BigInt(quoted?.[0] || 0n);
-      const minTokensOut = quotedTokens > 0n ? (quotedTokens * 97n) / 100n : 0n;
-      const buyTx = await sendTxWithFallback({
-        label: "Starter Bonding Buy",
-        populatedTx: pool.buy.populateTransaction(minTokensOut, { value: starterBuyEth }),
-        walletNativeSend: () => pool.buy(minTokensOut, { value: starterBuyEth })
-      });
-      await buyTx.wait();
+      await loadChainConfig(state.selectedChainId);
+      state.selectedLaunchMode = String(state.selectedChainId);
+      const result = await launchOnChain(state.selectedChainId, details, { showModal: true });
+      renderLaunchResults([result]);
+      setAlert(ui.alert, details.starterBuyEth > 0n ? "Bonding-curve launch created with starter buy" : "Bonding-curve launch created");
     }
 
     ui.createForm.reset();
     updatePreview();
     updateLaunchMath({ source: "liquidity" });
-    setAlert(ui.alert, starterBuyEth > 0n ? "Bonding-curve launch created with starter buy" : "Bonding-curve launch created");
   } catch (err) {
     setAlert(ui.alert, parseUiError(err), true);
+  } finally {
+    setSubmitting(false);
   }
 }
 
@@ -1054,9 +1249,19 @@ async function init() {
   });
 
   ui.launchChainOptions?.addEventListener("click", (event) => {
-    const button = event.target?.closest?.("[data-chain-id]");
+    const button = event.target?.closest?.("[data-launch-mode], [data-chain-id]");
     if (!button) return;
+    if (button.dataset.launchMode === "pumpverse") {
+      selectPumpVerseMode();
+      return;
+    }
     selectLaunchChain(button.dataset.chainId);
+  });
+
+  ui.launchResultList?.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("[data-retry-chain]");
+    if (!button) return;
+    retryPumpVerseChain(button.dataset.retryChain);
   });
 
   window.addEventListener("etherpump:chainChanged", (event) => {
