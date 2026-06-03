@@ -1800,6 +1800,11 @@ button:disabled {
   border-radius: 12px;
 }
 
+.trend-chain-badge {
+  top: 0.44rem;
+  right: 0.44rem;
+}
+
 .trend-image-spark {
   position: absolute;
   left: 0;
@@ -2018,6 +2023,63 @@ button:disabled {
   font-size: 0.66rem;
   border-radius: 999px;
   padding: 0.14rem 0.44rem;
+}
+
+.chain-badge,
+.trend-chain-badge {
+  position: absolute;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(122, 255, 197, 0.54);
+  background: rgba(11, 27, 23, 0.86);
+  color: #7dffc7;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+  padding: 0.16rem 0.4rem;
+  box-shadow: 0 0 16px rgba(95, 255, 180, 0.1);
+}
+
+.chain-badge {
+  right: 0.5rem;
+  top: 2rem;
+}
+
+.chain-badge.base,
+.trend-chain-badge.base {
+  border-color: rgba(110, 166, 255, 0.64);
+  background: rgba(17, 29, 55, 0.9);
+  color: #9dc3ff;
+}
+
+.chain-badge.other,
+.trend-chain-badge.other {
+  border-color: rgba(201, 208, 232, 0.5);
+  background: rgba(33, 38, 54, 0.9);
+  color: #d9def5;
+}
+
+.coin-chain-text {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(122, 255, 197, 0.48);
+  color: #7dffc7;
+  background: rgba(11, 27, 23, 0.76);
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.16rem 0.38rem;
+}
+
+.coin-chain-text.base {
+  border-color: rgba(110, 166, 255, 0.58);
+  color: #9dc3ff;
+  background: rgba(17, 29, 55, 0.82);
 }
 
 .watch-btn {
@@ -2316,6 +2378,82 @@ button:disabled {
   margin: 0.26rem 0 0;
   color: var(--muted);
   font-size: 0.74rem;
+}
+
+.create-intro-compact h3 {
+  margin-top: 0;
+}
+
+.create-chain-card {
+  border: 1px solid rgba(138, 146, 178, 0.34);
+  border-radius: 10px;
+  background: rgba(15, 21, 35, 0.7);
+  padding: 0.72rem;
+  display: grid;
+  gap: 0.62rem;
+}
+
+.create-chain-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.create-chain-head strong {
+  color: #f3f7ff;
+  font-size: 0.84rem;
+}
+
+.create-chain-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+}
+
+.create-chain-option {
+  border: 1px solid rgba(138, 146, 178, 0.38);
+  background: #151b2b;
+  border-radius: 8px;
+  color: #dbe4ff;
+  padding: 0.58rem 0.66rem;
+  text-align: left;
+  display: grid;
+  gap: 0.16rem;
+  min-height: 58px;
+  cursor: pointer;
+}
+
+.create-chain-option strong {
+  font-size: 0.9rem;
+}
+
+.create-chain-option span {
+  color: var(--muted);
+  font-size: 0.73rem;
+}
+
+.create-chain-option.active {
+  border-color: rgba(110, 255, 179, 0.7);
+  background: rgba(22, 74, 50, 0.34);
+  box-shadow: 0 0 0 1px rgba(110, 255, 179, 0.16) inset;
+}
+
+.create-chain-option.disabled,
+.create-chain-option:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+  border-color: rgba(138, 146, 178, 0.24);
+  background: rgba(21, 27, 43, 0.58);
+}
+
+.create-chain-hint {
+  margin: 0;
+  color: #aeb7d6;
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 
 .create-creator-summary {

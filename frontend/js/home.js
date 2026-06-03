@@ -1,5 +1,6 @@
 import { api } from "./api.js";
 import {
+  CHAIN_OPTIONS,
   defaultUsername,
   fetchEthUsdPrice,
   formatCompactUsd,
@@ -22,7 +23,7 @@ import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } fro
 import { initSupportWidget } from "./support.js";
 
 const WATCHLIST_KEY = "etherpump.watchlist.v1";
-const LAUNCH_CACHE_KEY = "etherpump.launches.cache.v1";
+const LAUNCH_CACHE_KEY = "etherpump.launches.cache.v2";
 const LAUNCH_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 
@@ -85,6 +86,7 @@ const state = {
   query: "",
   ethUsd: 3000,
   chainId: 1,
+  supportedChains: [],
   pendingProfileImageUri: "",
   watchlist: loadWatchlist(),
   moverSignals: new Map(),
@@ -181,6 +183,45 @@ async function fetchRecentLaunchPage(options = {}) {
   return { total: Number(page?.total || launches.length), launches };
 }
 
+function configuredFeedChains() {
+  const configured = Array.isArray(state.supportedChains) ? state.supportedChains : [];
+  const chains = configured
+    .map((row) => Number(row?.chainId || 0))
+    .filter((chainId) => Number.isFinite(chainId) && chainId > 0);
+  const unique = [...new Set(chains)];
+  return unique.length ? unique : [Number(state.chainId || 1)];
+}
+
+async function fetchLaunchesAcrossChains(fetcher, options = {}) {
+  const chainIds = configuredFeedChains();
+  const results = await Promise.allSettled(
+    chainIds.map(async (chainId) => {
+      const payload = await fetcher({ ...options, chainId });
+      return {
+        total: Number(payload?.total || 0),
+        launches: (Array.isArray(payload?.launches) ? payload.launches : []).map((row) => ({
+          ...row,
+          chainId: Number(row?.chainId || chainId)
+        }))
+      };
+    })
+  );
+
+  let total = 0;
+  const launches = [];
+  let lastError = null;
+  for (const result of results) {
+    if (result.status !== "fulfilled") {
+      lastError = result.reason || lastError;
+      continue;
+    }
+    total += Number(result.value.total || 0);
+    launches.push(...result.value.launches);
+  }
+  if (!launches.length && lastError) throw lastError;
+  return { total, launches: mergeLaunchRows([], launches) };
+}
+
 function followerMetaText(count) {
   const numeric = Math.max(0, Number(count || 0));
   return `${numeric} ${numeric === 1 ? "follower" : "followers"}`;
@@ -205,7 +246,35 @@ function persistWatchlist() {
 }
 
 function getTokenId(launch) {
-  return String(launch?.token || "").toLowerCase();
+  const token = String(launch?.token || "").toLowerCase();
+  if (!token) return "";
+  const chainId = Number(launch?.chainId || state.chainId || 1);
+  return `${Number.isFinite(chainId) && chainId > 0 ? Math.floor(chainId) : 1}:${token}`;
+}
+
+function chainMetaForLaunch(launch) {
+  const chainId = Number(launch?.chainId || state.chainId || 1);
+  const fromConfig = (state.supportedChains || []).find((row) => Number(row?.chainId || 0) === chainId);
+  const fromCore = CHAIN_OPTIONS[chainId] || {};
+  const shortName = String(fromConfig?.shortName || fromCore.shortName || (chainId === 8453 ? "BASE" : chainId === 1 ? "ETH" : chainId));
+  const name = String(fromConfig?.name || fromCore.name || `Chain ${chainId}`);
+  return { chainId, shortName, name };
+}
+
+function chainClassForLaunch(launch) {
+  const chainId = Number(launch?.chainId || state.chainId || 1);
+  if (chainId === 8453) return "base";
+  if (chainId === 1) return "eth";
+  return "other";
+}
+
+function tokenUrl(launch) {
+  const token = String(launch?.token || "");
+  const params = new URLSearchParams({ token });
+  const chainId = Number(launch?.chainId || state.chainId || 1);
+  if (Number.isFinite(chainId) && chainId > 0) params.set("chainId", String(Math.floor(chainId)));
+  if (Number.isFinite(Number(launch?.id))) params.set("launchId", String(Math.floor(Number(launch.id))));
+  return `/token?${params.toString()}`;
 }
 
 function isWatched(launch) {
@@ -457,7 +526,7 @@ function updateMoverSignals(launches = []) {
   const now = Date.now();
   const active = new Set();
   for (const launch of launches) {
-    const tokenKey = String(launch?.token || "").toLowerCase();
+    const tokenKey = getTokenId(launch);
     if (!tokenKey) continue;
     active.add(tokenKey);
 
@@ -558,7 +627,7 @@ function buildExploreSparklineSvg(path, sparkKey) {
 }
 
 function getExploreSparkKey(launch) {
-  return `${String(launch?.token || "").toLowerCase()}:${String(launch?.pool?.migratedPair || launch?.poolAddress || "").toLowerCase()}`;
+  return `${getTokenId(launch)}:${String(launch?.pool?.migratedPair || launch?.poolAddress || "").toLowerCase()}`;
 }
 
 function getTrendingSparkKey(launch) {
@@ -586,7 +655,7 @@ async function hydrateExploreSparklines(items = []) {
       const key = getExploreSparkKey(launch);
       const target = byKey.get(key);
       if (!target) return;
-      const path = await getLaunchSparklinePath(launch, state.chainId);
+      const path = await getLaunchSparklinePath(launch, Number(launch?.chainId || state.chainId));
       if (!path) {
         target.classList.add("fallback");
         return;
@@ -607,7 +676,7 @@ async function hydrateTrendingSparklines(items = []) {
       const key = getTrendingSparkKey(launch);
       const target = byKey.get(key);
       if (!target) return;
-      const path = await getLaunchSparklinePath(launch, state.chainId);
+      const path = await getLaunchSparklinePath(launch, Number(launch?.chainId || state.chainId));
       if (!path) {
         target.classList.add("fallback");
         return;
@@ -623,25 +692,31 @@ function buildExploreCard(launch) {
   const fallback = cardFallbackImage(launch);
   const watched = isWatched(launch);
   const sparkKey = getExploreSparkKey(launch);
+  const href = tokenUrl(launch);
+  const chain = chainMetaForLaunch(launch);
+  const chainClass = chainClassForLaunch(launch);
+  const tokenKey = getTokenId(launch);
   return `
     <article class="coin-card">
       <div class="coin-image-wrap">
-        <a href="/token?token=${launch.token}" class="coin-image-link">
+        <a href="${href}" class="coin-image-link">
           <img class="coin-image" src="${image}" alt="${launch.symbol} logo" onerror="this.onerror=null;this.src='${escapeHtml(fallback)}';" />
           <span class="coin-image-spark" data-explore-spark="${sparkKey}" aria-hidden="true"></span>
         </a>
         <span class="coin-badge">PumpSwap</span>
-        <button class="watch-btn ${watched ? "active" : ""}" type="button" data-watch-token="${launch.token}" aria-label="Toggle watchlist">
+        <span class="chain-badge ${chainClass}" title="${escapeHtml(chain.name)}">${escapeHtml(chain.shortName)}</span>
+        <button class="watch-btn ${watched ? "active" : ""}" type="button" data-watch-token="${tokenKey}" aria-label="Toggle watchlist">
           &#9733;
         </button>
       </div>
       <div class="coin-body">
         <div class="coin-head">
-          <h3><a href="/token?token=${launch.token}">${trimText(launch.name, 34)}</a></h3>
+          <h3><a href="${href}">${trimText(launch.name, 34)}</a></h3>
           <span>$${trimText(launch.symbol, 14)}</span>
         </div>
         <strong class="coin-metric">${formatLaunchMarketCap(launch)}</strong>
         <div class="coin-meta">
+          <span class="coin-chain-text ${chainClass}">${escapeHtml(chain.shortName)}</span>
           ${renderCreatorPill(launch.creator, 20, launch?.creatorProfile?.address)}
           <span title="${absoluteDate(launch.createdAt)}">${humanAgo(launch.createdAt)}</span>
         </div>
@@ -656,11 +731,15 @@ function buildTrendingCard(launch) {
   const fallback = cardFallbackImage(launch);
   const createdLabel = humanAgo(launch.createdAt);
   const sparkKey = getTrendingSparkKey(launch);
+  const href = tokenUrl(launch);
+  const chain = chainMetaForLaunch(launch);
+  const chainClass = chainClassForLaunch(launch);
   return `
     <article class="trend-item">
-      <a href="/token?token=${launch.token}" class="trend-media-link">
+      <a href="${href}" class="trend-media-link">
         <img src="${image}" alt="${launch.symbol} logo" onerror="this.onerror=null;this.src='${escapeHtml(fallback)}';" />
         <span class="trend-image-spark" data-trending-spark="${sparkKey}" aria-hidden="true"></span>
+        <span class="trend-chain-badge ${chainClass}">${escapeHtml(chain.shortName)}</span>
         <div class="trend-overlay">
           <strong>${formatLaunchMarketCap(launch)}</strong>
           <span>${trimText(launch.name, 18)}</span>
@@ -738,11 +817,15 @@ async function hydrateVisibleMarketCaps(limit = 12) {
   await Promise.all(
     visible.map(async (launch) => {
       try {
-        const payload = await api.token(launch.token, { lite: true, fresh: true, chainId: state.chainId });
+        const payload = await api.token(launch.token, { lite: true, fresh: true, chainId: Number(launch?.chainId || state.chainId) });
         if (payload?.launch?.token) {
           const token = getTokenId(launch);
           if (token) state.hydrateBackoffUntil.delete(token);
-          hydrated.push({ ...payload.launch, dexSnapshot: payload.dex || launch.dexSnapshot || null });
+          hydrated.push({
+            ...payload.launch,
+            chainId: Number(payload?.launch?.chainId || launch?.chainId || state.chainId),
+            dexSnapshot: payload.dex || launch.dexSnapshot || null
+          });
         }
       } catch {
         const token = getTokenId(launch);
@@ -1033,7 +1116,9 @@ function setupInteractions() {
     if (tokenLink) {
       const href = new URL(tokenLink.href, window.location.origin);
       const token = String(href.searchParams.get("token") || "").toLowerCase();
-      const launch = state.launches.find((item) => getTokenId(item) === token);
+      const chainId = Number(href.searchParams.get("chainId") || state.chainId || 1);
+      const launchKey = `${Number.isFinite(chainId) && chainId > 0 ? Math.floor(chainId) : 1}:${token}`;
+      const launch = state.launches.find((item) => getTokenId(item) === launchKey);
       if (launch) recordViewedLaunch(launch);
     }
   });
@@ -1043,7 +1128,9 @@ function setupInteractions() {
     if (!tokenLink) return;
     const href = new URL(tokenLink.href, window.location.origin);
     const token = String(href.searchParams.get("token") || "").toLowerCase();
-    const launch = state.launches.find((item) => getTokenId(item) === token);
+    const chainId = Number(href.searchParams.get("chainId") || state.chainId || 1);
+    const launchKey = `${Number.isFinite(chainId) && chainId > 0 ? Math.floor(chainId) : 1}:${token}`;
+    const launch = state.launches.find((item) => getTokenId(item) === launchKey);
     if (launch) recordViewedLaunch(launch);
   });
 }
@@ -1061,7 +1148,7 @@ async function refreshLaunches(options = {}) {
   }
 
   try {
-    const quick = await fetchRecentLaunchPage({ limit: 24, lite: true, includeDex: true });
+    const quick = await fetchLaunchesAcrossChains(fetchRecentLaunchPage, { limit: 24, lite: true, includeDex: true });
     if (quick.launches.length) {
       state.launches = mergeLaunchRows(state.launches, quick.launches);
       saveCachedLaunches(state.launches);
@@ -1081,7 +1168,7 @@ async function refreshLaunches(options = {}) {
     for (const delayMs of retryDelays) {
       if (delayMs > 0) await sleep(delayMs);
       try {
-        launchesRes = await fetchLaunchPages({ pageSize: 24, includeDex: true });
+        launchesRes = await fetchLaunchesAcrossChains(fetchLaunchPages, { pageSize: 24, includeDex: true });
         break;
       } catch (error) {
         lastError = error;
@@ -1147,8 +1234,14 @@ async function refreshEthUsd(force = false) {
 async function loadConfig() {
   const cfg = await api.config();
   state.chainId = Number(cfg.chainId || 1);
+  state.supportedChains = Array.isArray(cfg.supportedChains) ? cfg.supportedChains : [];
   setPreferredChainId(state.chainId);
-  if (ui.networkChip) ui.networkChip.textContent = `Chain ${cfg.chainId}`;
+  if (ui.networkChip) {
+    const labels = configuredFeedChains()
+      .map((chainId) => (CHAIN_OPTIONS[chainId]?.shortName || String(chainId)).toUpperCase())
+      .slice(0, 3);
+    ui.networkChip.textContent = labels.length > 1 ? labels.join(" + ") : `Chain ${cfg.chainId}`;
+  }
   if (ui.factoryChip) ui.factoryChip.textContent = shortAddress(cfg.factoryAddress);
 }
 

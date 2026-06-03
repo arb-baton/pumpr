@@ -49,11 +49,47 @@ const V2_PAIR_ABI = [
 const V2_ROUTER_ABI = ["function WETH() view returns (address)"];
 const GECKO_NETWORK_BY_CHAIN = {
   1: "eth",
+  8453: "base",
   11155111: "sepolia-testnet"
 };
 const DEXSCREENER_CHAIN_BY_ID = {
   1: "ethereum",
+  8453: "base",
   11155111: "sepolia"
+};
+const CHAIN_META = {
+  1: {
+    name: "Ethereum",
+    shortName: "ETH",
+    nativeCurrency: "ETH",
+    explorerBaseUrl: "https://etherscan.io",
+    rpcUrls: ["https://ethereum-rpc.publicnode.com", "https://rpc.ankr.com/eth"],
+    dexRouter: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
+  },
+  8453: {
+    name: "Base",
+    shortName: "BASE",
+    nativeCurrency: "ETH",
+    explorerBaseUrl: "https://basescan.org",
+    rpcUrls: ["https://mainnet.base.org"],
+    dexRouter: "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"
+  },
+  11155111: {
+    name: "Sepolia",
+    shortName: "SEP",
+    nativeCurrency: "ETH",
+    explorerBaseUrl: "https://sepolia.etherscan.io",
+    rpcUrls: [],
+    dexRouter: "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3"
+  },
+  31337: {
+    name: "Local",
+    shortName: "LOCAL",
+    nativeCurrency: "ETH",
+    explorerBaseUrl: "",
+    rpcUrls: ["http://127.0.0.1:8545"],
+    dexRouter: ethers.ZeroAddress
+  }
 };
 
 app.use(cors());
@@ -354,11 +390,18 @@ function resolveSupportedChains(deployment) {
   }
 
   return [...map.entries()]
-    .map(([chainId, factoryAddress]) => ({
-      chainId,
-      factoryAddress,
-      explorerBaseUrl: explorerBaseForChain(chainId)
-    }))
+    .map(([chainId, factoryAddress]) => {
+      const meta = CHAIN_META[chainId] || {};
+      return {
+        chainId,
+        name: meta.name || `Chain ${chainId}`,
+        shortName: meta.shortName || String(chainId),
+        nativeCurrency: meta.nativeCurrency || "ETH",
+        factoryAddress,
+        explorerBaseUrl: explorerBaseForChain(chainId),
+        dexRouter: meta.dexRouter || ethers.ZeroAddress
+      };
+    })
     .sort((a, b) => a.chainId - b.chainId);
 }
 
@@ -397,6 +440,13 @@ function pickRpcUrls(chainId) {
     return urls;
   }
 
+  if (chainId === 8453) {
+    pushIf(process.env.BASE_RPC_URL);
+    pushIf("https://base-rpc.publicnode.com");
+    pushIf("https://mainnet.base.org");
+    return urls;
+  }
+
   if (chainId === 1) {
     pushIf(process.env.MAINNET_RPC_URL);
     pushIf("https://eth-mainnet.g.alchemy.com/v2/iJRW-AEdqp-ijB69j9JQe");
@@ -425,6 +475,7 @@ async function buildContext(chainId, factoryAddress, deployment = loadDeployment
   }
 
   const rpcUrls = pickRpcUrls(normalizedChainId);
+  const probeTimeoutMs = normalizedChainId === 8453 ? Math.max(RPC_PROBE_TIMEOUT_MS, 12_000) : RPC_PROBE_TIMEOUT_MS;
   let lastError = null;
   let provider = null;
   let factory = null;
@@ -439,13 +490,13 @@ async function buildContext(chainId, factoryAddress, deployment = loadDeployment
       });
       const f = new ethers.Contract(factoryAddress, FACTORY_ARTIFACT.abi, p);
       if (verify) {
-        await withTimeout(p.getBlockNumber(), RPC_PROBE_TIMEOUT_MS, "RPC block probe");
-        const code = await withTimeout(p.getCode(factoryAddress), RPC_PROBE_TIMEOUT_MS, "factory code probe");
+        await withTimeout(p.getBlockNumber(), probeTimeoutMs, "RPC block probe");
+        const code = await withTimeout(p.getCode(factoryAddress), probeTimeoutMs, "factory code probe");
         if (!code || code === "0x") {
           throw new Error("Factory contract not found at configured address");
         }
       } else {
-        await withTimeout(f.getLaunchCount(), RPC_PROBE_TIMEOUT_MS, "factory count probe");
+        await withTimeout(f.getLaunchCount(), probeTimeoutMs, "factory count probe");
       }
       provider = p;
       factory = f;
@@ -453,6 +504,9 @@ async function buildContext(chainId, factoryAddress, deployment = loadDeployment
       break;
     } catch (error) {
       lastError = error;
+      if (String(process.env.DEBUG_RPC || "0") === "1") {
+        console.error(`[rpc] chain ${normalizedChainId} failed ${candidate}: ${error?.message || error}`);
+      }
     }
   }
 
@@ -2250,9 +2304,7 @@ async function readDexScreenerTokenSnapshot(chainId, tokenAddress, pairHint = ""
 }
 
 function explorerBaseForChain(chainId) {
-  if (chainId === 11155111) return "https://sepolia.etherscan.io";
-  if (chainId === 1) return "https://etherscan.io";
-  return "";
+  return CHAIN_META[Number(chainId)]?.explorerBaseUrl || "";
 }
 
 async function mapWithConcurrency(items, concurrency, worker) {
@@ -2320,9 +2372,13 @@ function sanitizeLaunchImageUri(rawImageURI = "") {
 
 function buildPoolFallbackFromLaunch(launch) {
   const totalSupply = BigInt(String(launch?.totalSupply || "0"));
-  const spotPriceWei = 0n;
-  const marketCapWei = 0n;
-  const fdvWei = 0n;
+  const deployment = loadDeploymentConfig();
+  const virtualEthReserve = BigInt(String(deployment?.virtualEthReserve || "0"));
+  const virtualTokenReserve = BigInt(String(deployment?.virtualTokenReserve || "0"));
+  const spotPriceWei =
+    virtualEthReserve > 0n && virtualTokenReserve > 0n ? (virtualEthReserve * 10n ** 18n) / virtualTokenReserve : 0n;
+  const marketCapWei = totalSupply > 0n ? (spotPriceWei * totalSupply) / 10n ** 18n : 0n;
+  const fdvWei = marketCapWei;
   return {
     feeBps: 50,
     graduated: false,
@@ -2332,8 +2388,8 @@ function buildPoolFallbackFromLaunch(launch) {
     priceSource: "bonding",
     spotPriceWei: spotPriceWei.toString(),
     effectiveSpotPriceWei: spotPriceWei.toString(),
-    spotPriceEth: 0,
-    tokenReserve: "0",
+    spotPriceEth: toFloat(spotPriceWei, 18, 18),
+    tokenReserve: totalSupply.toString(),
     ethReserveWei: "0",
     ethReserveEth: 0,
     dexWethReserveWei: "0",
@@ -2346,9 +2402,9 @@ function buildPoolFallbackFromLaunch(launch) {
     bondingProgressPct: 0,
     circulatingSupply: totalSupply.toString(),
     fdvWei: fdvWei.toString(),
-    fdvEth: 0,
+    fdvEth: toFloat(fdvWei),
     marketCapWei: marketCapWei.toString(),
-    marketCapEth: 0
+    marketCapEth: toFloat(marketCapWei)
   };
 }
 
@@ -2444,12 +2500,10 @@ async function readPoolSnapshot(provider, launch, options = {}) {
   }
 
   const circulating = totalSupply > tokenReserveWei ? totalSupply - tokenReserveWei : 0n;
-  const hasActiveLiquidity = BigInt(ethReserve || 0n) > 0n || dexWethReserveWei > 0n;
-  // When no ETH liquidity exists yet (pre-trade launch), bonding spot price can
-  // imply inflated pseudo-market-caps. Keep MC/FDV at zero until liquidity exists.
-  const valuationPriceWei = hasActiveLiquidity ? currentPriceWei : 0n;
+  const valuationPriceWei = currentPriceWei;
   const fdvWei = (valuationPriceWei * totalSupply) / 10n ** 18n;
-  const marketCapWei = (valuationPriceWei * circulating) / 10n ** 18n;
+  const marketCapSupply = totalSupply;
+  const marketCapWei = (valuationPriceWei * marketCapSupply) / 10n ** 18n;
 
   const snapshot = {
     feeBps: Number(feeBps),
@@ -2985,16 +3039,26 @@ app.get("/api/config", async (req, res) => {
     const factoryAddress = resolveFactoryAddress(chainId, deployment);
     const rpcUrls = pickRpcUrls(chainId);
     const supportedChains = resolveSupportedChains(deployment);
+    const chainMeta = CHAIN_META[chainId] || {};
 
     res.json({
       chainId,
+      chainName: chainMeta.name || `Chain ${chainId}`,
+      chainShortName: chainMeta.shortName || String(chainId),
+      nativeCurrency: chainMeta.nativeCurrency || "ETH",
       requestedChainId: parseChainId(req?.query?.chainId || req?.headers?.["x-chain-id"]),
       factoryAddress,
       supportedChains,
-      deployment,
+      deployment: {
+        ...deployment,
+        chainId,
+        memeLaunchFactory: factoryAddress,
+        dexRouter: chainMeta.dexRouter || deployment.dexRouter || ethers.ZeroAddress
+      },
       rpcUrl: rpcUrls[0] || "",
       rpcUrls,
-      explorerBaseUrl: explorerBaseForChain(chainId)
+      explorerBaseUrl: explorerBaseForChain(chainId),
+      dexRouter: chainMeta.dexRouter || ethers.ZeroAddress
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -3070,6 +3134,7 @@ app.get("/api/launches", async (req, res) => {
 
         return {
           ...launch,
+          chainId: ctx.chainId,
           tokenAddress: launch.token,
           poolAddress: launch.pool,
           creatorProfile: creatorProfiles[String(launch.creator || "").toLowerCase()] || null,

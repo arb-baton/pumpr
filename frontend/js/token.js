@@ -451,12 +451,12 @@ function pushOptimisticTrade(trade) {
     state.optimisticTrades = state.optimisticTrades.slice(0, 40);
   }
 
-  const circulating = circulatingSupplyFloat(state.launch);
-  if (Number.isFinite(trade.priceEth) && trade.priceEth > 0 && Number.isFinite(circulating) && circulating > 0) {
+  const marketCapSupply = marketCapSupplyFloat(state.launch);
+  if (Number.isFinite(trade.priceEth) && trade.priceEth > 0 && Number.isFinite(marketCapSupply) && marketCapSupply > 0) {
     const point = {
       t: Number(trade.timestamp || Math.floor(Date.now() / 1000)) * 1000,
       price: Number(trade.priceEth),
-      mcap: Number(trade.priceEth) * circulating,
+      mcap: Number(trade.priceEth) * marketCapSupply,
       source: "local"
     };
     state.livePoints.push(point);
@@ -769,6 +769,17 @@ function circulatingSupplyFloat(launch) {
   const raw = launch?.pool?.circulatingSupply || "0";
   const n = Number(ethers.formatUnits(raw, 18));
   return Number.isFinite(n) ? n : 0;
+}
+
+function marketCapSupplyFloat(launch) {
+  const candidates = [launch?.totalSupply, launch?.pool?.circulatingSupply];
+  for (const raw of candidates) {
+    const text = String(raw || "0");
+    if (!text || text === "0") continue;
+    const n = Number(ethers.formatUnits(text, 18));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
 }
 
 function modeValue(point) {
@@ -1239,22 +1250,22 @@ function appendLivePoint(launch) {
   const price = Number(launch?.pool?.spotPriceEth || 0);
   if (!Number.isFinite(price) || price < 0) return;
   const now = Date.now();
-  const circulating = circulatingSupplyFloat(launch);
-  if (!Number.isFinite(circulating) || circulating <= 0) return;
+  const marketCapSupply = marketCapSupplyFloat(launch);
+  if (!Number.isFinite(marketCapSupply) || marketCapSupply <= 0) return;
 
   if (!state.livePoints.length) {
     for (let i = 8; i >= 1; i--) {
       state.livePoints.push({
         t: now - i * 15_000,
         price,
-        mcap: price * circulating,
+        mcap: price * marketCapSupply,
         source: "live"
       });
     }
   }
 
   const last = state.livePoints[state.livePoints.length - 1];
-  const next = { t: now, price, mcap: price * circulating, source: "live" };
+  const next = { t: now, price, mcap: price * marketCapSupply, source: "live" };
   if (last && now - last.t < 10_000) {
     last.t = next.t;
     last.price = next.price;
@@ -1270,13 +1281,13 @@ function appendLivePoint(launch) {
 
 function buildSeries(payload) {
   const launch = payload.launch;
-  const circulating = circulatingSupplyFloat(launch);
+  const marketCapSupply = marketCapSupplyFloat(launch);
   const tradeSeries = (payload.chart || [])
     .map((p) => {
       const t = Number(p.t);
       const price = Number(p.p);
       if (!Number.isFinite(t) || !Number.isFinite(price)) return null;
-      return { t, price, mcap: price * circulating, source: "trade" };
+      return { t, price, mcap: price * marketCapSupply, source: "trade" };
     })
     .filter(Boolean)
     .sort((a, b) => a.t - b.t);
@@ -1613,7 +1624,7 @@ function renderOverview() {
     const dexMcapUsd = dexLooksInflated ? 0 : dexMcapRaw;
     const geckoPriceEth = Number(state.gecko?.snapshot?.priceNative || 0);
     const dexPriceEth = Number(state.dex?.priceNative || geckoPriceEth || state.launch?.pool?.spotPriceEth || 0);
-    const hasLiveSignal = dexMcapUsd > 0 || poolEthReserve > 0 || graduated;
+    const hasLiveSignal = dexMcapUsd > 0 || poolMcapUsd > 0 || poolEthReserve > 0 || graduated;
     ui.marketCapHeadline.textContent = !hasLiveSignal ? "Syncing MC" : dexMcapUsd > 0 ? formatCompactUsd(dexMcapUsd) : poolMcapUsd > 0 ? formatCompactUsd(poolMcapUsd) : "-";
     ui.lastPrice.textContent = dexPriceEth > 0 ? formatEthDisplay(dexPriceEth) : "-";
     const raw24hChange = state.dex?.priceChange24hPct ?? state.gecko?.snapshot?.priceChange24hPct;

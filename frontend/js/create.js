@@ -3,8 +3,10 @@ import {
   FACTORY_ABI,
   defaultUsername,
   disconnectWallet,
+  ensureWalletChain,
   ethers,
   fetchEthUsdPrice,
+  getPreferredChainId,
   hydrateFollowerCount,
   hydrateUserProfile,
   loadCachedFollowerCount,
@@ -62,6 +64,9 @@ const ui = {
   menuLogoutBtn: document.getElementById("menuLogoutBtn"),
   netChip: document.getElementById("networkChip"),
   factoryChip: document.getElementById("factoryChip"),
+  launchChainOptions: document.getElementById("launchChainOptions"),
+  launchChainLabel: document.getElementById("launchChainLabel"),
+  launchChainHint: document.getElementById("launchChainHint"),
   createForm: document.getElementById("createForm"),
   name: document.getElementById("name"),
   symbol: document.getElementById("symbol"),
@@ -115,8 +120,14 @@ const MAX_IMAGE_BYTES = 900 * 1024;
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 const state = {
   config: null,
+  selectedChainId: 1,
+  supportedChains: [],
   ethUsd: 3000
 };
+const LAUNCH_CHAIN_CHOICES = [
+  { chainId: 1, name: "Ethereum", shortName: "ETH", networkLabel: "Mainnet" },
+  { chainId: 8453, name: "Base", shortName: "BASE", networkLabel: "Mainnet" }
+];
 
 let pendingProfileImageUri = "";
 let walletHub = null;
@@ -139,6 +150,114 @@ function syncLiquidityInputMin() {
   const current = parseNumberInput(ui.devBuyEth.value, 0);
   if (!Number.isFinite(current) || current < minLiquidity) {
     ui.devBuyEth.value = minLiquidity > 0 ? minLiquidity.toFixed(minLiquidity < 0.01 ? 4 : 1) : "0";
+  }
+}
+
+function normalizeSupportedChains(config = state.config) {
+  const rows = Array.isArray(config?.supportedChains) ? config.supportedChains : [];
+  const map = new Map();
+  for (const row of rows) {
+    const chainId = Number(row?.chainId || 0);
+    if (!Number.isFinite(chainId) || chainId <= 0 || !row?.factoryAddress) continue;
+    map.set(chainId, {
+      chainId,
+      name: row.name || config?.chainName || `Chain ${chainId}`,
+      shortName: row.shortName || config?.chainShortName || String(chainId),
+      nativeCurrency: row.nativeCurrency || config?.nativeCurrency || "ETH",
+      factoryAddress: row.factoryAddress
+    });
+  }
+  if (config?.factoryAddress) {
+    const chainId = Number(config.chainId || 1);
+    map.set(chainId, {
+      chainId,
+      name: config.chainName || `Chain ${chainId}`,
+      shortName: config.chainShortName || String(chainId),
+      nativeCurrency: config.nativeCurrency || "ETH",
+      factoryAddress: config.factoryAddress
+    });
+  }
+  return [...map.values()].sort((a, b) => a.chainId - b.chainId);
+}
+
+function selectedChain() {
+  return state.supportedChains.find((row) => Number(row.chainId) === Number(state.selectedChainId)) || state.supportedChains[0] || null;
+}
+
+function configuredChainMap() {
+  const map = new Map();
+  for (const row of state.supportedChains) {
+    const chainId = Number(row?.chainId || 0);
+    if (!Number.isFinite(chainId) || chainId <= 0) continue;
+    map.set(chainId, row);
+  }
+  return map;
+}
+
+function renderChainSelector() {
+  const current = selectedChain();
+  const supported = configuredChainMap();
+  const baseConfigured = supported.has(8453);
+  if (ui.launchChainLabel) {
+    ui.launchChainLabel.textContent = current?.name || state.config?.chainName || "Ethereum";
+  }
+  if (ui.netChip && state.config) {
+    ui.netChip.textContent = state.config.chainShortName || `Chain ${state.config.chainId}`;
+  }
+  if (ui.factoryChip && state.config?.factoryAddress) {
+    ui.factoryChip.textContent = shortAddress(state.config.factoryAddress);
+  }
+  if (ui.launchChainHint) {
+    ui.launchChainHint.textContent = baseConfigured
+      ? "Wallet will switch to the selected network before launch."
+      : "Base launches are ready once the Base factory address is configured.";
+  }
+  if (!ui.launchChainOptions) return;
+  ui.launchChainOptions.innerHTML = LAUNCH_CHAIN_CHOICES
+    .map((choice) => {
+      const row = supported.get(choice.chainId);
+      const enabled = Boolean(row);
+      const active = enabled && Number(choice.chainId) === Number(state.selectedChainId);
+      return `
+        <button class="create-chain-option${active ? " active" : ""}${enabled ? "" : " disabled"}" type="button" data-chain-id="${choice.chainId}" role="tab" aria-selected="${active ? "true" : "false"}" ${enabled ? "" : "disabled aria-disabled=\"true\""}>
+          <strong>${row?.name || choice.name}</strong>
+          <span>${row?.shortName || choice.shortName} ${choice.networkLabel}${enabled ? "" : " - configure factory"}</span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+async function loadChainConfig(chainId = state.selectedChainId) {
+  const next = await api.config({ chainId });
+  state.config = next;
+  state.selectedChainId = Number(next.chainId || chainId || 1);
+  state.supportedChains = normalizeSupportedChains(next);
+  setPreferredChainId(state.selectedChainId);
+  renderChainSelector();
+  updateLaunchMath({ source: "liquidity" });
+  return next;
+}
+
+async function selectLaunchChain(chainId) {
+  const target = Number(chainId || 0);
+  if (!Number.isFinite(target) || target <= 0 || target === Number(state.selectedChainId)) return;
+  if (!state.supportedChains.some((row) => Number(row.chainId) === target)) {
+    setAlert(ui.alert, `${target === 8453 ? "Base" : "Selected network"} factory is not configured yet.`, true);
+    return;
+  }
+  try {
+    setAlert(ui.alert, `Loading ${target === 8453 ? "Base" : "Ethereum"} launch settings...`);
+    await loadChainConfig(target);
+    const ws = walletState();
+    if (ws.signer) {
+      await ensureWalletChain(state.selectedChainId);
+      await walletHub?.refresh();
+    }
+    setAlert(ui.alert, `${state.config.chainName || "Network"} selected for launch.`);
+  } catch (err) {
+    setAlert(ui.alert, parseUiError(err), true);
+    await loadChainConfig(state.selectedChainId).catch(() => {});
   }
 }
 
@@ -552,6 +671,39 @@ function formatTokenAmount(value) {
   }).format(n);
 }
 
+function formatEthAmount(valueWei) {
+  const value = Number(ethers.formatEther(valueWei || 0n));
+  if (!Number.isFinite(value) || value <= 0) return "0 ETH";
+  if (value < 0.0001) return `${value.toFixed(6)} ETH`;
+  if (value < 1) return `${value.toFixed(4)} ETH`;
+  return `${value.toFixed(3)} ETH`;
+}
+
+async function assertLaunchBalance({ launchFeeWei, starterBuyEth }) {
+  const ws = walletState();
+  if (!ws.provider || !ws.address) return;
+  const balance = await ws.provider.getBalance(ws.address);
+  const chainId = Number(state.config?.chainId || state.selectedChainId || 0);
+  let gasBuffer = chainId === 8453 ? ethers.parseEther("0.0002") : ethers.parseEther("0.005");
+  try {
+    const fee = await ws.provider.getFeeData();
+    const gasPrice = fee.maxFeePerGas || fee.gasPrice || 0n;
+    if (gasPrice > 0n) {
+      const estimatedBuffer = 3500000n * gasPrice;
+      const bufferCap = chainId === 8453 ? ethers.parseEther("0.0005") : ethers.parseEther("0.02");
+      gasBuffer = estimatedBuffer > bufferCap ? bufferCap : estimatedBuffer;
+    }
+  } catch {
+    // Keep conservative fallback buffer.
+  }
+  const required = launchFeeWei + starterBuyEth + gasBuffer;
+  if (balance < required) {
+    throw new Error(
+      `Not enough ${state.config?.chainName || "network"} ETH. Need about ${formatEthAmount(required)} for launch fee and gas; wallet has ${formatEthAmount(balance)}.`
+    );
+  }
+}
+
 function updatePreview() {
   const name = ui.name.value.trim() || "Your Coin";
   const symbol = ui.symbol.value.trim().toUpperCase() || "TICKER";
@@ -682,7 +834,7 @@ function showCreatedModal({ name, symbol, token }) {
   if (!ui.createdModal || !token) return;
   ui.createdTokenName.textContent = `${name} ($${symbol})`;
   ui.createdTokenAddress.textContent = token;
-  ui.openTokenBtn.href = `/token?token=${token}`;
+  ui.openTokenBtn.href = `/token?token=${token}&chainId=${state.selectedChainId}`;
   ui.createdModal.classList.add("open");
   ui.createdModal.setAttribute("aria-hidden", "false");
 }
@@ -712,6 +864,8 @@ async function onCreate(event) {
   try {
     const ws = walletState();
     if (!ws.signer) throw new Error("Connect wallet first");
+    await loadChainConfig(state.selectedChainId);
+    await ensureWalletChain(state.selectedChainId);
 
     const name = ui.name.value.trim();
     const symbol = ui.symbol.value.trim().toUpperCase();
@@ -730,7 +884,7 @@ async function onCreate(event) {
       imageUri = makeFallbackImage(name, symbol);
     }
 
-  if (imageUri.startsWith("data:image/")) {
+    if (imageUri.startsWith("data:image/")) {
       const uploaded = await api.uploadImage(imageUri);
       imageUri = uploaded.url;
       ui.image.value = imageUri;
@@ -756,6 +910,7 @@ async function onCreate(event) {
     const creatorBps = BigInt(Math.round(creatorPct * 100));
     const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
     const totalValue = launchFeeWei;
+    await assertLaunchBalance({ launchFeeWei, starterBuyEth });
 
     const simulated = await factory.createLaunch.staticCall(
       name,
@@ -769,9 +924,9 @@ async function onCreate(event) {
 
     if (launchFeeWei > 0n) {
       const launchFeeEth = Number(ethers.formatEther(launchFeeWei)).toFixed(6);
-      setAlert(ui.alert, `Creating bonding-curve launch (launch fee ${launchFeeEth} ETH)...`);
+      setAlert(ui.alert, `Creating bonding-curve launch on ${state.config.chainName || "selected chain"} (launch fee ${launchFeeEth} ETH)...`);
     } else {
-      setAlert(ui.alert, "Creating bonding-curve launch...");
+      setAlert(ui.alert, `Creating bonding-curve launch on ${state.config.chainName || "selected chain"}...`);
     }
     const tx = await sendTxWithFallback({
       label: "Create Bonding Launch",
@@ -798,7 +953,7 @@ async function onCreate(event) {
     };
 
     if (launchInfo?.token) {
-      ui.resultLink.href = `/token?token=${launchInfo.token}`;
+      ui.resultLink.href = `/token?token=${launchInfo.token}&chainId=${state.selectedChainId}`;
       ui.resultLink.textContent = `Open ${shortAddress(launchInfo.token)} token page`;
       ui.resultLink.style.display = "inline-block";
       showCreatedModal({ name, symbol, token: launchInfo.token });
@@ -834,10 +989,7 @@ async function init() {
     state.ethUsd = 3000;
   }
 
-  state.config = await api.config();
-  setPreferredChainId(Number(state.config.chainId || 1));
-  ui.netChip.textContent = `Chain ${state.config.chainId}`;
-  ui.factoryChip.textContent = shortAddress(state.config.factoryAddress);
+  await loadChainConfig(getPreferredChainId() || state.selectedChainId);
 
   walletHub = initWalletHubMenu({
     triggerEl: ui.walletHubBtn,
@@ -866,6 +1018,7 @@ async function init() {
     labelEl: ui.walletLabel,
     alertEl: ui.alert,
     onConnected: async () => {
+      await ensureWalletChain(state.selectedChainId);
       updateProfileIdentity();
       setProfileMenuOpen(false);
       syncLiquidityInputMin();
@@ -898,6 +1051,21 @@ async function init() {
       updateLaunchMath({ source: "liquidity" });
       walletHub?.refresh();
     }, 20);
+  });
+
+  ui.launchChainOptions?.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("[data-chain-id]");
+    if (!button) return;
+    selectLaunchChain(button.dataset.chainId);
+  });
+
+  window.addEventListener("etherpump:chainChanged", (event) => {
+    const nextChainId = Number(event?.detail?.chainId || 0);
+    if (!Number.isFinite(nextChainId) || nextChainId <= 0) return;
+    const supported = state.supportedChains.some((row) => Number(row.chainId) === nextChainId);
+    if (supported) {
+      loadChainConfig(nextChainId).catch((err) => setAlert(ui.alert, parseUiError(err), true));
+    }
   });
 
   ui.signInBtn?.addEventListener("click", () => {

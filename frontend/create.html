@@ -221,8 +221,26 @@
             <form id="createForm" class="create-form create-form-pump">
               <div class="create-intro">
                 <h2>Create new coin</h2>
-                <h3>Coin details</h3>
+                <h3>Launch network</h3>
                 <p class="create-subtle">Choose carefully, these can't be changed once the coin is created.</p>
+              </div>
+
+              <div class="create-chain-card">
+                <div class="create-chain-head">
+                  <span>Deploy on</span>
+                  <strong id="launchChainLabel">Ethereum</strong>
+                </div>
+                <div class="create-chain-options" id="launchChainOptions" role="tablist" aria-label="Launch network">
+                  <button class="create-chain-option active" type="button" data-chain-id="1" role="tab" aria-selected="true">
+                    <strong>Ethereum</strong>
+                    <span>Mainnet</span>
+                  </button>
+                </div>
+                <p class="create-chain-hint" id="launchChainHint">Wallet will be switched to the selected network before launch.</p>
+              </div>
+
+              <div class="create-intro create-intro-compact">
+                <h3>Coin details</h3>
               </div>
 
               <div class="form-grid two">

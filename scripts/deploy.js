@@ -7,6 +7,7 @@ async function main() {
   const chainId = Number((await hre.ethers.provider.getNetwork()).chainId);
   const DEFAULT_UNISWAP_V2_ROUTER_BY_CHAIN = {
     1: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
+    8453: "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
     11155111: "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3"
   };
 
@@ -35,7 +36,9 @@ async function main() {
     ? hre.ethers.parseEther(process.env.GRADUATION_TARGET_ETH)
     : hre.ethers.parseEther("12");
 
-  let dexRouter = process.env.DEX_ROUTER || DEFAULT_UNISWAP_V2_ROUTER_BY_CHAIN[chainId] || hre.ethers.ZeroAddress;
+  const chainDexRouter = process.env[`DEX_ROUTER_${chainId}`] || "";
+  const legacyDexRouter = chainId === 1 ? process.env.DEX_ROUTER || "" : "";
+  let dexRouter = chainDexRouter || legacyDexRouter || DEFAULT_UNISWAP_V2_ROUTER_BY_CHAIN[chainId] || hre.ethers.ZeroAddress;
 
   if (dexRouter === hre.ethers.ZeroAddress && chainId === 31337 && process.env.DEPLOY_LOCAL_MOCK_DEX !== "false") {
     const defaultWeth = process.env.WETH_ADDRESS || "0x4200000000000000000000000000000000000006";

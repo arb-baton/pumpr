@@ -67,6 +67,26 @@ const PROFILE_FOLLOWERS_TTL_MS = 30 * 1000;
 const PROFILE_IMAGE_URI_MAX_LENGTH = 2 * 1024 * 1024;
 const profileInFlight = new Map();
 const profileFollowersInFlight = new Map();
+export const CHAIN_OPTIONS = {
+  1: {
+    chainId: 1,
+    chainIdHex: "0x1",
+    name: "Ethereum",
+    shortName: "ETH",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://ethereum-rpc.publicnode.com", "https://rpc.ankr.com/eth"],
+    blockExplorerUrls: ["https://etherscan.io"]
+  },
+  8453: {
+    chainId: 8453,
+    chainIdHex: "0x2105",
+    name: "Base",
+    shortName: "BASE",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://mainnet.base.org"],
+    blockExplorerUrls: ["https://basescan.org"]
+  }
+};
 
 export function getPreferredChainId() {
   try {
@@ -87,6 +107,78 @@ export function setPreferredChainId(chainId) {
   } catch {
     // ignore storage write failures
   }
+}
+
+export function getChainOption(chainId) {
+  return CHAIN_OPTIONS[Number(chainId || 0)] || null;
+}
+
+function parseChainIdValue(value) {
+  if (typeof value === "string" && value.startsWith("0x")) return Number.parseInt(value, 16);
+  return Number(value || 0);
+}
+
+async function readInjectedChainId(provider = state.activeInjectedProvider) {
+  if (!provider?.request) return null;
+  const raw = await provider.request({ method: "eth_chainId" });
+  const chainId = parseChainIdValue(raw);
+  return Number.isFinite(chainId) && chainId > 0 ? chainId : null;
+}
+
+async function rebuildWalletProvider() {
+  if (!state.activeInjectedProvider) return;
+  state.provider = new ethers.BrowserProvider(state.activeInjectedProvider);
+  if (state.address) {
+    state.signer = await state.provider.getSigner(state.address);
+  }
+}
+
+export async function ensureWalletChain(chainId) {
+  const target = Number(chainId || 0);
+  if (!Number.isFinite(target) || target <= 0) return;
+  const option = getChainOption(target);
+  const injected = state.activeInjectedProvider;
+  if (!injected?.request) {
+    setPreferredChainId(target);
+    return;
+  }
+
+  const current = await readInjectedChainId(injected).catch(() => null);
+  if (current === target) {
+    setPreferredChainId(target);
+    await rebuildWalletProvider();
+    return;
+  }
+
+  const chainIdHex = option?.chainIdHex || ethers.toQuantity(target);
+  try {
+    await injected.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: chainIdHex }]
+    });
+  } catch (error) {
+    if (Number(error?.code) !== 4902 || !option) throw error;
+    await injected.request({
+      method: "wallet_addEthereumChain",
+      params: [
+        {
+          chainId: chainIdHex,
+          chainName: option.name,
+          nativeCurrency: option.nativeCurrency,
+          rpcUrls: option.rpcUrls,
+          blockExplorerUrls: option.blockExplorerUrls
+        }
+      ]
+    });
+    await injected.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: chainIdHex }]
+    });
+  }
+
+  setPreferredChainId(target);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  await rebuildWalletProvider();
 }
 
 async function syncPreferredChainIdFromProvider(provider) {
@@ -526,14 +618,15 @@ export async function connectWallet(choice = "", options = {}) {
   if (!walletListenersAttached.has(wallet.provider)) {
     wallet.provider.on?.("accountsChanged", () => window.location.reload());
     wallet.provider.on?.("chainChanged", (nextChain) => {
-      const parsed =
-        typeof nextChain === "string"
-          ? Number.parseInt(nextChain, 16)
-          : Number(nextChain || 0);
+      const parsed = parseChainIdValue(nextChain);
       if (Number.isFinite(parsed) && parsed > 0) {
         setPreferredChainId(parsed);
+        window.dispatchEvent(
+          new CustomEvent("etherpump:chainChanged", {
+            detail: { chainId: parsed }
+          })
+        );
       }
-      window.location.reload();
     });
     walletListenersAttached.add(wallet.provider);
   }
@@ -712,6 +805,7 @@ function isProfileFresh(address, ttlMs = PROFILE_REMOTE_TTL_MS) {
 function withPreferredChain(path) {
   const chainId = getPreferredChainId();
   if (!chainId) return path;
+  if (/[?&]chainId=/.test(path)) return path;
   return `${path}${path.includes("?") ? "&" : "?"}chainId=${chainId}`;
 }
 
