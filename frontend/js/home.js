@@ -431,7 +431,7 @@ function formatLaunchMarketCap(launch) {
     (dexMcapRaw / fallbackUsd > 25 || (dexLiqUsd > 0 && dexMcapRaw / dexLiqUsd > 2500));
   const dexMcap = dexLooksInflated ? 0 : dexMcapRaw;
   const hasDexSignal = dexLiqUsd > 0 || dexVolUsd > 0;
-  const hasPoolSignal = poolEthReserve > 0;
+  const hasPoolSignal = poolEthReserve > 0 || fallbackUsd > 0;
   if (!isGraduated && !hasDexSignal && !hasPoolSignal) {
     return "Syncing MC";
   }
