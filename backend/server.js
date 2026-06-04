@@ -21,6 +21,7 @@ const PROFILE_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-profile
 const FOLLOW_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-follows.json") : path.join(ROOT, "cache", "follows.json");
 const SUPPORT_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-support.json") : path.join(ROOT, "cache", "support.json");
 const COMMUNITY_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-community.json") : path.join(ROOT, "cache", "community.json");
+const GO_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-go.json") : path.join(ROOT, "cache", "go.json");
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || ""
@@ -175,6 +176,7 @@ let followDbCache = null;
 let supportDbCache = null;
 let communityDbCache = null;
 let communityDbRemoteLoaded = false;
+let goDbCache = null;
 const profileLastKnownCache = new Map();
 const xOauthStates = new Map();
 
@@ -1351,6 +1353,187 @@ function communityStatsByToken(storeOverride = null) {
     out.set(key, prev);
   }
   return out;
+}
+
+function emptyGoStore() {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    bounties: [
+      {
+        id: "go-spray-wall",
+        title: "Spray paint a wall with the ticker $ETHERPUMP",
+        description: "Create a real-world photo or video showing the $ETHERPUMP ticker on a wall, sign, or public-safe surface.",
+        deliverables: ["Photo or video proof", "Ticker must be readable", "No illegal or unsafe activity"],
+        rewardUsd: 206.92,
+        tokenSymbol: "ETHERPUMP",
+        tokenAmount: 3,
+        tokenUnit: "ETH",
+        creator: "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3",
+        creatorName: "EtherPump",
+        status: "open",
+        imageUri: "/assets/etherpump-logo.png",
+        createdAt: now - 23 * 60,
+        endsAt: now + 3 * 24 * 60 * 60
+      },
+      {
+        id: "go-stream-clip",
+        title: "Stream snipe a famous creator and get the clip",
+        description: "Clip a live creator seeing or reacting to an EtherPump token mention.",
+        deliverables: ["Clip link", "Creator visible or audible", "Ticker or token mention included"],
+        rewardUsd: 689.45,
+        tokenSymbol: "PUMPVERSE",
+        tokenAmount: 10,
+        tokenUnit: "MON",
+        creator: "0x024469De02f5efFc7c10667f3e2A852Bd4a5149f",
+        creatorName: "PumpVerse",
+        status: "open",
+        imageUri: "/assets/etherpump-logo.png",
+        createdAt: now - 26 * 60,
+        endsAt: now + 3 * 24 * 60 * 60
+      },
+      {
+        id: "go-x-account",
+        title: "Make an official X account for $PUMPVERSE",
+        description: "Create clean X branding for the token and post the first launch thread.",
+        deliverables: ["X profile screenshot", "Launch thread URL", "DM credentials to the bounty creator"],
+        rewardUsd: 41.37,
+        tokenSymbol: "PUMPVERSE",
+        tokenAmount: 0.6,
+        tokenUnit: "ETH",
+        creator: "0x73230F236c6929192659fd6e8f527303A61325f2",
+        creatorName: "Monad builder",
+        status: "open",
+        imageUri: "",
+        createdAt: now - 17 * 60,
+        endsAt: now + 30 * 24 * 60 * 60
+      }
+    ],
+    submissions: [
+      {
+        id: "sub-demo-wall",
+        bountyId: "go-spray-wall",
+        author: "0x9bD6814208c60c773E07da8C772Bf5ea8311fC0C",
+        authorName: "raresalmonhonor",
+        body: "It's done sir!",
+        mediaUrl: "/assets/etherpump-logo.png",
+        likes: [],
+        createdAt: now - 16 * 60
+      }
+    ]
+  };
+}
+
+function sanitizeGoText(value, max = 500) {
+  return Array.from(String(value || "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
+}
+
+function sanitizeGoUrl(value) {
+  const text = String(value || "").trim().slice(0, 1024);
+  if (!text) return "";
+  if (text.startsWith("/") || /^https?:\/\//i.test(text) || text.startsWith("data:image/")) return text;
+  return "";
+}
+
+function normalizeGoId(value, fallbackPrefix = "go") {
+  return sanitizeGoText(value || `${fallbackPrefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, 80)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-");
+}
+
+function normalizeGoBounty(row = {}) {
+  const id = normalizeGoId(row.id, "go");
+  const title = sanitizeGoText(row.title || "", 140);
+  if (!id || !title) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const deliverables = Array.isArray(row.deliverables)
+    ? row.deliverables.map((item) => sanitizeGoText(item, 140)).filter(Boolean).slice(0, 8)
+    : String(row.deliverables || "")
+        .split(/\n|,/)
+        .map((item) => sanitizeGoText(item, 140))
+        .filter(Boolean)
+        .slice(0, 8);
+  return {
+    id,
+    title,
+    description: sanitizeGoText(row.description || "", 900),
+    deliverables,
+    rewardUsd: Math.max(0, Number(row.rewardUsd || row.reward || 0) || 0),
+    tokenSymbol: sanitizeGoText(row.tokenSymbol || "ETHERPUMP", 24).replace(/^\$/, "").toUpperCase(),
+    tokenAmount: Math.max(0, Number(row.tokenAmount || 0) || 0),
+    tokenUnit: sanitizeGoText(row.tokenUnit || "ETH", 16).toUpperCase(),
+    creator: normalizeAddress(row.creator || row.address || "") || ethers.ZeroAddress,
+    creatorName: sanitizeGoText(row.creatorName || row.xHandle || "", 80),
+    status: String(row.status || "open").toLowerCase() === "closed" ? "closed" : "open",
+    imageUri: sanitizeGoUrl(row.imageUri || row.mediaUrl || ""),
+    createdAt: Number(row.createdAt || now),
+    endsAt: Number(row.endsAt || now + 3 * 24 * 60 * 60)
+  };
+}
+
+function normalizeGoSubmission(row = {}) {
+  const bountyId = normalizeGoId(row.bountyId || "", "go");
+  const body = sanitizeGoText(row.body || "", 700);
+  if (!bountyId || !body) return null;
+  const likes = Array.isArray(row.likes) ? row.likes.map(normalizeAddress).filter(Boolean) : [];
+  const links = Array.isArray(row.links)
+    ? row.links.map(sanitizeGoUrl).filter(Boolean).slice(0, 5)
+    : String(row.links || "")
+        .split(/\s+/)
+        .map(sanitizeGoUrl)
+        .filter(Boolean)
+        .slice(0, 5);
+  return {
+    id: normalizeGoId(row.id, "sub"),
+    bountyId,
+    author: normalizeAddress(row.author || row.address || "") || ethers.ZeroAddress,
+    authorName: sanitizeGoText(row.authorName || row.xHandle || "", 80),
+    body,
+    mediaUrl: sanitizeGoUrl(row.mediaUrl || ""),
+    links,
+    likes: [...new Set(likes.map((address) => address.toLowerCase()))],
+    createdAt: Number(row.createdAt || Math.floor(Date.now() / 1000))
+  };
+}
+
+function sanitizeGoStore(store) {
+  const base = store && typeof store === "object" && !Array.isArray(store) ? store : emptyGoStore();
+  return {
+    bounties: (Array.isArray(base.bounties) ? base.bounties : []).map(normalizeGoBounty).filter(Boolean),
+    submissions: (Array.isArray(base.submissions) ? base.submissions : []).map(normalizeGoSubmission).filter(Boolean)
+  };
+}
+
+function readGoDb() {
+  if (goDbCache && typeof goDbCache === "object") return goDbCache;
+  try {
+    if (fs.existsSync(GO_DB_PATH)) {
+      goDbCache = sanitizeGoStore(JSON.parse(fs.readFileSync(GO_DB_PATH, "utf8") || "{}"));
+      return goDbCache;
+    }
+  } catch {
+    // fall through to seeded store
+  }
+  goDbCache = emptyGoStore();
+  return goDbCache;
+}
+
+function writeGoDb(store) {
+  const safe = sanitizeGoStore(store);
+  fs.mkdirSync(path.dirname(GO_DB_PATH), { recursive: true });
+  fs.writeFileSync(GO_DB_PATH, JSON.stringify(safe, null, 2));
+  goDbCache = safe;
+  return safe;
+}
+
+function decorateGoBounty(bounty, store = readGoDb()) {
+  const id = String(bounty?.id || "").toLowerCase();
+  const submissions = (store.submissions || []).filter((row) => String(row.bountyId || "").toLowerCase() === id).length;
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    ...bounty,
+    submissions,
+    secondsLeft: Math.max(0, Number(bounty.endsAt || 0) - now)
+  };
 }
 
 async function createCommunityPost(value = {}) {
@@ -3552,6 +3735,111 @@ app.post("/api/community/:token/posts/:postId/like", async (req, res) => {
   }
 });
 
+app.get("/api/go", async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(120, Number(req.query.limit || 80)));
+    const tab = String(req.query.tab || "trending").toLowerCase();
+    const store = readGoDb();
+    const bounties = (store.bounties || []).map((row) => decorateGoBounty(row, store));
+    const submissions = (store.submissions || [])
+      .map(normalizeGoSubmission)
+      .filter(Boolean)
+      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+    const rankedBounties = [...bounties].sort((a, b) => {
+      if (tab === "bounties") return Number(b.rewardUsd || 0) - Number(a.rewardUsd || 0);
+      const bScore = Number(b.rewardUsd || 0) + Number(b.submissions || 0) * 75 + Number(b.createdAt || 0) / 1_000_000;
+      const aScore = Number(a.rewardUsd || 0) + Number(a.submissions || 0) * 75 + Number(a.createdAt || 0) / 1_000_000;
+      return bScore - aScore;
+    });
+    const openBounties = bounties.filter((row) => row.status === "open");
+    res.json({
+      bounties: rankedBounties.slice(0, limit),
+      submissions: submissions.slice(0, limit),
+      stats: {
+        bounties: bounties.length,
+        open: openBounties.length,
+        submissions: submissions.length,
+        totalRewardUsd: openBounties.reduce((sum, row) => sum + Number(row.rewardUsd || 0), 0),
+        highestOpen: [...openBounties].sort((a, b) => Number(b.rewardUsd || 0) - Number(a.rewardUsd || 0)).slice(0, 3),
+        recentSubmissions: submissions.slice(0, 12)
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load GO" });
+  }
+});
+
+app.get("/api/go/bounties/:id", async (req, res) => {
+  try {
+    const id = normalizeGoId(req.params.id || "", "go");
+    const store = readGoDb();
+    const bounty = (store.bounties || []).map(normalizeGoBounty).find((row) => row && row.id === id);
+    if (!bounty) return res.status(404).json({ error: "bounty not found" });
+    const submissions = (store.submissions || [])
+      .map(normalizeGoSubmission)
+      .filter((row) => row && row.bountyId === id)
+      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+    res.json({ bounty: decorateGoBounty(bounty, store), submissions });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load bounty" });
+  }
+});
+
+app.post("/api/go/bounties", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const title = sanitizeGoText(body.title || "", 140);
+    if (!title) throw new Error("bounty title is required");
+    const store = readGoDb();
+    const bounty = normalizeGoBounty({
+      id: `go-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 44)}-${Date.now().toString(36)}`,
+      title,
+      description: body.description || "",
+      deliverables: body.deliverables || [],
+      rewardUsd: body.rewardUsd || 0,
+      tokenSymbol: body.tokenSymbol || "ETHERPUMP",
+      tokenAmount: body.tokenAmount || 0,
+      tokenUnit: body.tokenUnit || "ETH",
+      creator: body.creator || body.address || "",
+      creatorName: body.creatorName || "",
+      imageUri: body.imageUri || "",
+      createdAt: Math.floor(Date.now() / 1000),
+      endsAt: Math.floor(Date.now() / 1000) + Math.max(1, Math.min(30, Number(body.days || 3) || 3)) * 24 * 60 * 60
+    });
+    if (!bounty) throw new Error("invalid bounty");
+    store.bounties = [bounty, ...(Array.isArray(store.bounties) ? store.bounties : [])].slice(0, 1000);
+    writeGoDb(store);
+    res.json({ bounty: decorateGoBounty(bounty, store) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to create bounty" });
+  }
+});
+
+app.post("/api/go/bounties/:id/submissions", async (req, res) => {
+  try {
+    const id = normalizeGoId(req.params.id || "", "go");
+    const store = readGoDb();
+    const bounty = (store.bounties || []).find((row) => normalizeGoId(row?.id || "", "go") === id);
+    if (!bounty) throw new Error("bounty not found");
+    const submission = normalizeGoSubmission({
+      bountyId: id,
+      author: req.body?.author || req.body?.address || "",
+      authorName: req.body?.authorName || "",
+      body: req.body?.body || "",
+      mediaUrl: req.body?.mediaUrl || "",
+      links: req.body?.links || [],
+      createdAt: Math.floor(Date.now() / 1000),
+      likes: []
+    });
+    if (!submission) throw new Error("submission text is required");
+    store.submissions = [submission, ...(Array.isArray(store.submissions) ? store.submissions : [])].slice(0, 4000);
+    writeGoDb(store);
+    res.json({ submission });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to submit work" });
+  }
+});
+
 app.get("/api/support/config", async (_req, res) => {
   try {
     const platformAddress = resolvePlatformSupportAddress();
@@ -4152,6 +4440,10 @@ app.get("/token", (_req, res) => {
 
 app.get(["/communities", "/communities/:token"], (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "communities.html"));
+});
+
+app.get(["/go", "/go/:bountyId"], (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "go.html"));
 });
 
 app.get("/profile", (_req, res) => {

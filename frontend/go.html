@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Etherpump.fun | GO</title>
+    <link rel="icon" type="image/png" href="/assets/favicon.png?v=20260426b" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260604go3" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="appSidebar">
+        <div class="sidebar-top">
+          <a class="logo" href="/">
+            <img class="logo-mark" src="/assets/etherpump-logo.png?v=20260423c" alt="Etherpump logo" />
+            <span class="logo-title"><span class="logo-name">Etherpump</span><span class="logo-sep">.</span><span class="logo-tld">fun</span></span>
+          </a>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
+            <svg viewBox="0 0 20 12" aria-hidden="true"><rect x="1.5" y="1" width="1.5" height="10" rx="0.75"></rect><rect x="17" y="1" width="1.5" height="10" rx="0.75"></rect><path d="M11.2 3.2L8.2 6l3 2.8"></path></svg>
+          </button>
+        </div>
+        <nav class="side-nav">
+          <a class="side-link side-link-home" href="/">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"></path><path d="M5.5 9.8V21h13V9.8"></path></svg></span>
+            <span class="side-link-label">Home</span>
+          </a>
+          <a class="side-link active" href="/go">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l7 4v8l-7 4-7-4v-8l7-4z"></path><path d="M9 12.2l2 2 4-4"></path></svg></span>
+            <span class="side-link-label">GO</span>
+          </a>
+          <a class="side-link side-link-profile" id="profileNavSide" href="/profile">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.7"></circle><path d="M4.6 20c1.8-3.9 4.4-5.9 7.4-5.9s5.6 2 7.4 5.9"></path></svg></span>
+            <span class="side-link-label">Profile</span>
+          </a>
+          <a class="side-link" href="/communities">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11.5a4 4 0 1 1 8 0"></path><path d="M4.5 20c1.2-3 3.7-4.5 6.5-4.5s5.3 1.5 6.5 4.5"></path><path d="M17 8.2a3 3 0 0 1 3 3"></path><path d="M18.5 15.2c1.2.6 2 1.7 2.5 3.1"></path></svg></span>
+            <span class="side-link-label">Communities</span>
+          </a>
+          <a class="side-link" href="https://trade.padre.gg/" target="_blank" rel="noreferrer noopener">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"></path><path d="M7 7v10"></path><path d="M17 7v10"></path><path d="M4 17h16"></path></svg></span>
+            <span class="side-link-label">Terminal</span>
+          </a>
+        </nav>
+        <a class="side-create-btn" href="/create">Create</a>
+        <div class="side-footer"><span id="networkChip">Chain -</span><span id="factoryChip">Factory -</span></div>
+      </aside>
+
+      <main class="main-pane">
+        <div class="promo-strip">beta testing</div>
+        <header class="topbar create-topbar">
+          <div class="create-searchbar">
+            <a href="/" class="create-back-btn" aria-label="Back to home">&larr;</a>
+            <input id="goSearchInput" placeholder="Search bounties..." />
+          </div>
+          <div class="top-actions">
+            <button id="signInBtn" class="btn-primary top-action-btn sign-in-btn" type="button">Sign in</button>
+            <select id="walletChoice" hidden aria-hidden="true" tabindex="-1"></select>
+            <button id="connectBtn" hidden type="button">Connect</button>
+            <button id="disconnectBtn" hidden type="button">Disconnect</button>
+            <span id="walletAddress" hidden></span>
+            <a class="btn-ghost top-action-btn" href="/create">+ Create</a>
+          </div>
+        </header>
+
+        <section class="go-layout">
+          <div class="go-main">
+            <div id="goListView">
+              <div class="go-title-row">
+                <div>
+                  <small>Bounties</small>
+                  <h1>Trending</h1>
+                  <p>Bounties and submissions gaining momentum</p>
+                </div>
+                <div class="go-metric-pills">
+                  <span><b id="goTrendingCount">0</b> trending now</span>
+                  <span><b>24H</b> timeframe</span>
+                </div>
+              </div>
+              <nav class="go-tabs" aria-label="GO tabs">
+                <button class="active" type="button" data-go-tab="trending">Trending</button>
+                <button type="button" data-go-tab="bounties">Bounties</button>
+                <button type="button" data-go-tab="submissions">Submissions</button>
+              </nav>
+              <div id="goFeed" class="go-feed"></div>
+            </div>
+
+            <div id="goDetailView" class="go-detail" hidden>
+              <nav class="go-breadcrumb"><a href="/go">Bounties</a><span>></span><b id="goDetailCrumb">Bounty</b></nav>
+              <article class="go-detail-head">
+                <div id="goDetailStatus" class="go-status-pill">Open</div>
+                <h1 id="goDetailTitle">Bounty</h1>
+                <div class="go-author-row"><span id="goDetailAvatar" class="go-avatar">EP</span><div><b id="goDetailCreator">Creator</b><small id="goDetailPosted">posted now</small></div></div>
+              </article>
+              <article class="panel-card go-description">
+                <h3>Description</h3>
+                <p id="goDetailDescription"></p>
+              </article>
+              <section>
+                <h2 class="go-section-title">Submissions <span id="goSubmissionCount">0</span></h2>
+                <div id="goSubmissionList" class="go-submission-list"></div>
+              </section>
+            </div>
+          </div>
+
+          <aside class="go-side">
+            <article class="panel-card go-side-card go-reward-card">
+              <small>Total reward pool</small>
+              <strong id="goRewardTotal">$0</strong>
+              <span id="goRewardBreakdown">0 bounties open</span>
+              <button id="goSubmitWorkBtn" class="btn-primary" type="button" hidden>Submit work</button>
+            </article>
+            <article class="panel-card go-side-card">
+              <div class="tokenpf-side-head"><h3>Highest value - open</h3><a href="/go">All open -></a></div>
+              <div id="goHighestList" class="go-rank-list"></div>
+            </article>
+            <article class="panel-card go-side-card">
+              <div class="tokenpf-side-head"><h3>Highest earners - 30D</h3></div>
+              <div id="goEarnersList" class="go-rank-list go-compact-rank-list"></div>
+            </article>
+            <article class="panel-card go-side-card">
+              <div class="tokenpf-side-head"><h3>Highest spenders - 30D</h3></div>
+              <div id="goSpendersList" class="go-rank-list go-compact-rank-list"></div>
+            </article>
+            <article class="panel-card go-side-card" id="goDeliverablesCard" hidden>
+              <h3>Deliverables</h3>
+              <ol id="goDeliverables"></ol>
+            </article>
+            <button id="goCreateBountyBtn" class="btn-primary go-create-btn" type="button">+ Create bounty</button>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <div id="goBountyModal" class="modal-backdrop" aria-hidden="true">
+      <div class="modal-card go-modal-card" role="dialog" aria-modal="true" aria-labelledby="goBountyModalTitle">
+        <button class="modal-close" id="goBountyClose" type="button" aria-label="Close">x</button>
+        <div class="go-modal-head">
+          <h2 id="goBountyModalTitle">Post a bounty</h2>
+          <div class="go-stepper" aria-label="Bounty steps">
+            <span id="goStepDetails" class="active"><b>1</b> Details</span>
+            <span id="goStepRewards"><b>2</b> Rewards</span>
+          </div>
+        </div>
+        <form id="goBountyForm" class="go-modal-form">
+          <section id="goDetailsStep" class="go-bounty-step">
+            <small>Step 1</small>
+            <h3>Bounty details</h3>
+            <p>Describe what you want done. Next, choose how much to pay winners and confirm in your wallet.</p>
+            <div class="go-info-strip">Pump moderation checks every submission. Your spec is the rulebook.</div>
+            <label>Title *<small>50 characters max.</small><input id="goBountyTitle" required maxlength="50" placeholder="Fine police" /></label>
+            <label>Summary *<textarea id="goBountyDescription" required rows="4" maxlength="900" placeholder="Fine 100$"></textarea></label>
+            <label>Attach files<input id="goBountyImage" placeholder="/uploads/example.png or https://..." /></label>
+            <label>Deliverables *<small>One deliverable per line, up to 10.</small><textarea id="goBountyDeliverables" required rows="3" placeholder="go to police officer"></textarea></label>
+            <label>Feature on a coin<select id="goBountyFeature"><option value="">None</option><option value="ETHERPUMP">$ETHERPUMP</option><option value="PUMPVERSE">$PUMPVERSE</option></select></label>
+            <label>Duration *<select id="goBountyDays"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option><option value="30">30 days</option></select></label>
+            <div class="go-confirm-stack">
+              <label><input id="goConfirmLegal" type="checkbox" /> <span>I confirm this bounty does not request anything illegal, exploitative, or prohibited.</span></label>
+              <label><input id="goConfirmSpecific" type="checkbox" /> <span>I made the title, summary, and deliverables specific enough for reviewers.</span></label>
+            </div>
+            <button id="goContinueRewardsBtn" class="btn-primary" type="button">Save draft & continue</button>
+          </section>
+          <section id="goRewardsStep" class="go-bounty-step" hidden>
+            <small>Step 2</small>
+            <h3>Add rewards</h3>
+            <p>Choose what you pay winners and how much. When you publish, your wallet can be used to fund escrow later.</p>
+            <div class="go-reward-editor">
+              <small>Reward 1</small>
+              <div class="go-form-grid">
+                <label>Token *<select id="goBountyToken"><option value="ETH">ETH</option><option value="MON">MON</option><option value="BASE">BASE</option><option value="ETHERPUMP">ETHERPUMP</option></select></label>
+                <label>Amount *<input id="goBountyTokenAmount" type="number" min="0" step="0.0001" value="0.05" /></label>
+              </div>
+              <label>Reward USD estimate<input id="goBountyReward" type="number" min="0" step="0.01" value="50" /></label>
+            </div>
+            <div class="go-escrow-note">
+              <b>These funds will be locked in escrow</b>
+              <ul>
+                <li>You can't withdraw rewards once the bounty is published.</li>
+                <li>You can recommend a winner, but payment is released after review.</li>
+                <li>If the bounty expires with no valid submissions, you can request a refund.</li>
+              </ul>
+            </div>
+            <button class="btn-primary" type="submit">Fund & publish</button>
+          </section>
+        </form>
+      </div>
+    </div>
+
+    <div id="goSubmitModal" class="modal-backdrop" aria-hidden="true">
+      <div class="modal-card go-modal-card go-submit-card" role="dialog" aria-modal="true" aria-labelledby="goSubmitModalTitle">
+        <button class="modal-close" id="goSubmitClose" type="button" aria-label="Close">x</button>
+        <div class="go-submit-head">
+          <h2 id="goSubmitModalTitle">Submit your work</h2>
+          <strong id="goSubmitBountyName">Bounty submission</strong>
+          <p>Describe your submission. Add links or attachments to back it up.</p>
+        </div>
+        <form id="goSubmitForm" class="go-modal-form go-submit-form">
+          <label class="go-upload-label">
+            <span>Attach files</span>
+            <input id="goSubmitFile" class="visually-hidden" type="file" accept="image/*" />
+            <div class="go-upload-drop">
+              <span class="go-upload-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M8 15l3-3 2 2 2-3 3 4"></path><circle cx="9" cy="9" r="1.2"></circle></svg>
+              </span>
+              <b>Drop files here: drag and drop here</b>
+              <small>Share proof images here. Add demo clips, PDFs, or docs as links below.</small>
+              <button id="goSubmitChooseFile" class="btn-ghost" type="button">Choose files</button>
+              <em id="goSubmitFileName">No file selected</em>
+            </div>
+          </label>
+          <label>Description *<textarea id="goSubmitBody" required rows="6" maxlength="700" placeholder="Tell the sponsor what you shipped, what's included, and anything they should review first."></textarea></label>
+          <label>Links<input id="goSubmitLinks" placeholder="https://github.com/... or https://drive.google.com/..." /></label>
+          <button id="goSubmitAddLink" class="go-add-link" type="button">+ Add link</button>
+          <label class="go-submit-terms">Submission terms *
+            <span>You grant Etherpump the right to show your submission, and winners are selected by the bounty creator or platform review. See the Terms and Conditions.</span>
+            <small><input id="goSubmitAgree" type="checkbox" /> I agree</small>
+          </label>
+          <input id="goSubmitMedia" hidden />
+          <div class="go-submit-footer">
+            <span id="goSubmitIdentity">Submitting as guest<br />No submission fee. Network fees may still apply.</span>
+            <button class="btn-primary" type="submit">Submit</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="alert" class="alert"></div>
+    <script type="module" src="/js/go.js?v=20260604go3"></script>
+    <script src="/js/sidebar.js?v=20260604go3"></script>
+  </body>
+</html>

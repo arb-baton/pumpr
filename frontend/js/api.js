@@ -108,6 +108,11 @@ export const api = {
       address,
       liked: Boolean(liked)
     }),
+  go: (tab = "trending", limit = 80) =>
+    apiGet(`/api/go?tab=${encodeURIComponent(String(tab || "trending"))}&limit=${encodeURIComponent(String(limit || 80))}`),
+  goBounty: (id) => apiGet(`/api/go/bounties/${encodeURIComponent(String(id || ""))}`),
+  createGoBounty: (body = {}) => apiPost("/api/go/bounties", body),
+  submitGoWork: (id, body = {}) => apiPost(`/api/go/bounties/${encodeURIComponent(String(id || ""))}/submissions`, body),
   supportConfig: () => apiGet("/api/support/config"),
   supportMessages: (address) => apiGet(`/api/support/messages?address=${encodeURIComponent(String(address || ""))}`),
   supportInbox: (address) => apiGet(`/api/support/inbox?address=${encodeURIComponent(String(address || ""))}`),

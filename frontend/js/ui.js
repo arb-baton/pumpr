@@ -4,6 +4,7 @@ import {
   discoverWallets,
   ethers,
   fetchEthUsdPrice,
+  getChainOption,
   getSavedWalletChoice,
   restoreWalletFromSession,
   shortAddress,
@@ -63,7 +64,38 @@ function formatUsdBalance(value) {
   return `$${numeric.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-async function readNativeBalanceEth(ws, address) {
+function formatNativeBalance(value, symbol = "ETH", maxFractionDigits = 6) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return `0 ${symbol}`;
+  return `${numeric.toLocaleString(undefined, { maximumFractionDigits: maxFractionDigits })} ${symbol}`;
+}
+
+async function readWalletChainMeta(ws) {
+  let chainId = 0;
+  try {
+    if (ws?.activeInjectedProvider?.request) {
+      const raw = await ws.activeInjectedProvider.request({ method: "eth_chainId" });
+      chainId = typeof raw === "string" && raw.startsWith("0x") ? Number.parseInt(raw, 16) : Number(raw || 0);
+    }
+  } catch {
+    chainId = 0;
+  }
+
+  if (!chainId) {
+    try {
+      const network = await ws?.provider?.getNetwork();
+      chainId = Number(network?.chainId || 0);
+    } catch {
+      chainId = 0;
+    }
+  }
+
+  const option = getChainOption(chainId);
+  const symbol = option?.nativeCurrency?.symbol || "ETH";
+  return { chainId, option, symbol };
+}
+
+async function readNativeBalance(ws, address) {
   if (!ws?.provider || !address) {
     throw new Error("Wallet provider unavailable");
   }
@@ -95,11 +127,11 @@ async function readNativeBalanceEth(ws, address) {
     throw lastError || new Error("Could not fetch native wallet balance");
   }
 
-  const eth = Number(ethers.formatEther(wei));
-  if (!Number.isFinite(eth) || eth < 0) {
+  const nativeAmount = Number(ethers.formatEther(wei));
+  if (!Number.isFinite(nativeAmount) || nativeAmount < 0) {
     throw new Error("Balance value is invalid");
   }
-  return eth;
+  return nativeAmount;
 }
 
 export function initWalletHubMenu({
@@ -191,32 +223,39 @@ export function initWalletHubMenu({
       depositQrEl.style.display = "block";
     }
 
-    let balanceEth = null;
+    let nativeBalance = null;
+    let nativeSymbol = "ETH";
     try {
-      balanceEth = await readNativeBalanceEth(ws, address);
+      const meta = await readWalletChainMeta(ws);
+      nativeSymbol = meta.symbol || "ETH";
+      nativeBalance = await readNativeBalance(ws, address);
     } catch {
-      balanceEth = null;
+      nativeBalance = null;
     }
 
-    try {
-      ethUsd = await fetchEthUsdPrice(false);
-    } catch {
-      // keep fallback
+    if (nativeSymbol === "ETH") {
+      try {
+        ethUsd = await fetchEthUsdPrice(false);
+      } catch {
+        // keep fallback
+      }
     }
 
-    if (balanceEth === null) {
+    if (nativeBalance === null) {
       if (balanceEl) balanceEl.textContent = "--";
       if (balanceLargeEl) balanceLargeEl.textContent = "--";
       if (nativeEl) nativeEl.textContent = "Balance unavailable";
       return;
     }
 
-    const usd = Number(balanceEth) * Number(ethUsd || 3000);
-    const usdLabel = formatUsdBalance(usd);
-    const nativeLabel = `${Number(balanceEth).toLocaleString(undefined, { maximumFractionDigits: 6 })} ETH`;
+    const nativeLabel = formatNativeBalance(nativeBalance, nativeSymbol, 6);
+    const summaryLabel =
+      nativeSymbol === "ETH"
+        ? formatUsdBalance(Number(nativeBalance) * Number(ethUsd || 3000))
+        : formatNativeBalance(nativeBalance, nativeSymbol, 3);
 
-    if (balanceEl) balanceEl.textContent = usdLabel;
-    if (balanceLargeEl) balanceLargeEl.textContent = usdLabel;
+    if (balanceEl) balanceEl.textContent = summaryLabel;
+    if (balanceLargeEl) balanceLargeEl.textContent = summaryLabel;
     if (nativeEl) nativeEl.textContent = nativeLabel;
   };
 
