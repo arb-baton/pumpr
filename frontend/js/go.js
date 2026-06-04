@@ -1,6 +1,9 @@
 import { api } from "./api.js";
 import {
   defaultUsername,
+  ensureWalletChain,
+  ethers,
+  getChainOption,
   loadUserProfile,
   parseUiError,
   shortAddress,
@@ -38,6 +41,7 @@ const ui = {
   bountyFeature: document.getElementById("goBountyFeature"),
   bountyDays: document.getElementById("goBountyDays"),
   bountyTokenAmount: document.getElementById("goBountyTokenAmount"),
+  escrowStatus: document.getElementById("goEscrowStatus"),
   detailsStep: document.getElementById("goDetailsStep"),
   rewardsStep: document.getElementById("goRewardsStep"),
   stepDetails: document.getElementById("goStepDetails"),
@@ -84,10 +88,16 @@ const state = {
   bounties: [],
   submissions: [],
   stats: {},
+  goConfig: { payoutChains: [] },
   activeBounty: null,
   activeSubmissions: [],
   walletControls: null
 };
+
+const GO_ESCROW_ABI = [
+  "function fund(bytes32 bountyId) payable",
+  "function release(bytes32 bountyId,address winner)"
+];
 
 function base64UrlDecode(value = "") {
   const text = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
@@ -198,6 +208,34 @@ function currentIdentity() {
   return { address, name };
 }
 
+function payoutChain(chainId) {
+  const id = Number(chainId || 0);
+  return (state.goConfig?.payoutChains || []).find((row) => Number(row.chainId) === id) || null;
+}
+
+function payoutLabel(chainId) {
+  const configured = payoutChain(chainId);
+  const option = getChainOption(chainId);
+  const name = configured?.name || option?.name || `Chain ${chainId}`;
+  const symbol = configured?.nativeCurrency || option?.nativeCurrency?.symbol || "ETH";
+  return `${name} ${symbol}`;
+}
+
+function selectedPayoutChain() {
+  const chainId = Number(ui.bountyToken?.value || 1);
+  const config = payoutChain(chainId);
+  if (!config?.enabled || !config?.escrowAddress) {
+    throw new Error(`${payoutLabel(chainId)} escrow is not configured yet`);
+  }
+  return config;
+}
+
+function makeBountyId(title = "") {
+  const slug = String(title || "bounty").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 44);
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `go-${slug || "bounty"}-${Date.now().toString(36)}-${rand}`;
+}
+
 function openModal(node) {
   if (!node) return;
   node.classList.add("open");
@@ -228,7 +266,7 @@ function bountyDraftFromForm() {
     feature: ui.bountyFeature?.value || "",
     days: ui.bountyDays?.value || "7",
     rewardUsd: ui.bountyReward?.value || "50",
-    tokenSymbol: ui.bountyToken?.value || "ETH",
+    payoutChainId: ui.bountyToken?.value || "1",
     tokenAmount: ui.bountyTokenAmount?.value || "0.05",
     confirmLegal: Boolean(ui.confirmLegal?.checked),
     confirmSpecific: Boolean(ui.confirmSpecific?.checked)
@@ -254,11 +292,42 @@ function restoreBountyDraft() {
   if (ui.bountyFeature) ui.bountyFeature.value = draft.feature || "";
   if (ui.bountyDays) ui.bountyDays.value = draft.days || "7";
   if (ui.bountyReward) ui.bountyReward.value = draft.rewardUsd || "50";
-  if (ui.bountyToken) ui.bountyToken.value = draft.tokenSymbol || "ETH";
+  if (ui.bountyToken) ui.bountyToken.value = draft.payoutChainId || draft.tokenSymbol || "1";
   if (ui.bountyTokenAmount) ui.bountyTokenAmount.value = draft.tokenAmount || "0.05";
   if (ui.confirmLegal) ui.confirmLegal.checked = Boolean(draft.confirmLegal);
   if (ui.confirmSpecific) ui.confirmSpecific.checked = Boolean(draft.confirmSpecific);
   return true;
+}
+
+function renderPayoutOptions() {
+  if (!ui.bountyToken) return;
+  const chains = state.goConfig?.payoutChains?.length ? state.goConfig.payoutChains : [
+    { chainId: 1, name: "Ethereum", nativeCurrency: "ETH", enabled: false },
+    { chainId: 8453, name: "Base", nativeCurrency: "ETH", enabled: false },
+    { chainId: 143, name: "Monad", nativeCurrency: "MON", enabled: false }
+  ];
+  const previous = ui.bountyToken.value || "1";
+  ui.bountyToken.innerHTML = chains
+    .map((row) => {
+      const disabled = row.enabled ? "" : "disabled";
+      const suffix = row.enabled ? "" : " - escrow not configured";
+      return `<option value="${row.chainId}" ${disabled}>${escapeHtml(row.name)} ${escapeHtml(row.nativeCurrency)}${suffix}</option>`;
+    })
+    .join("");
+  const values = new Set(chains.filter((row) => row.enabled).map((row) => String(row.chainId)));
+  ui.bountyToken.value = values.has(previous) ? previous : values.values().next().value || "1";
+  updateEscrowStatus();
+}
+
+function updateEscrowStatus() {
+  if (!ui.escrowStatus) return;
+  const chainId = Number(ui.bountyToken?.value || 1);
+  const config = payoutChain(chainId);
+  if (config?.enabled) {
+    ui.escrowStatus.textContent = `${payoutLabel(chainId)} escrow is ready. Publishing will lock funds on-chain.`;
+  } else {
+    ui.escrowStatus.textContent = `${payoutLabel(chainId)} escrow is not configured yet.`;
+  }
 }
 
 function validateDetailsStep() {
@@ -467,11 +536,55 @@ function renderDetail() {
   ui.detailDescription.textContent = bounty.description || "";
   ui.submissionCount.textContent = String(state.activeSubmissions.length || 0);
   ui.rewardTotal.textContent = money(bounty.rewardUsd);
-  ui.rewardBreakdown.textContent = `${bounty.tokenAmount || 0} ${bounty.tokenUnit || ""}`;
+  ui.rewardBreakdown.textContent = `${bounty.tokenAmount || 0} ${bounty.tokenUnit || ""} - ${payoutLabel(bounty.payoutChainId)} - ${bounty.escrowStatus || "unfunded"}`;
   ui.deliverables.innerHTML = (bounty.deliverables || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   ui.submissionList.innerHTML = state.activeSubmissions.length
     ? state.activeSubmissions.map(submissionCard).join("")
     : `<article class="panel-card go-empty">No submissions yet.</article>`;
+  renderReleaseControls();
+}
+
+function renderReleaseControls() {
+  const bounty = state.activeBounty;
+  const ws = walletState();
+  const canRelease =
+    bounty?.escrowStatus === "funded" &&
+    bounty?.status === "open" &&
+    ws.address &&
+    bounty.creator &&
+    String(ws.address).toLowerCase() === String(bounty.creator).toLowerCase();
+  if (!canRelease || !ui.submissionList) return;
+  const cards = Array.from(ui.submissionList.querySelectorAll(".go-submission-card .go-card-body"));
+  cards.forEach((card, index) => {
+    const submission = state.activeSubmissions[index];
+    if (!submission?.author || submission.author === ethers.ZeroAddress) return;
+    const button = document.createElement("button");
+    button.className = "btn-primary go-release-btn";
+    button.type = "button";
+    button.dataset.releaseSubmission = submission.id;
+    button.dataset.winner = submission.author;
+    button.textContent = "Release escrow";
+    card.appendChild(button);
+  });
+}
+
+async function releaseSubmission(submissionId, winnerAddress) {
+  if (!state.activeBounty?.id) return;
+  if (!winnerAddress || winnerAddress === ethers.ZeroAddress) throw new Error("Winner must have a connected wallet submission");
+  await ensureWalletChain(Number(state.activeBounty.payoutChainId || 1));
+  const ws = walletState();
+  if (!ws.signer) throw new Error("Connect creator wallet first");
+  const escrow = new ethers.Contract(state.activeBounty.escrowAddress, GO_ESCROW_ABI, ws.signer);
+  setAlert(ui.alert, "Releasing escrow to winner...");
+  const tx = await escrow.release(ethers.id(state.activeBounty.id), winnerAddress);
+  await tx.wait();
+  await api.releaseGoBounty(state.activeBounty.id, {
+    releaseTxHash: tx.hash,
+    winnerSubmissionId: submissionId,
+    winnerAddress
+  });
+  await loadDetail(state.activeBounty.id);
+  setAlert(ui.alert, "Escrow released");
 }
 
 function updateSubmitModalCopy() {
@@ -483,6 +596,10 @@ function updateSubmitModalCopy() {
 }
 
 async function loadList() {
+  if (!state.goConfig?.payoutChains?.length) {
+    state.goConfig = await api.goConfig().catch(() => ({ payoutChains: [] }));
+    renderPayoutOptions();
+  }
   const payload = await api.go(state.tab, 80);
   state.bounties = Array.isArray(payload.bounties) ? payload.bounties : [];
   state.submissions = Array.isArray(payload.submissions) ? payload.submissions : [];
@@ -537,15 +654,31 @@ async function submitBounty(event) {
   event.preventDefault();
   try {
     const identity = currentIdentity();
+    if (!walletState().signer || !identity.address) throw new Error("Connect wallet before funding escrow");
     const draft = bountyDraftFromForm();
+    const payout = selectedPayoutChain();
+    const amount = ethers.parseEther(String(draft.tokenAmount || "0"));
+    if (amount <= 0n) throw new Error("Enter an escrow amount greater than 0");
+    const bountyId = makeBountyId(draft.title);
+    await ensureWalletChain(Number(payout.chainId));
+    const ws = walletState();
+    const escrow = new ethers.Contract(payout.escrowAddress, GO_ESCROW_ABI, ws.signer);
+    setAlert(ui.alert, `Funding ${payoutLabel(payout.chainId)} escrow...`);
+    const tx = await escrow.fund(ethers.id(bountyId), { value: amount });
+    setAlert(ui.alert, "Waiting for escrow funding confirmation...");
+    await tx.wait();
     const payload = await api.createGoBounty({
+      id: bountyId,
       title: draft.title,
       description: draft.description,
       deliverables: draft.deliverables.split("\n"),
       rewardUsd: Number(draft.rewardUsd || 0),
-      tokenSymbol: draft.feature || draft.tokenSymbol,
+      tokenSymbol: payout.nativeCurrency,
       tokenAmount: Number(draft.tokenAmount || 0),
-      tokenUnit: draft.tokenSymbol,
+      tokenUnit: payout.nativeCurrency,
+      payoutChainId: payout.chainId,
+      escrowAddress: payout.escrowAddress,
+      escrowTxHash: tx.hash,
       imageUri: draft.imageUri,
       days: Number(draft.days || 7),
       creator: identity.address,
@@ -642,6 +775,16 @@ async function init() {
     if (ui.submitFileName) ui.submitFileName.textContent = file?.name || "No file selected";
   });
   ui.submitAddLink?.addEventListener("click", () => ui.submitLinks?.focus());
+  ui.bountyToken?.addEventListener("change", updateEscrowStatus);
+  ui.submissionList?.addEventListener("click", async (event) => {
+    const trigger = event.target.closest("[data-release-submission]");
+    if (!trigger) return;
+    try {
+      await releaseSubmission(trigger.dataset.releaseSubmission || "", trigger.dataset.winner || "");
+    } catch (error) {
+      setAlert(ui.alert, parseUiError(error), true);
+    }
+  });
   ui.bountyClose?.addEventListener("click", () => closeModal(ui.bountyModal));
   ui.bountyCancelBtns.forEach((button) => button.addEventListener("click", () => closeModal(ui.bountyModal)));
   ui.submitClose?.addEventListener("click", () => closeModal(ui.submitModal));

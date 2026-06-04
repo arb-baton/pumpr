@@ -171,21 +171,21 @@
           <section id="goRewardsStep" class="go-bounty-step" hidden>
             <small>Step 2</small>
             <h3>Add rewards</h3>
-            <p>Choose what you pay winners and how much. When you publish, your wallet can be used to fund escrow later.</p>
+            <p>Choose the payout rail and amount. Publishing funds escrow immediately from your wallet.</p>
             <div class="go-reward-editor">
               <small>Reward 1</small>
               <div class="go-form-grid">
-                <label>Token *<select id="goBountyToken"><option value="ETH">ETH</option><option value="MON">MON</option><option value="BASE">BASE</option><option value="ETHERPUMP">ETHERPUMP</option></select></label>
-                <label>Amount *<input id="goBountyTokenAmount" type="number" min="0" step="0.0001" value="0.05" /></label>
+                <label>Payout chain *<select id="goBountyToken"><option value="1">Ethereum ETH</option><option value="8453">Base ETH</option><option value="143">Monad MON</option></select></label>
+                <label>Escrow amount *<input id="goBountyTokenAmount" type="number" min="0" step="0.0001" value="0.05" /></label>
               </div>
               <label>Reward USD estimate<input id="goBountyReward" type="number" min="0" step="0.01" value="50" /></label>
             </div>
             <div class="go-escrow-note">
-              <b>These funds will be locked in escrow</b>
+              <b id="goEscrowStatus">Escrow checks configuration before publish.</b>
               <ul>
-                <li>You can't withdraw rewards once the bounty is published.</li>
-                <li>You can recommend a winner, but payment is released after review.</li>
-                <li>If the bounty expires with no valid submissions, you can request a refund.</li>
+                <li>Funds are locked in the selected chain's escrow contract when you publish.</li>
+                <li>When the task is done, the creator releases escrow to the selected submitter.</li>
+                <li>If no valid work is completed, the creator can refund escrow from the contract.</li>
               </ul>
             </div>
             <div class="go-modal-actions">

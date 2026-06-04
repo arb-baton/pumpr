@@ -12,6 +12,9 @@
     "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
     "deploy:mainnet": "hardhat run scripts/deploy.js --network mainnet",
     "deploy:chain": "node scripts/deploy-chain-raw.js",
+    "deploy:go-escrow:mainnet": "hardhat run scripts/deploy-go-escrow.js --network mainnet",
+    "deploy:go-escrow:base": "hardhat run scripts/deploy-go-escrow.js --network base",
+    "deploy:go-escrow:monad": "hardhat run scripts/deploy-go-escrow.js --network monad",
     "app": "node backend/server.js",
     "frontend": "node backend/server.js"
   },

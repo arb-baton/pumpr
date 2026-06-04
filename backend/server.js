@@ -1461,6 +1461,15 @@ function normalizeGoBounty(row = {}) {
     tokenSymbol: sanitizeGoText(row.tokenSymbol || "ETHERPUMP", 24).replace(/^\$/, "").toUpperCase(),
     tokenAmount: Math.max(0, Number(row.tokenAmount || 0) || 0),
     tokenUnit: sanitizeGoText(row.tokenUnit || "ETH", 16).toUpperCase(),
+    payoutChainId: parseChainId(row.payoutChainId || row.chainId || 1) || 1,
+    escrowAddress: normalizeAddress(row.escrowAddress || "") || "",
+    escrowTxHash: sanitizeGoText(row.escrowTxHash || "", 120),
+    releaseTxHash: sanitizeGoText(row.releaseTxHash || "", 120),
+    escrowStatus: ["funded", "released", "refunded"].includes(String(row.escrowStatus || "").toLowerCase())
+      ? String(row.escrowStatus || "").toLowerCase()
+      : "unfunded",
+    winnerSubmissionId: normalizeGoId(row.winnerSubmissionId || "", "sub"),
+    winnerAddress: normalizeAddress(row.winnerAddress || "") || "",
     creator: normalizeAddress(row.creator || row.address || "") || ethers.ZeroAddress,
     creatorName: sanitizeGoText(row.creatorName || row.xHandle || "", 80),
     status: String(row.status || "open").toLowerCase() === "closed" ? "closed" : "open",
@@ -1468,6 +1477,32 @@ function normalizeGoBounty(row = {}) {
     createdAt: Number(row.createdAt || now),
     endsAt: Number(row.endsAt || now + 3 * 24 * 60 * 60)
   };
+}
+
+function goEscrowAddressForChain(chainId) {
+  const id = parseChainId(chainId);
+  const direct = String(process.env[`GO_ESCROW_ADDRESS_${id}`] || process.env[`BOUNTY_ESCROW_ADDRESS_${id}`] || "").trim();
+  const fallback =
+    id === 1
+      ? String(process.env.GO_ESCROW_ADDRESS || process.env.BOUNTY_ESCROW_ADDRESS || "").trim()
+      : "";
+  const address = direct || fallback;
+  return ethers.isAddress(address) ? ethers.getAddress(address) : "";
+}
+
+function goEscrowConfig() {
+  return [1, 8453, 143].map((chainId) => {
+    const meta = CHAIN_META[chainId] || {};
+    const escrowAddress = goEscrowAddressForChain(chainId);
+    return {
+      chainId,
+      name: meta.name || String(chainId),
+      shortName: meta.shortName || String(chainId),
+      nativeCurrency: meta.nativeCurrency || "ETH",
+      escrowAddress,
+      enabled: Boolean(escrowAddress)
+    };
+  });
 }
 
 function normalizeGoSubmission(row = {}) {
@@ -3769,6 +3804,10 @@ app.get("/api/go", async (req, res) => {
   }
 });
 
+app.get("/api/go/config", async (_req, res) => {
+  res.json({ payoutChains: goEscrowConfig() });
+});
+
 app.get("/api/go/bounties/:id", async (req, res) => {
   try {
     const id = normalizeGoId(req.params.id || "", "go");
@@ -3792,14 +3831,20 @@ app.post("/api/go/bounties", async (req, res) => {
     if (!title) throw new Error("bounty title is required");
     const store = readGoDb();
     const bounty = normalizeGoBounty({
-      id: `go-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 44)}-${Date.now().toString(36)}`,
+      id:
+        body.id ||
+        `go-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 44)}-${Date.now().toString(36)}`,
       title,
       description: body.description || "",
       deliverables: body.deliverables || [],
       rewardUsd: body.rewardUsd || 0,
-      tokenSymbol: body.tokenSymbol || "ETHERPUMP",
+      tokenSymbol: body.tokenSymbol || body.tokenUnit || "ETH",
       tokenAmount: body.tokenAmount || 0,
       tokenUnit: body.tokenUnit || "ETH",
+      payoutChainId: body.payoutChainId || 1,
+      escrowAddress: body.escrowAddress || "",
+      escrowTxHash: body.escrowTxHash || "",
+      escrowStatus: body.escrowTxHash ? "funded" : "unfunded",
       creator: body.creator || body.address || "",
       creatorName: body.creatorName || "",
       imageUri: body.imageUri || "",
@@ -3807,11 +3852,43 @@ app.post("/api/go/bounties", async (req, res) => {
       endsAt: Math.floor(Date.now() / 1000) + Math.max(1, Math.min(30, Number(body.days || 3) || 3)) * 24 * 60 * 60
     });
     if (!bounty) throw new Error("invalid bounty");
+    const expectedEscrow = goEscrowAddressForChain(bounty.payoutChainId);
+    if (!expectedEscrow) throw new Error("escrow is not configured for this payout chain");
+    if (String(bounty.escrowAddress || "").toLowerCase() !== expectedEscrow.toLowerCase()) {
+      throw new Error("escrow address does not match configured payout chain");
+    }
+    if (!bounty.escrowTxHash) throw new Error("escrow funding transaction is required");
     store.bounties = [bounty, ...(Array.isArray(store.bounties) ? store.bounties : [])].slice(0, 1000);
     writeGoDb(store);
     res.json({ bounty: decorateGoBounty(bounty, store) });
   } catch (error) {
     res.status(400).json({ error: error.message || "Failed to create bounty" });
+  }
+});
+
+app.post("/api/go/bounties/:id/release", async (req, res) => {
+  try {
+    const id = normalizeGoId(req.params.id || "", "go");
+    const store = readGoDb();
+    const index = (store.bounties || []).findIndex((row) => normalizeGoId(row?.id || "", "go") === id);
+    if (index < 0) throw new Error("bounty not found");
+    const releaseTxHash = sanitizeGoText(req.body?.releaseTxHash || "", 120);
+    const winnerSubmissionId = normalizeGoId(req.body?.winnerSubmissionId || "", "sub");
+    const winnerAddress = normalizeAddress(req.body?.winnerAddress || "");
+    if (!releaseTxHash) throw new Error("release transaction is required");
+    if (!winnerAddress) throw new Error("winner wallet address is required");
+    store.bounties[index] = {
+      ...store.bounties[index],
+      escrowStatus: "released",
+      status: "closed",
+      releaseTxHash,
+      winnerSubmissionId,
+      winnerAddress
+    };
+    writeGoDb(store);
+    res.json({ bounty: decorateGoBounty(store.bounties[index], store) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to release escrow" });
   }
 });
 
