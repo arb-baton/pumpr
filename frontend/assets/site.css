@@ -2063,6 +2063,13 @@ button:disabled {
   color: #9dc3ff;
 }
 
+.chain-badge.monad,
+.trend-chain-badge.monad {
+  border-color: rgba(191, 142, 255, 0.68);
+  background: rgba(43, 26, 67, 0.9);
+  color: #d7b7ff;
+}
+
 .chain-badge.other,
 .trend-chain-badge.other {
   border-color: rgba(201, 208, 232, 0.5);
@@ -2087,6 +2094,12 @@ button:disabled {
   border-color: rgba(110, 166, 255, 0.58);
   color: #9dc3ff;
   background: rgba(17, 29, 55, 0.82);
+}
+
+.coin-chain-text.monad {
+  border-color: rgba(191, 142, 255, 0.58);
+  color: #d7b7ff;
+  background: rgba(43, 26, 67, 0.82);
 }
 
 .watch-btn {
@@ -2464,6 +2477,55 @@ button:disabled {
   cursor: not-allowed;
   border-color: rgba(138, 146, 178, 0.24);
   background: rgba(21, 27, 43, 0.58);
+}
+
+.create-pumpverse-options {
+  margin-top: 0.58rem;
+  border: 1px solid rgba(125, 255, 199, 0.22);
+  border-radius: 8px;
+  background: rgba(9, 20, 24, 0.58);
+  padding: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.42rem;
+}
+
+.create-pumpverse-options[hidden] {
+  display: none;
+}
+
+.create-pumpverse-option {
+  border: 1px solid rgba(138, 146, 178, 0.34);
+  border-radius: 8px;
+  background: rgba(20, 27, 43, 0.86);
+  color: #dbe4ff;
+  padding: 0.48rem 0.56rem;
+  text-align: left;
+  display: grid;
+  gap: 0.1rem;
+  min-height: 50px;
+  cursor: pointer;
+}
+
+.create-pumpverse-option strong {
+  font-size: 0.82rem;
+}
+
+.create-pumpverse-option span {
+  color: #aeb7d6;
+  font-size: 0.68rem;
+}
+
+.create-pumpverse-option.active {
+  border-color: rgba(125, 255, 199, 0.78);
+  background: rgba(18, 88, 58, 0.52);
+  box-shadow: 0 0 0 1px rgba(125, 255, 199, 0.12) inset;
+}
+
+.create-pumpverse-option.disabled,
+.create-pumpverse-option:disabled {
+  opacity: 0.54;
+  cursor: not-allowed;
 }
 
 .create-chain-hint {

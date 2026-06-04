@@ -49,11 +49,13 @@ const V2_PAIR_ABI = [
 const V2_ROUTER_ABI = ["function WETH() view returns (address)"];
 const GECKO_NETWORK_BY_CHAIN = {
   1: "eth",
+  143: "monad",
   8453: "base",
   11155111: "sepolia-testnet"
 };
 const DEXSCREENER_CHAIN_BY_ID = {
   1: "ethereum",
+  143: "monad",
   8453: "base",
   11155111: "sepolia"
 };
@@ -73,6 +75,14 @@ const CHAIN_META = {
     explorerBaseUrl: "https://basescan.org",
     rpcUrls: ["https://mainnet.base.org"],
     dexRouter: "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"
+  },
+  143: {
+    name: "Monad",
+    shortName: "MONAD",
+    nativeCurrency: "MON",
+    explorerBaseUrl: "https://monadvision.com",
+    rpcUrls: ["https://rpc.monad.xyz"],
+    dexRouter: ethers.ZeroAddress
   },
   11155111: {
     name: "Sepolia",
@@ -302,6 +312,20 @@ function loadDeploymentConfig() {
   return config;
 }
 
+function loadChainDeploymentConfig(chainId) {
+  const normalized = parseChainId(chainId);
+  if (!normalized) return null;
+  const filePath = path.join(FRONTEND_DIR, "deployments", `${normalized}.json`);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (!ethers.isAddress(parsed?.memeLaunchFactory)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function parseChainId(value) {
   const num = Number(value || 0);
   if (!Number.isFinite(num) || num <= 0) return null;
@@ -320,8 +344,29 @@ function parseJsonObjectEnv(key) {
   }
 }
 
-function readFactoryMapFromEnv() {
+function readFactoryMapFromDeploymentFiles() {
   const map = new Map();
+  const dir = path.join(FRONTEND_DIR, "deployments");
+  if (!fs.existsSync(dir)) return map;
+
+  for (const name of fs.readdirSync(dir)) {
+    if (!/^\d+\.json$/.test(name)) continue;
+    try {
+      const raw = fs.readFileSync(path.join(dir, name), "utf8");
+      const parsed = JSON.parse(raw);
+      const chainId = parseChainId(parsed?.chainId || name.replace(/\.json$/, ""));
+      if (!chainId || !ethers.isAddress(parsed?.memeLaunchFactory)) continue;
+      map.set(chainId, ethers.getAddress(parsed.memeLaunchFactory));
+    } catch {
+      // Ignore malformed optional chain deployment files.
+    }
+  }
+
+  return map;
+}
+
+function readFactoryMapFromEnv() {
+  const map = readFactoryMapFromDeploymentFiles();
 
   const jsonMap = parseJsonObjectEnv("FACTORY_ADDRESSES");
   for (const [chain, address] of Object.entries(jsonMap)) {
@@ -388,10 +433,16 @@ function resolveSupportedChains(deployment) {
   if (deploymentChain && ethers.isAddress(deployment?.memeLaunchFactory)) {
     map.set(deploymentChain, ethers.getAddress(deployment.memeLaunchFactory));
   }
+  const chainRank = (chainId) => {
+    const order = [1, 8453, 143, 11155111, 31337];
+    const index = order.indexOf(Number(chainId));
+    return index >= 0 ? index : order.length + Number(chainId || 0);
+  };
 
   return [...map.entries()]
     .map(([chainId, factoryAddress]) => {
       const meta = CHAIN_META[chainId] || {};
+      const chainDeployment = loadChainDeploymentConfig(chainId);
       return {
         chainId,
         name: meta.name || `Chain ${chainId}`,
@@ -399,10 +450,10 @@ function resolveSupportedChains(deployment) {
         nativeCurrency: meta.nativeCurrency || "ETH",
         factoryAddress,
         explorerBaseUrl: explorerBaseForChain(chainId),
-        dexRouter: meta.dexRouter || ethers.ZeroAddress
+        dexRouter: chainDeployment?.dexRouter || meta.dexRouter || ethers.ZeroAddress
       };
     })
-    .sort((a, b) => a.chainId - b.chainId);
+    .sort((a, b) => chainRank(a.chainId) - chainRank(b.chainId));
 }
 
 function pickRpcUrls(chainId) {
@@ -447,6 +498,12 @@ function pickRpcUrls(chainId) {
     return urls;
   }
 
+  if (chainId === 143) {
+    pushIf(process.env.MONAD_RPC_URL);
+    pushIf("https://rpc.monad.xyz");
+    return urls;
+  }
+
   if (chainId === 1) {
     pushIf(process.env.MAINNET_RPC_URL);
     pushIf("https://eth-mainnet.g.alchemy.com/v2/iJRW-AEdqp-ijB69j9JQe");
@@ -475,7 +532,7 @@ async function buildContext(chainId, factoryAddress, deployment = loadDeployment
   }
 
   const rpcUrls = pickRpcUrls(normalizedChainId);
-  const probeTimeoutMs = normalizedChainId === 8453 ? Math.max(RPC_PROBE_TIMEOUT_MS, 12_000) : RPC_PROBE_TIMEOUT_MS;
+  const probeTimeoutMs = normalizedChainId === 8453 || normalizedChainId === 143 ? Math.max(RPC_PROBE_TIMEOUT_MS, 12_000) : RPC_PROBE_TIMEOUT_MS;
   let lastError = null;
   let provider = null;
   let factory = null;
@@ -3040,6 +3097,14 @@ app.get("/api/config", async (req, res) => {
     const rpcUrls = pickRpcUrls(chainId);
     const supportedChains = resolveSupportedChains(deployment);
     const chainMeta = CHAIN_META[chainId] || {};
+    const chainDeployment = loadChainDeploymentConfig(chainId);
+    const effectiveDeployment = {
+      ...deployment,
+      ...(chainDeployment || {}),
+      chainId,
+      memeLaunchFactory: factoryAddress,
+      dexRouter: chainDeployment?.dexRouter || chainMeta.dexRouter || deployment.dexRouter || ethers.ZeroAddress
+    };
 
     res.json({
       chainId,
@@ -3049,16 +3114,11 @@ app.get("/api/config", async (req, res) => {
       requestedChainId: parseChainId(req?.query?.chainId || req?.headers?.["x-chain-id"]),
       factoryAddress,
       supportedChains,
-      deployment: {
-        ...deployment,
-        chainId,
-        memeLaunchFactory: factoryAddress,
-        dexRouter: chainMeta.dexRouter || deployment.dexRouter || ethers.ZeroAddress
-      },
+      deployment: effectiveDeployment,
       rpcUrl: rpcUrls[0] || "",
       rpcUrls,
       explorerBaseUrl: explorerBaseForChain(chainId),
-      dexRouter: chainMeta.dexRouter || ethers.ZeroAddress
+      dexRouter: effectiveDeployment.dexRouter || ethers.ZeroAddress
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

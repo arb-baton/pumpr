@@ -8,6 +8,7 @@ dotenv.config();
 const ROUTER_BY_CHAIN = {
   1: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
   8453: "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
+  143: ethers.ZeroAddress,
   11155111: "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3",
   31337: ethers.ZeroAddress
 };
@@ -15,7 +16,7 @@ const ROUTER_BY_CHAIN = {
 function readTargetChainId() {
   const value = Number(process.env.TARGET_CHAIN_ID || process.env.CHAIN_ID || 0);
   if (!Number.isFinite(value) || value <= 0) {
-    throw new Error("Set TARGET_CHAIN_ID, for example 8453 for Base.");
+    throw new Error("Set TARGET_CHAIN_ID, for example 8453 for Base or 143 for Monad.");
   }
   return Math.floor(value);
 }
@@ -23,8 +24,9 @@ function readTargetChainId() {
 function pickRpcUrl(chainId) {
   const byChain = process.env[`RPC_URL_${chainId}`] || "";
   const base = chainId === 8453 ? process.env.BASE_RPC_URL || "https://mainnet.base.org" : "";
+  const monad = chainId === 143 ? process.env.MONAD_RPC_URL || "https://rpc.monad.xyz" : "";
   const mainnet = chainId === 1 ? process.env.MAINNET_RPC_URL || process.env.RPC_URL || "" : "";
-  const value = process.env.TARGET_RPC_URL || byChain || base || mainnet || process.env.RPC_URL || "";
+  const value = process.env.TARGET_RPC_URL || byChain || base || monad || mainnet || process.env.RPC_URL || "";
   if (!value.trim()) throw new Error(`No RPC URL configured for chain ${chainId}.`);
   return value.trim();
 }

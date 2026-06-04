@@ -256,7 +256,7 @@ function chainMetaForLaunch(launch) {
   const chainId = Number(launch?.chainId || state.chainId || 1);
   const fromConfig = (state.supportedChains || []).find((row) => Number(row?.chainId || 0) === chainId);
   const fromCore = CHAIN_OPTIONS[chainId] || {};
-  const shortName = String(fromConfig?.shortName || fromCore.shortName || (chainId === 8453 ? "BASE" : chainId === 1 ? "ETH" : chainId));
+  const shortName = String(fromConfig?.shortName || fromCore.shortName || (chainId === 143 ? "MONAD" : chainId === 8453 ? "BASE" : chainId === 1 ? "ETH" : chainId));
   const name = String(fromConfig?.name || fromCore.name || `Chain ${chainId}`);
   return { chainId, shortName, name };
 }
@@ -264,6 +264,7 @@ function chainMetaForLaunch(launch) {
 function chainClassForLaunch(launch) {
   const chainId = Number(launch?.chainId || state.chainId || 1);
   if (chainId === 8453) return "base";
+  if (chainId === 143) return "monad";
   if (chainId === 1) return "eth";
   return "other";
 }

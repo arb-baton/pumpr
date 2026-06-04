@@ -65,6 +65,7 @@ const ui = {
   netChip: document.getElementById("networkChip"),
   factoryChip: document.getElementById("factoryChip"),
   launchChainOptions: document.getElementById("launchChainOptions"),
+  launchPumpVerseOptions: document.getElementById("launchPumpVerseOptions"),
   launchChainLabel: document.getElementById("launchChainLabel"),
   launchChainHint: document.getElementById("launchChainHint"),
   createForm: document.getElementById("createForm"),
@@ -124,6 +125,7 @@ const state = {
   config: null,
   selectedChainId: 1,
   selectedLaunchMode: "1",
+  selectedPumpVerseChains: [1, 8453],
   supportedChains: [],
   ethUsd: 3000,
   lastPumpVerseDetails: null,
@@ -132,12 +134,43 @@ const state = {
 const LAUNCH_CHAIN_CHOICES = [
   { chainId: 1, name: "Ethereum", shortName: "ETH", networkLabel: "Mainnet" },
   { chainId: 8453, name: "Base", shortName: "BASE", networkLabel: "Mainnet" },
+  { chainId: 143, name: "Monad", shortName: "MONAD", networkLabel: "Mainnet" },
   {
     mode: "pumpverse",
     name: "PumpVerse",
+    shortName: "MULTI",
+    networkLabel: "Choose chains",
+    requiredMinChains: 2
+  }
+];
+const PUMPVERSE_COMBO_CHOICES = [
+  {
+    mode: "pumpverse:1,8453",
+    name: "ETH + BASE",
     shortName: "ETH + BASE",
     networkLabel: "Multiverse launch",
     requiredChains: [1, 8453]
+  },
+  {
+    mode: "pumpverse:1,143",
+    name: "ETH + MONAD",
+    shortName: "ETH + MONAD",
+    networkLabel: "Multiverse launch",
+    requiredChains: [1, 143]
+  },
+  {
+    mode: "pumpverse:8453,143",
+    name: "BASE + MONAD",
+    shortName: "BASE + MONAD",
+    networkLabel: "Multiverse launch",
+    requiredChains: [8453, 143]
+  },
+  {
+    mode: "pumpverse:1,8453,143",
+    name: "All three",
+    shortName: "ETH + BASE + MONAD",
+    networkLabel: "Multiverse launch",
+    requiredChains: [1, 8453, 143]
   }
 ];
 
@@ -189,7 +222,12 @@ function normalizeSupportedChains(config = state.config) {
       factoryAddress: config.factoryAddress
     });
   }
-  return [...map.values()].sort((a, b) => a.chainId - b.chainId);
+  const chainRank = (chainId) => {
+    const order = [1, 8453, 143, 11155111, 31337];
+    const index = order.indexOf(Number(chainId));
+    return index >= 0 ? index : order.length + Number(chainId || 0);
+  };
+  return [...map.values()].sort((a, b) => chainRank(a.chainId) - chainRank(b.chainId));
 }
 
 function selectedChain() {
@@ -197,7 +235,7 @@ function selectedChain() {
 }
 
 function isPumpVerseMode() {
-  return state.selectedLaunchMode === "pumpverse";
+  return String(state.selectedLaunchMode || "").startsWith("pumpverse:");
 }
 
 function configuredChainMap() {
@@ -210,10 +248,55 @@ function configuredChainMap() {
   return map;
 }
 
+function chainNameForId(chainId) {
+  const n = Number(chainId || 0);
+  if (n === 1) return "Ethereum";
+  if (n === 8453) return "Base";
+  if (n === 143) return "Monad";
+  return `Chain ${n}`;
+}
+
+function chainShortNameForId(chainId) {
+  const n = Number(chainId || 0);
+  if (n === 1) return "ETH";
+  if (n === 8453) return "BASE";
+  if (n === 143) return "MONAD";
+  return String(n);
+}
+
+function normalizePumpVerseChains(chains = state.selectedPumpVerseChains, { requireConfigured = true } = {}) {
+  const supported = configuredChainMap();
+  const unique = [];
+  for (const value of chains) {
+    const chainId = Number(value || 0);
+    if (!Number.isFinite(chainId) || chainId <= 0 || unique.includes(chainId)) continue;
+    if (requireConfigured && supported.size && !supported.has(chainId)) continue;
+    unique.push(chainId);
+  }
+  return unique;
+}
+
+function pumpVerseModeForChains(chains = state.selectedPumpVerseChains) {
+  const normalized = normalizePumpVerseChains(chains);
+  return normalized.length >= 2 ? `pumpverse:${normalized.join(",")}` : "";
+}
+
+function parsePumpVerseMode(mode = state.selectedLaunchMode) {
+  const text = String(mode || "");
+  if (!text.startsWith("pumpverse:")) return [];
+  return normalizePumpVerseChains(text.slice("pumpverse:".length).split(","), { requireConfigured: false });
+}
+
+function pumpVerseLabel(chains = state.selectedPumpVerseChains) {
+  const normalized = normalizePumpVerseChains(chains);
+  return normalized.map(chainNameForId).join(" + ");
+}
+
 function renderChainSelector() {
   const current = selectedChain();
   const supported = configuredChainMap();
-  const baseConfigured = supported.has(8453);
+  const monadConfigured = supported.has(143);
+  const configuredCount = supported.size;
   if (ui.launchChainLabel) {
     ui.launchChainLabel.textContent = isPumpVerseMode()
       ? "PumpVerse"
@@ -227,27 +310,51 @@ function renderChainSelector() {
   }
   if (ui.launchChainHint) {
     ui.launchChainHint.textContent = isPumpVerseMode()
-      ? "PumpVerse launches the same token details on Ethereum and Base. MetaMask will ask for separate confirmations."
-      : baseConfigured
+      ? `PumpVerse launches the same token details on ${pumpVerseLabel()}. MetaMask will ask for separate confirmations.`
+      : monadConfigured
       ? "Wallet will switch to the selected network before launch."
-      : "Base launches are ready once the Base factory address is configured.";
+      : "Monad launches are ready once the Monad factory address is configured.";
   }
-  if (!ui.launchChainOptions) return;
-  ui.launchChainOptions.innerHTML = LAUNCH_CHAIN_CHOICES
+  if (ui.launchChainOptions) {
+    ui.launchChainOptions.innerHTML = LAUNCH_CHAIN_CHOICES
+      .map((choice) => {
+        const mode = choice.mode || String(choice.chainId);
+        const isPumpVerseParent = mode === "pumpverse";
+        const requiredChains = Array.isArray(choice.requiredChains) ? choice.requiredChains : [choice.chainId];
+        const enabled = isPumpVerseParent
+          ? configuredCount >= Number(choice.requiredMinChains || 2)
+          : requiredChains.every((chainId) => supported.has(Number(chainId)));
+        const row = choice.chainId ? supported.get(choice.chainId) : null;
+        const active = enabled && (isPumpVerseParent ? isPumpVerseMode() : String(mode) === String(state.selectedLaunchMode));
+        const chainAttr = choice.chainId ? `data-chain-id="${choice.chainId}"` : "";
+        const description = isPumpVerseParent
+          ? "Choose two or three chains"
+          : `${row?.shortName || choice.shortName} ${choice.networkLabel}${enabled ? "" : " - configure factory"}`;
+        return `
+          <button class="create-chain-option${isPumpVerseParent ? " pumpverse" : ""}${active ? " active" : ""}${enabled ? "" : " disabled"}" type="button" ${chainAttr} data-launch-mode="${mode}" role="tab" aria-selected="${active ? "true" : "false"}" ${enabled ? "" : "disabled aria-disabled=\"true\""}>
+            <strong>${row?.name || choice.name}</strong>
+            <span>${description}</span>
+          </button>
+        `;
+      })
+      .join("");
+  }
+  if (!ui.launchPumpVerseOptions) return;
+  ui.launchPumpVerseOptions.hidden = !isPumpVerseMode();
+  if (!isPumpVerseMode()) {
+    ui.launchPumpVerseOptions.innerHTML = "";
+    return;
+  }
+  ui.launchPumpVerseOptions.innerHTML = PUMPVERSE_COMBO_CHOICES
     .map((choice) => {
-      const mode = choice.mode || String(choice.chainId);
-      const requiredChains = Array.isArray(choice.requiredChains) ? choice.requiredChains : [choice.chainId];
-      const enabled = requiredChains.every((chainId) => supported.has(Number(chainId)));
-      const row = choice.chainId ? supported.get(choice.chainId) : null;
-      const active = enabled && String(mode) === String(state.selectedLaunchMode);
-      const chainAttr = choice.chainId ? `data-chain-id="${choice.chainId}"` : "";
-      const description = choice.mode === "pumpverse"
-        ? "ETH + BASE one guided flow"
-        : `${row?.shortName || choice.shortName} ${choice.networkLabel}${enabled ? "" : " - configure factory"}`;
+      const enabled = choice.requiredChains.every((chainId) => supported.has(Number(chainId)));
+      const active = enabled && String(choice.mode) === String(state.selectedLaunchMode);
+      const missing = choice.requiredChains.filter((chainId) => !supported.has(Number(chainId))).map(chainShortNameForId);
+      const detail = enabled ? "one guided flow" : `needs ${missing.join(" + ")} factory`;
       return `
-        <button class="create-chain-option${choice.mode === "pumpverse" ? " pumpverse" : ""}${active ? " active" : ""}${enabled ? "" : " disabled"}" type="button" ${chainAttr} data-launch-mode="${mode}" role="tab" aria-selected="${active ? "true" : "false"}" ${enabled ? "" : "disabled aria-disabled=\"true\""}>
-          <strong>${row?.name || choice.name}</strong>
-          <span>${description}</span>
+        <button class="create-pumpverse-option${active ? " active" : ""}${enabled ? "" : " disabled"}" type="button" data-launch-mode="${choice.mode}" aria-pressed="${active ? "true" : "false"}" ${enabled ? "" : "disabled aria-disabled=\"true\""}>
+          <strong>${choice.name}</strong>
+          <span>${choice.shortName} ${detail}</span>
         </button>
       `;
     })
@@ -270,11 +377,11 @@ async function selectLaunchChain(chainId) {
   if (!Number.isFinite(target) || target <= 0) return;
   if (String(state.selectedLaunchMode) === String(target) && target === Number(state.selectedChainId)) return;
   if (!state.supportedChains.some((row) => Number(row.chainId) === target)) {
-    setAlert(ui.alert, `${target === 8453 ? "Base" : "Selected network"} factory is not configured yet.`, true);
+    setAlert(ui.alert, `${chainNameForId(target)} factory is not configured yet.`, true);
     return;
   }
   try {
-    setAlert(ui.alert, `Loading ${target === 8453 ? "Base" : "Ethereum"} launch settings...`);
+    setAlert(ui.alert, `Loading ${chainNameForId(target)} launch settings...`);
     await loadChainConfig(target);
     state.selectedLaunchMode = String(target);
     renderChainSelector();
@@ -290,18 +397,31 @@ async function selectLaunchChain(chainId) {
   }
 }
 
-async function selectPumpVerseMode() {
+async function selectPumpVerseMode(mode) {
   const supported = configuredChainMap();
-  if (!supported.has(1) || !supported.has(8453)) {
-    setAlert(ui.alert, "PumpVerse needs both Ethereum and Base factories configured.", true);
+  let requested = parsePumpVerseMode(mode);
+  if (!requested.length) {
+    const current = normalizePumpVerseChains(state.selectedPumpVerseChains);
+    const firstAvailable = PUMPVERSE_COMBO_CHOICES.find((choice) => choice.requiredChains.every((chainId) => supported.has(Number(chainId))));
+    requested = current.length >= 2 ? current : firstAvailable?.requiredChains || [];
+  }
+  if (requested.length < 2) {
+    setAlert(ui.alert, "PumpVerse needs at least two configured chains.", true);
     return;
   }
-  state.selectedChainId = 1;
-  state.selectedLaunchMode = "pumpverse";
-  await loadChainConfig(1);
-  state.selectedLaunchMode = "pumpverse";
+  const missing = requested.filter((chainId) => !supported.has(chainId));
+  if (missing.length) {
+    setAlert(ui.alert, `PumpVerse needs configured factories for ${missing.map(chainNameForId).join(", ")}.`, true);
+    return;
+  }
+  state.selectedPumpVerseChains = requested;
+  state.selectedChainId = requested[0];
+  state.selectedLaunchMode = pumpVerseModeForChains(requested);
+  await loadChainConfig(requested[0]);
+  state.selectedPumpVerseChains = requested;
+  state.selectedLaunchMode = pumpVerseModeForChains(requested);
   renderChainSelector();
-  setAlert(ui.alert, "PumpVerse selected. One form will launch on Ethereum and Base.");
+  setAlert(ui.alert, `PumpVerse selected. One form will launch on ${pumpVerseLabel(requested)}.`);
 }
 
 function setAvatarNode(node, text, imageUri = "") {
@@ -865,9 +985,7 @@ function escapeHtml(value = "") {
 
 function chainLabel(chainId) {
   const n = Number(chainId || 0);
-  if (n === 8453) return "Base";
-  if (n === 1) return "Ethereum";
-  return `Chain ${n}`;
+  return chainNameForId(n);
 }
 
 function setSubmitting(active, label = "") {
@@ -1069,7 +1187,10 @@ async function launchOnChain(chainId, details, { showModal = true } = {}) {
 }
 
 async function launchPumpVerse(details) {
-  const targets = [1, 8453];
+  const targets = normalizePumpVerseChains(state.selectedPumpVerseChains);
+  if (targets.length < 2) {
+    throw new Error("Select at least two configured chains for PumpVerse.");
+  }
   const results = [];
   state.lastPumpVerseDetails = details;
   state.lastPumpVerseResults = results;
@@ -1087,7 +1208,6 @@ async function launchPumpVerse(details) {
       results.push({ ok: false, chainId, error: parseUiError(error) });
       state.lastPumpVerseResults = [...results];
       renderLaunchResults(results);
-      break;
     }
   }
 
@@ -1101,12 +1221,12 @@ async function launchPumpVerse(details) {
   if (failures.length) {
     setAlert(
       ui.alert,
-      `PumpVerse partially completed: ${successes.length}/2 launched. ${chainLabel(failures[0].chainId)} failed: ${failures[0].error}`,
+      `PumpVerse partially completed: ${successes.length}/${targets.length} launched. ${chainLabel(failures[0].chainId)} failed: ${failures[0].error}`,
       true
     );
     return results;
   }
-  setAlert(ui.alert, "PumpVerse launch complete on Ethereum and Base.");
+  setAlert(ui.alert, `PumpVerse launch complete on ${pumpVerseLabel(targets)}.`);
   return results;
 }
 
@@ -1251,11 +1371,24 @@ async function init() {
   ui.launchChainOptions?.addEventListener("click", (event) => {
     const button = event.target?.closest?.("[data-launch-mode], [data-chain-id]");
     if (!button) return;
-    if (button.dataset.launchMode === "pumpverse") {
-      selectPumpVerseMode();
+    if (String(button.dataset.launchMode || "") === "pumpverse") {
+      selectPumpVerseMode("pumpverse");
+      return;
+    }
+    if (String(button.dataset.launchMode || "").startsWith("pumpverse:")) {
+      selectPumpVerseMode(button.dataset.launchMode);
       return;
     }
     selectLaunchChain(button.dataset.chainId);
+  });
+
+  ui.launchPumpVerseOptions?.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("[data-launch-mode]");
+    if (!button) return;
+    if (String(button.dataset.launchMode || "").startsWith("pumpverse:")) {
+      selectPumpVerseMode(button.dataset.launchMode);
+      return;
+    }
   });
 
   ui.launchResultList?.addEventListener("click", (event) => {

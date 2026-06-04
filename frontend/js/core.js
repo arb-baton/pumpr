@@ -85,6 +85,15 @@ export const CHAIN_OPTIONS = {
     nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
     rpcUrls: ["https://mainnet.base.org"],
     blockExplorerUrls: ["https://basescan.org"]
+  },
+  143: {
+    chainId: 143,
+    chainIdHex: "0x8f",
+    name: "Monad",
+    shortName: "MONAD",
+    nativeCurrency: { name: "Monad", symbol: "MON", decimals: 18 },
+    rpcUrls: ["https://rpc.monad.xyz"],
+    blockExplorerUrls: ["https://monadvision.com"]
   }
 };
 
