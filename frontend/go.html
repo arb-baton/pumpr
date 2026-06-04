@@ -163,7 +163,10 @@
               <label><input id="goConfirmLegal" type="checkbox" /> <span>I confirm this bounty does not request anything illegal, exploitative, or prohibited.</span></label>
               <label><input id="goConfirmSpecific" type="checkbox" /> <span>I made the title, summary, and deliverables specific enough for reviewers.</span></label>
             </div>
-            <button id="goContinueRewardsBtn" class="btn-primary" type="button">Save draft & continue</button>
+            <div class="go-modal-actions">
+              <button class="btn-ghost goBountyCancel" type="button">Cancel</button>
+              <button id="goContinueRewardsBtn" class="btn-primary" type="button">Save draft & continue</button>
+            </div>
           </section>
           <section id="goRewardsStep" class="go-bounty-step" hidden>
             <small>Step 2</small>
@@ -185,7 +188,10 @@
                 <li>If the bounty expires with no valid submissions, you can request a refund.</li>
               </ul>
             </div>
-            <button class="btn-primary" type="submit">Fund & publish</button>
+            <div class="go-modal-actions">
+              <button class="btn-ghost goBountyCancel" type="button">Cancel</button>
+              <button class="btn-primary" type="submit">Fund & publish</button>
+            </div>
           </section>
         </form>
       </div>

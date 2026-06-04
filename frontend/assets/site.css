@@ -853,9 +853,28 @@
   padding-left: 1.2rem;
 }
 
-.go-bounty-step .btn-primary {
-  justify-self: end;
-  min-width: 180px;
+.go-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.62rem;
+}
+
+.go-modal-actions .btn-primary,
+.go-modal-actions .btn-ghost {
+  min-width: 150px;
+  border-radius: 10px;
+  padding: 0.68rem 1rem;
+}
+
+.go-modal-actions .btn-ghost {
+  border: 1px solid rgba(146, 158, 197, 0.3);
+  background: #24262b;
+  color: #dfe6ff;
+}
+
+.go-modal-actions .btn-ghost:hover {
+  background: #2d313a;
 }
 
 .go-form-grid {

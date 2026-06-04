@@ -27,6 +27,7 @@ const ui = {
   createBountyBtn: document.getElementById("goCreateBountyBtn"),
   bountyModal: document.getElementById("goBountyModal"),
   bountyClose: document.getElementById("goBountyClose"),
+  bountyCancelBtns: Array.from(document.querySelectorAll(".goBountyCancel")),
   bountyForm: document.getElementById("goBountyForm"),
   bountyTitle: document.getElementById("goBountyTitle"),
   bountyDescription: document.getElementById("goBountyDescription"),
@@ -642,6 +643,7 @@ async function init() {
   });
   ui.submitAddLink?.addEventListener("click", () => ui.submitLinks?.focus());
   ui.bountyClose?.addEventListener("click", () => closeModal(ui.bountyModal));
+  ui.bountyCancelBtns.forEach((button) => button.addEventListener("click", () => closeModal(ui.bountyModal)));
   ui.submitClose?.addEventListener("click", () => closeModal(ui.submitModal));
   ui.bountyForm?.addEventListener("submit", submitBounty);
   ui.submitForm?.addEventListener("submit", submitWork);
