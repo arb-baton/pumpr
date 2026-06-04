@@ -75,6 +75,14 @@
       "dest": "/frontend/communities.html"
     },
     {
+      "src": "/go$",
+      "dest": "/frontend/go.html"
+    },
+    {
+      "src": "/go/(.*)",
+      "dest": "/frontend/go.html"
+    },
+    {
       "src": "/home$",
       "dest": "/frontend/index.html"
     },
