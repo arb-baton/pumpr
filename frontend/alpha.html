@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260604alpha2" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260605alpha3" />
   </head>
   <body>
     <div class="app-shell">
@@ -123,12 +123,17 @@
       </main>
     </div>
 
-    <div id="alphaSubmitModal" class="modal-backdrop" aria-hidden="true">
+    <div id="alphaSubmitModal" class="modal-backdrop alpha-modal-backdrop" aria-hidden="true">
       <form id="alphaSubmitForm" class="go-modal-card alpha-modal-card">
-        <header class="go-modal-head">
-          <div><small>Alpha vault</small><h2>Submit alpha</h2></div>
+        <header class="go-modal-head alpha-modal-head">
+          <div>
+            <small>Alpha vault</small>
+            <h2>Submit alpha</h2>
+            <p>Attach the tip to a token contract and publish with your connected X identity.</p>
+          </div>
           <button id="alphaSubmitClose" class="btn-ghost" type="button">X</button>
         </header>
+        <div class="alpha-modal-body">
         <div class="alpha-modal-grid">
           <label>Project name<input id="alphaProjectName" maxlength="80" placeholder="Project or coin name" required /></label>
           <label>Ticker<input id="alphaTokenSymbol" maxlength="24" placeholder="EPUMP" required /></label>
@@ -143,6 +148,7 @@
           <label>Confidence<select id="alphaConfidence"><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
         </div>
         <label>Tip wallet<input id="alphaAuthorWallet" placeholder="Defaults to connected wallet" /></label>
+        </div>
         <div class="go-modal-actions">
           <button class="btn-ghost alphaSubmitCancel" type="button">Cancel</button>
           <button class="btn-primary" type="submit">Publish alpha</button>
@@ -171,6 +177,6 @@
     </div>
 
     <div id="alert" class="alert" role="status"></div>
-    <script type="module" src="/js/alpha.js?v=20260604alpha2"></script>
+    <script type="module" src="/js/alpha.js?v=20260605alpha3"></script>
   </body>
 </html>
