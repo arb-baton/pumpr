@@ -115,6 +115,17 @@ export const api = {
   createGoBounty: (body = {}) => apiPost("/api/go/bounties", body),
   submitGoWork: (id, body = {}) => apiPost(`/api/go/bounties/${encodeURIComponent(String(id || ""))}/submissions`, body),
   releaseGoBounty: (id, body = {}) => apiPost(`/api/go/bounties/${encodeURIComponent(String(id || ""))}/release`, body),
+  alpha: (limit = 80) => apiGet(`/api/alpha?limit=${encodeURIComponent(String(limit || 80))}`),
+  alphaTip: (id, viewer = "") => {
+    const params = new URLSearchParams();
+    if (viewer) params.set("viewer", String(viewer));
+    const qs = params.toString();
+    return apiGet(`/api/alpha/${encodeURIComponent(String(id || ""))}${qs ? `?${qs}` : ""}`);
+  },
+  createAlphaTip: (body = {}) => apiPost("/api/alpha", body),
+  voteAlphaTip: (id, body = {}) => apiPost(`/api/alpha/${encodeURIComponent(String(id || ""))}/vote`, body),
+  commentAlphaTip: (id, body = {}) => apiPost(`/api/alpha/${encodeURIComponent(String(id || ""))}/comment`, body),
+  recordAlphaTip: (id, body = {}) => apiPost(`/api/alpha/${encodeURIComponent(String(id || ""))}/tip`, body),
   supportConfig: () => apiGet("/api/support/config"),
   supportMessages: (address) => apiGet(`/api/support/messages?address=${encodeURIComponent(String(address || ""))}`),
   supportInbox: (address) => apiGet(`/api/support/inbox?address=${encodeURIComponent(String(address || ""))}`),

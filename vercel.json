@@ -83,6 +83,14 @@
       "dest": "/frontend/go.html"
     },
     {
+      "src": "/alpha$",
+      "dest": "/frontend/alpha.html"
+    },
+    {
+      "src": "/alpha/(.*)",
+      "dest": "/frontend/alpha.html"
+    },
+    {
       "src": "/home$",
       "dest": "/frontend/index.html"
     },

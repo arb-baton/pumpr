@@ -22,6 +22,7 @@ const FOLLOW_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-follows.
 const SUPPORT_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-support.json") : path.join(ROOT, "cache", "support.json");
 const COMMUNITY_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-community.json") : path.join(ROOT, "cache", "community.json");
 const GO_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-go.json") : path.join(ROOT, "cache", "go.json");
+const ALPHA_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-alpha.json") : path.join(ROOT, "cache", "alpha.json");
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || ""
@@ -31,6 +32,7 @@ const SUPABASE_FOLLOW_TABLE = String(process.env.SUPABASE_FOLLOW_TABLE || "user_
 const SUPABASE_SCHEMA = String(process.env.SUPABASE_SCHEMA || "public").trim();
 const SUPABASE_STORAGE_BUCKET = String(process.env.SUPABASE_STORAGE_BUCKET || "uploads").trim();
 const SUPABASE_COMMUNITY_OBJECT = String(process.env.SUPABASE_COMMUNITY_OBJECT || "community/community.json").trim();
+const SUPABASE_ALPHA_OBJECT = String(process.env.SUPABASE_ALPHA_OBJECT || "alpha/alpha.json").trim();
 const PROFILE_IMAGE_URI_MAX_LENGTH = 2 * 1024 * 1024;
 const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || "0") === "1";
 const STRICT_SOCIAL_STORE = String(process.env.STRICT_SOCIAL_STORE || (STRICT_PROFILE_STORE ? "1" : "0")) === "1";
@@ -177,6 +179,8 @@ let supportDbCache = null;
 let communityDbCache = null;
 let communityDbRemoteLoaded = false;
 let goDbCache = null;
+let alphaDbCache = null;
+let alphaDbRemoteLoaded = false;
 const profileLastKnownCache = new Map();
 const xOauthStates = new Map();
 
@@ -1231,6 +1235,243 @@ async function writeCommunityDbPersistent(store) {
   return safe;
 }
 
+function emptyAlphaStore() {
+  return { tips: [] };
+}
+
+function sanitizeAlphaText(value, max = 500) {
+  return Array.from(String(value || "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
+}
+
+function normalizeAlphaId(value = "") {
+  return sanitizeAlphaText(value || `alpha-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, 90)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-");
+}
+
+function normalizeAlphaTip(row = {}) {
+  const id = normalizeAlphaId(row.id || "");
+  const title = sanitizeAlphaText(row.title || "", 120);
+  const body = sanitizeAlphaText(row.body || row.alpha || "", 2200);
+  const tokenAddress = normalizeAddress(row.tokenAddress || row.token || "");
+  if (!id || !title || !body || !tokenAddress) return null;
+  const author = normalizeAddress(row.author || row.address || "") || ethers.ZeroAddress;
+  const authorWallet = normalizeAddress(row.authorWallet || row.tipWallet || author || "") || ethers.ZeroAddress;
+  const chainId = parseChainId(row.chainId || 1) || 1;
+  const minBalance = sanitizeAlphaText(row.minBalance || row.requiredBalance || "1", 40) || "1";
+  const tips = Array.isArray(row.tips) ? row.tips : [];
+  const unlocks = Array.isArray(row.unlocks) ? row.unlocks.map(normalizeAddress).filter(Boolean) : [];
+  const upvotes = Array.isArray(row.upvotes) ? row.upvotes.map(normalizeAddress).filter(Boolean) : [];
+  const downvotes = Array.isArray(row.downvotes) ? row.downvotes.map(normalizeAddress).filter(Boolean) : [];
+  const comments = Array.isArray(row.comments) ? row.comments : [];
+  return {
+    id,
+    title,
+    projectName: sanitizeAlphaText(row.projectName || row.project || row.tokenName || "", 80),
+    tokenSymbol: sanitizeAlphaText(row.tokenSymbol || row.symbol || "", 24).replace(/^\$/, "").toUpperCase(),
+    tokenAddress,
+    chainId,
+    minBalance,
+    category: sanitizeAlphaText(row.category || "Intel", 32),
+    confidence: ["low", "medium", "high"].includes(String(row.confidence || "").toLowerCase())
+      ? String(row.confidence || "").toLowerCase()
+      : "medium",
+    teaser: sanitizeAlphaText(row.teaser || row.summary || "", 240),
+    body,
+    author,
+    authorName: sanitizeAlphaText(row.authorName || row.xHandle || "", 80),
+    authorWallet,
+    xHandle: normalizeXHandle(row.xHandle || ""),
+    xName: sanitizeAlphaText(row.xName || "", 80),
+    xImage: String(row.xImage || "").trim().slice(0, 1024),
+    xFollowers: Math.max(0, Number(row.xFollowers || 0) || 0),
+    tips: tips
+      .map((tip) => ({
+        from: normalizeAddress(tip?.from || tip?.address || "") || ethers.ZeroAddress,
+        txHash: sanitizeAlphaText(tip?.txHash || "", 120),
+        amount: sanitizeAlphaText(tip?.amount || "0", 40),
+        chainId: parseChainId(tip?.chainId || chainId) || chainId,
+        createdAt: Number(tip?.createdAt || Math.floor(Date.now() / 1000))
+      }))
+      .filter((tip) => tip.txHash || Number(tip.amount || 0) > 0)
+      .slice(-500),
+    upvotes: [...new Set(upvotes.map((address) => address.toLowerCase()))].slice(-2000),
+    downvotes: [...new Set(downvotes.map((address) => address.toLowerCase()))].slice(-2000),
+    comments: comments
+      .map((comment) => normalizeAlphaComment(comment, id))
+      .filter(Boolean)
+      .slice(-500),
+    unlocks: [...new Set(unlocks.map((address) => address.toLowerCase()))].slice(-1000),
+    createdAt: Number(row.createdAt || Math.floor(Date.now() / 1000))
+  };
+}
+
+function alphaPublicTip(tip = {}, options = {}) {
+  const unlocked = options.unlocked !== false;
+  const totalNativeTips = (Array.isArray(tip.tips) ? tip.tips : []).reduce((sum, row) => sum + (Number(row.amount || 0) || 0), 0);
+  return {
+    id: tip.id,
+    title: tip.title,
+    projectName: tip.projectName,
+    tokenSymbol: tip.tokenSymbol,
+    tokenAddress: tip.tokenAddress,
+    chainId: tip.chainId,
+    minBalance: tip.minBalance,
+    category: tip.category,
+    confidence: tip.confidence,
+    teaser: tip.teaser,
+    body: tip.body || "",
+    author: tip.author,
+    authorName: tip.authorName,
+    authorWallet: tip.authorWallet,
+    xHandle: tip.xHandle,
+    xName: tip.xName,
+    xImage: tip.xImage,
+    xFollowers: tip.xFollowers,
+    createdAt: tip.createdAt,
+    unlocked,
+    unlockCount: Array.isArray(tip.unlocks) ? tip.unlocks.length : 0,
+    tipCount: Array.isArray(tip.tips) ? tip.tips.length : 0,
+    upvotes: Array.isArray(tip.upvotes) ? tip.upvotes.length : 0,
+    downvotes: Array.isArray(tip.downvotes) ? tip.downvotes.length : 0,
+    comments: Array.isArray(tip.comments) ? tip.comments : [],
+    totalNativeTips
+  };
+}
+
+function normalizeAlphaComment(row = {}, tipId = "") {
+  const author = normalizeAddress(row.author || row.address || "");
+  const body = sanitizeAlphaText(row.body || "", 260);
+  if (!author || !body) return null;
+  return {
+    id: normalizeAlphaId(row.id || `alpha-comment-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`),
+    tipId: normalizeAlphaId(row.tipId || tipId || ""),
+    author,
+    xHandle: normalizeXHandle(row.xHandle || ""),
+    xName: sanitizeAlphaText(row.xName || "", 80),
+    xImage: String(row.xImage || "").trim().slice(0, 1024),
+    xFollowers: Math.max(0, Number(row.xFollowers || 0) || 0),
+    body,
+    createdAt: Number(row.createdAt || Math.floor(Date.now() / 1000))
+  };
+}
+
+function sanitizeAlphaStore(store) {
+  const base = store && typeof store === "object" && !Array.isArray(store) ? store : emptyAlphaStore();
+  return {
+    tips: (Array.isArray(base.tips) ? base.tips : []).map(normalizeAlphaTip).filter(Boolean)
+  };
+}
+
+function readAlphaDb() {
+  if (alphaDbCache && typeof alphaDbCache === "object") return alphaDbCache;
+  try {
+    if (fs.existsSync(ALPHA_DB_PATH)) {
+      alphaDbCache = sanitizeAlphaStore(JSON.parse(fs.readFileSync(ALPHA_DB_PATH, "utf8") || "{}"));
+      return alphaDbCache;
+    }
+  } catch {
+    // fall through
+  }
+  alphaDbCache = emptyAlphaStore();
+  return alphaDbCache;
+}
+
+function writeAlphaDb(store) {
+  const safe = sanitizeAlphaStore(store);
+  fs.mkdirSync(path.dirname(ALPHA_DB_PATH), { recursive: true });
+  fs.writeFileSync(ALPHA_DB_PATH, JSON.stringify(safe, null, 2));
+  alphaDbCache = safe;
+  return safe;
+}
+
+async function readAlphaDbRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_ALPHA_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_ALPHA_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase alpha read failed: ${response.status} ${text}`.trim());
+  }
+  return sanitizeAlphaStore(await response.json().catch(() => emptyAlphaStore()));
+}
+
+async function writeAlphaDbRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_ALPHA_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_ALPHA_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizeAlphaStore(store), null, 2)
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase alpha write failed: ${response.status} ${text}`.trim());
+  }
+  return true;
+}
+
+async function readAlphaDbPersistent(options = {}) {
+  const refresh = Boolean(options.refresh);
+  if (isSupabaseStorageConfigured() && (refresh || !alphaDbRemoteLoaded)) {
+    try {
+      const remote = await readAlphaDbRemote();
+      if (remote) {
+        alphaDbCache = remote;
+        writeAlphaDb(remote);
+      }
+      alphaDbRemoteLoaded = true;
+    } catch (error) {
+      console.warn(`Supabase alpha read failed: ${error?.message || "connection error"}`);
+      alphaDbRemoteLoaded = true;
+    }
+  }
+  return sanitizeAlphaStore(readAlphaDb());
+}
+
+async function writeAlphaDbPersistent(store) {
+  const safe = writeAlphaDb(store);
+  if (isSupabaseStorageConfigured()) {
+    await writeAlphaDbRemote(safe);
+  }
+  return safe;
+}
+
+function alphaStats(store = readAlphaDb()) {
+  const tips = (store.tips || []).map(normalizeAlphaTip).filter(Boolean);
+  const now = Math.floor(Date.now() / 1000);
+  const ratings = tips.reduce((sum, tip) => sum + (Array.isArray(tip.upvotes) ? tip.upvotes.length : 0) + (Array.isArray(tip.downvotes) ? tip.downvotes.length : 0), 0);
+  const tipEvents = tips.reduce((sum, tip) => sum + (Array.isArray(tip.tips) ? tip.tips.length : 0), 0);
+  const projects = new Set(tips.map((tip) => String(tip.tokenAddress || "").toLowerCase()).filter(Boolean));
+  return {
+    tips: tips.length,
+    projects: projects.size,
+    unlocks: ratings,
+    ratings,
+    tipEvents,
+    last24h: tips.filter((tip) => Number(tip.createdAt || 0) >= now - 24 * 60 * 60).length,
+    hotProjects: [...tips]
+      .sort((a, b) => {
+        const bScore = (b.upvotes || []).length * 3 - (b.downvotes || []).length + (b.comments || []).length * 2 + (b.tips || []).length * 4 + Number(b.createdAt || 0) / 1_000_000;
+        const aScore = (a.upvotes || []).length * 3 - (a.downvotes || []).length + (a.comments || []).length * 2 + (a.tips || []).length * 4 + Number(a.createdAt || 0) / 1_000_000;
+        return bScore - aScore;
+      })
+      .slice(0, 5)
+      .map((tip) => alphaPublicTip(tip))
+  };
+}
+
 function sanitizeCommunityText(value, max = 280) {
   return Array.from(String(value || "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
 }
@@ -1719,8 +1960,13 @@ function publicOriginFromRequest(req) {
 
 function xCallbackUrl(req) {
   const configured = String(process.env.X_CALLBACK_URL || "").trim();
+  const origin = publicOriginFromRequest(req);
+  const host = String(req.get("host") || "").toLowerCase();
+  if (host.startsWith("localhost:") || host.startsWith("127.0.0.1:")) {
+    return `${origin}/api/x/oauth/callback`;
+  }
   if (configured) return configured;
-  return `${publicOriginFromRequest(req)}/api/x/oauth/callback`;
+  return `${origin}/api/x/oauth/callback`;
 }
 
 function followEdgeKey(followerAddress, followeeAddress) {
@@ -3632,7 +3878,7 @@ app.get("/api/x/oauth/start", (req, res) => {
     url.searchParams.set("response_type", "code");
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("redirect_uri", callbackUrl);
-    url.searchParams.set("scope", "tweet.read users.read offline.access");
+    url.searchParams.set("scope", "tweet.read users.read");
     url.searchParams.set("state", stateId);
     url.searchParams.set("code_challenge", makePkceChallenge(codeVerifier));
     url.searchParams.set("code_challenge_method", "S256");
@@ -3914,6 +4160,173 @@ app.post("/api/go/bounties/:id/submissions", async (req, res) => {
     res.json({ submission });
   } catch (error) {
     res.status(400).json({ error: error.message || "Failed to submit work" });
+  }
+});
+
+app.get("/api/alpha", async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(120, Number(req.query.limit || 80)));
+    const store = await readAlphaDbPersistent({ refresh: true });
+    const tips = (store.tips || [])
+      .map(normalizeAlphaTip)
+      .filter(Boolean)
+      .sort((a, b) => {
+        const bScore = (b.upvotes || []).length * 3 - (b.downvotes || []).length + (b.comments || []).length * 2 + (b.tips || []).length * 5 + Number(b.createdAt || 0) / 1_000_000;
+        const aScore = (a.upvotes || []).length * 3 - (a.downvotes || []).length + (a.comments || []).length * 2 + (a.tips || []).length * 5 + Number(a.createdAt || 0) / 1_000_000;
+        return bScore - aScore;
+      })
+      .slice(0, limit)
+      .map((tip) => alphaPublicTip(tip));
+    res.json({ tips, stats: alphaStats(store) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load alpha" });
+  }
+});
+
+app.get("/api/alpha/:id", async (req, res) => {
+  try {
+    const id = normalizeAlphaId(req.params.id || "");
+    const store = await readAlphaDbPersistent({ refresh: true });
+    const tip = (store.tips || []).map(normalizeAlphaTip).find((row) => row && row.id === id);
+    if (!tip) return res.status(404).json({ error: "alpha tip not found" });
+    res.json({
+      tip: alphaPublicTip(tip),
+      unlocked: true,
+      balance: "",
+      error: ""
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load alpha tip" });
+  }
+});
+
+app.post("/api/alpha", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const title = sanitizeAlphaText(body.title || "", 120);
+    if (!title) throw new Error("alpha title is required");
+    const tokenAddress = normalizeAddress(body.tokenAddress || body.token || "");
+    if (!tokenAddress) throw new Error("token address is required");
+    if (tokenAddress === ethers.ZeroAddress) throw new Error("token address cannot be the zero address");
+    const author = normalizeAddress(body.author || body.address || "");
+    if (!author) throw new Error("author wallet is required");
+    const authorWallet = normalizeAddress(body.authorWallet || body.tipWallet || author || "");
+    if (!authorWallet) throw new Error("tip wallet is required");
+    const xHandle = normalizeXHandle(body.xHandle || "");
+    if (!xHandle) throw new Error("Connect X before submitting alpha");
+    const alphaBody = sanitizeAlphaText(body.body || body.alpha || "", 2200);
+    if (!alphaBody) throw new Error("alpha body is required");
+    const store = await readAlphaDbPersistent();
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 44);
+    const tip = normalizeAlphaTip({
+      id: body.id || `alpha-${slug}-${Date.now().toString(36)}`,
+      ...body,
+      title,
+      body: alphaBody,
+      tokenAddress,
+      author,
+      authorWallet,
+      xHandle,
+      xName: body.xName || "",
+      xImage: body.xImage || "",
+      xFollowers: body.xFollowers || 0,
+      createdAt: Math.floor(Date.now() / 1000),
+      tips: [],
+      upvotes: [],
+      downvotes: [],
+      comments: [],
+      unlocks: []
+    });
+    if (!tip) throw new Error("invalid alpha tip");
+    store.tips = [tip, ...(Array.isArray(store.tips) ? store.tips : [])].slice(0, 2000);
+    await writeAlphaDbPersistent(store);
+    res.json({ tip: alphaPublicTip(tip, { unlocked: true }), stats: alphaStats(store) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to submit alpha" });
+  }
+});
+
+app.post("/api/alpha/:id/vote", async (req, res) => {
+  try {
+    const id = normalizeAlphaId(req.params.id || "");
+    const voter = normalizeAddress(req.body?.address || req.body?.voter || "");
+    const direction = String(req.body?.direction || "").toLowerCase();
+    if (!voter) throw new Error("voter address is required");
+    if (!["up", "down", "clear"].includes(direction)) throw new Error("vote direction is required");
+    const store = await readAlphaDbPersistent();
+    const index = (store.tips || []).findIndex((row) => normalizeAlphaId(row?.id || "") === id);
+    if (index < 0) throw new Error("alpha tip not found");
+    const tip = normalizeAlphaTip(store.tips[index]);
+    const key = voter.toLowerCase();
+    const upvotes = new Set((tip.upvotes || []).map((row) => String(row).toLowerCase()));
+    const downvotes = new Set((tip.downvotes || []).map((row) => String(row).toLowerCase()));
+    upvotes.delete(key);
+    downvotes.delete(key);
+    if (direction === "up") upvotes.add(key);
+    if (direction === "down") downvotes.add(key);
+    store.tips[index] = normalizeAlphaTip({ ...tip, upvotes: [...upvotes], downvotes: [...downvotes] });
+    await writeAlphaDbPersistent(store);
+    res.json({ tip: alphaPublicTip(store.tips[index]), stats: alphaStats(store) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to vote on alpha" });
+  }
+});
+
+app.post("/api/alpha/:id/comment", async (req, res) => {
+  try {
+    const id = normalizeAlphaId(req.params.id || "");
+    const store = await readAlphaDbPersistent();
+    const index = (store.tips || []).findIndex((row) => normalizeAlphaId(row?.id || "") === id);
+    if (index < 0) throw new Error("alpha tip not found");
+    const comment = normalizeAlphaComment({
+      tipId: id,
+      author: req.body?.author || req.body?.address || "",
+      xHandle: req.body?.xHandle || "",
+      xName: req.body?.xName || "",
+      xImage: req.body?.xImage || "",
+      xFollowers: req.body?.xFollowers || 0,
+      body: req.body?.body || "",
+      createdAt: Math.floor(Date.now() / 1000)
+    }, id);
+    if (!comment) throw new Error("comment text and author are required");
+    if (!comment.xHandle) throw new Error("Connect X before commenting");
+    const tip = normalizeAlphaTip(store.tips[index]);
+    store.tips[index] = normalizeAlphaTip({ ...tip, comments: [...(tip.comments || []), comment] });
+    await writeAlphaDbPersistent(store);
+    res.json({ tip: alphaPublicTip(store.tips[index]), stats: alphaStats(store) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to comment on alpha" });
+  }
+});
+
+app.post("/api/alpha/:id/tip", async (req, res) => {
+  try {
+    const id = normalizeAlphaId(req.params.id || "");
+    const txHash = sanitizeAlphaText(req.body?.txHash || "", 120);
+    const from = normalizeAddress(req.body?.from || req.body?.address || "");
+    const amount = sanitizeAlphaText(req.body?.amount || "0", 40);
+    if (!txHash) throw new Error("tip transaction is required");
+    if (!from) throw new Error("tipper address is required");
+    if (!(Number(amount || 0) > 0)) throw new Error("tip amount is required");
+    const store = await readAlphaDbPersistent();
+    const index = (store.tips || []).findIndex((row) => normalizeAlphaId(row?.id || "") === id);
+    if (index < 0) throw new Error("alpha tip not found");
+    const tip = normalizeAlphaTip(store.tips[index]);
+    const record = {
+      from,
+      txHash,
+      amount,
+      chainId: parseChainId(req.body?.chainId || tip.chainId) || tip.chainId,
+      createdAt: Math.floor(Date.now() / 1000)
+    };
+    store.tips[index] = normalizeAlphaTip({
+      ...tip,
+      tips: [...(Array.isArray(tip.tips) ? tip.tips : []), record]
+    });
+    await writeAlphaDbPersistent(store);
+    res.json({ tip: alphaPublicTip(store.tips[index], { unlocked: true }), stats: alphaStats(store) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to record alpha tip" });
   }
 });
 
@@ -4521,6 +4934,10 @@ app.get(["/communities", "/communities/:token"], (_req, res) => {
 
 app.get(["/go", "/go/:bountyId"], (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "go.html"));
+});
+
+app.get(["/alpha", "/alpha/:alphaId"], (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "alpha.html"));
 });
 
 app.get("/profile", (_req, res) => {

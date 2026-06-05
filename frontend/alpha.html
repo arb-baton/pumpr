@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Etherpump.fun | Alpha</title>
+    <link rel="icon" type="image/png" href="/assets/favicon.png?v=20260426b" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260604alpha2" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="appSidebar">
+        <div class="sidebar-top">
+          <a class="logo" href="/">
+            <img class="logo-mark" src="/assets/etherpump-logo.png?v=20260423c" alt="Etherpump logo" />
+            <span class="logo-title"><span class="logo-name">Etherpump</span><span class="logo-sep">.</span><span class="logo-tld">fun</span></span>
+          </a>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
+            <svg viewBox="0 0 20 12" aria-hidden="true"><rect x="1.5" y="1" width="1.5" height="10" rx="0.75"></rect><rect x="17" y="1" width="1.5" height="10" rx="0.75"></rect><path d="M11.2 3.2L8.2 6l3 2.8"></path></svg>
+          </button>
+        </div>
+        <nav class="side-nav">
+          <a class="side-link side-link-home" href="/">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"></path><path d="M5.5 9.8V21h13V9.8"></path></svg></span>
+            <span class="side-link-label">Home</span>
+          </a>
+          <a class="side-link" href="/go">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l7 4v8l-7 4-7-4v-8l7-4z"></path><path d="M9 12.2l2 2 4-4"></path></svg></span>
+            <span class="side-link-label">GO</span>
+          </a>
+          <a class="side-link active" href="/alpha">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8l3 6-7 10-7-10 3-6z"></path><path d="M8 10h8"></path><path d="M12 4v16"></path></svg></span>
+            <span class="side-link-label">Alpha</span>
+          </a>
+          <a class="side-link side-link-profile" id="profileNavSide" href="/profile">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.7"></circle><path d="M4.6 20c1.8-3.9 4.4-5.9 7.4-5.9s5.6 2 7.4 5.9"></path></svg></span>
+            <span class="side-link-label">Profile</span>
+          </a>
+          <a class="side-link" href="/communities">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11.5a4 4 0 1 1 8 0"></path><path d="M4.5 20c1.2-3 3.7-4.5 6.5-4.5s5.3 1.5 6.5 4.5"></path><path d="M17 8.2a3 3 0 0 1 3 3"></path><path d="M18.5 15.2c1.2.6 2 1.7 2.5 3.1"></path></svg></span>
+            <span class="side-link-label">Communities</span>
+          </a>
+          <a class="side-link" href="https://trade.padre.gg/" target="_blank" rel="noreferrer noopener">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"></path><path d="M7 7v10"></path><path d="M17 7v10"></path><path d="M4 17h16"></path></svg></span>
+            <span class="side-link-label">Terminal</span>
+          </a>
+        </nav>
+        <a class="side-create-btn" href="/create">Create</a>
+        <div class="side-footer"><span id="networkChip">Chain -</span><span id="factoryChip">Factory -</span></div>
+      </aside>
+
+      <main class="main-pane">
+        <div class="promo-strip">beta testing</div>
+        <header class="topbar create-topbar">
+          <div class="create-searchbar">
+            <a href="/" class="create-back-btn" aria-label="Back to home">&larr;</a>
+            <input id="alphaSearchInput" placeholder="Search alpha by project, ticker, token..." />
+          </div>
+          <div class="top-actions">
+            <button id="signInBtn" class="btn-primary top-action-btn sign-in-btn" type="button">Sign in</button>
+            <select id="walletChoice" hidden aria-hidden="true" tabindex="-1"></select>
+            <button id="connectBtn" hidden type="button">Connect</button>
+            <button id="disconnectBtn" hidden type="button">Disconnect</button>
+            <span id="walletAddress" hidden></span>
+            <a class="btn-ghost top-action-btn" href="/create">+ Create</a>
+          </div>
+        </header>
+
+        <section class="alpha-layout">
+          <div class="alpha-main">
+            <section class="alpha-hero panel-card">
+              <div>
+                <small>Public project intel</small>
+                <h1>Alpha vault</h1>
+                <p>Submit high-signal project tips tied to a token contract. Readers can rate, comment, share on X, and optionally tip the author wallet.</p>
+              </div>
+              <div class="alpha-hero-grid">
+                <span><b id="alphaTipCount">0</b> tips</span>
+                <span><b id="alphaProjectCount">0</b> projects</span>
+                <span><b id="alphaUnlockCount">0</b> ratings</span>
+              </div>
+            </section>
+
+            <nav class="go-tabs alpha-tabs" aria-label="Alpha filters">
+              <button class="active" type="button" data-alpha-filter="all">All</button>
+              <button type="button" data-alpha-filter="high">High conviction</button>
+              <button type="button" data-alpha-filter="new">New</button>
+              <button type="button" data-alpha-filter="tipped">Tipped</button>
+            </nav>
+            <div id="alphaFeed" class="alpha-feed"></div>
+          </div>
+
+          <aside class="alpha-side">
+            <article class="panel-card alpha-submit-card">
+              <small>Drop intel</small>
+              <h2>Share an alpha tip</h2>
+              <p>Attach it to a token contract and publish through your connected X identity.</p>
+              <div id="alphaXStatus" class="alpha-x-status">Connect X to publish or comment</div>
+              <button id="alphaConnectX" class="btn-ghost alpha-connect-x" type="button">Connect X</button>
+              <button id="alphaOpenSubmit" class="btn-primary" type="button">+ Submit alpha</button>
+            </article>
+            <article class="panel-card alpha-side-card">
+              <div class="tokenpf-side-head"><h3>Hot projects</h3><span>LIVE</span></div>
+              <div id="alphaHotProjects" class="alpha-hot-list"></div>
+            </article>
+            <article class="panel-card alpha-side-card">
+              <h3>Reader flow</h3>
+              <ol class="alpha-flow-list">
+                <li>Connect wallet and X</li>
+                <li>Submit alpha with a token contract</li>
+                <li>Readers rate and discuss</li>
+                <li>Tip the author if it hits</li>
+              </ol>
+            </article>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <div id="alphaSubmitModal" class="modal-backdrop" aria-hidden="true">
+      <form id="alphaSubmitForm" class="go-modal-card alpha-modal-card">
+        <header class="go-modal-head">
+          <div><small>Alpha vault</small><h2>Submit alpha</h2></div>
+          <button id="alphaSubmitClose" class="btn-ghost" type="button">X</button>
+        </header>
+        <div class="alpha-modal-grid">
+          <label>Project name<input id="alphaProjectName" maxlength="80" placeholder="Project or coin name" required /></label>
+          <label>Ticker<input id="alphaTokenSymbol" maxlength="24" placeholder="EPUMP" required /></label>
+          <label>Chain<select id="alphaChainId"><option value="1">Ethereum</option><option value="8453">Base</option><option value="143">Monad</option></select></label>
+        </div>
+        <label>Token contract<input id="alphaTokenAddress" placeholder="0x..." required /></label>
+        <label>Title<input id="alphaTitle" maxlength="120" placeholder="What is the alpha?" required /></label>
+        <label>Teaser<textarea id="alphaTeaser" maxlength="240" rows="3" placeholder="Short preview for the feed" required></textarea></label>
+        <label>Full alpha<textarea id="alphaBody" maxlength="2200" rows="8" placeholder="Full alpha tip, reasoning, risks, and what to watch" required></textarea></label>
+        <div class="alpha-modal-grid">
+          <label>Category<input id="alphaCategory" maxlength="32" placeholder="Catalyst, wallet flow, listing..." /></label>
+          <label>Confidence<select id="alphaConfidence"><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+        </div>
+        <label>Tip wallet<input id="alphaAuthorWallet" placeholder="Defaults to connected wallet" /></label>
+        <div class="go-modal-actions">
+          <button class="btn-ghost alphaSubmitCancel" type="button">Cancel</button>
+          <button class="btn-primary" type="submit">Publish alpha</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="alphaTipModal" class="modal-backdrop" aria-hidden="true">
+      <form id="alphaTipForm" class="go-modal-card alpha-tip-modal">
+        <header class="go-modal-head">
+          <div><small>Reward alpha</small><h2 id="alphaTipModalTitle">Tip author</h2></div>
+          <button id="alphaTipClose" class="btn-ghost" type="button">X</button>
+        </header>
+        <p id="alphaTipModalMeta" class="alpha-tip-meta">Send a native-chain tip to the author wallet.</p>
+        <div class="alpha-tip-options">
+          <button type="button" data-tip-amount="0.001">0.001</button>
+          <button type="button" data-tip-amount="0.005">0.005</button>
+          <button type="button" data-tip-amount="0.01">0.01</button>
+        </div>
+        <label>Custom amount<input id="alphaTipAmount" inputmode="decimal" value="0.001" required /></label>
+        <div class="go-modal-actions">
+          <button class="btn-ghost alphaTipCancel" type="button">Cancel</button>
+          <button class="btn-primary" type="submit">Send tip</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="alert" class="alert" role="status"></div>
+    <script type="module" src="/js/alpha.js?v=20260604alpha2"></script>
+  </body>
+</html>
