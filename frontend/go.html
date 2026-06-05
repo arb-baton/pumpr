@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260604go3" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260605go4" />
   </head>
   <body>
     <div class="app-shell">
@@ -159,7 +159,15 @@
             <div class="go-info-strip">Pump moderation checks every submission. Your spec is the rulebook.</div>
             <label>Title *<small>50 characters max.</small><input id="goBountyTitle" required maxlength="50" placeholder="Fine police" /></label>
             <label>Summary *<textarea id="goBountyDescription" required rows="4" maxlength="900" placeholder="Fine 100$"></textarea></label>
-            <label>Attach files<input id="goBountyImage" placeholder="/uploads/example.png or https://..." /></label>
+            <label class="go-bounty-attach">Attach files
+              <span class="go-bounty-attach-copy">Add a reference image, short clip, or hosted file URL so submitters understand the target.</span>
+              <span class="go-bounty-attach-shell">
+                <span class="go-bounty-attach-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M8 15l3-3 2 2 2-3 3 4"></path><circle cx="9" cy="9" r="1.2"></circle></svg>
+                </span>
+                <input id="goBountyImage" placeholder="/uploads/example.png or https://..." />
+              </span>
+            </label>
             <label>Deliverables *<small>One deliverable per line, up to 10.</small><textarea id="goBountyDeliverables" required rows="3" placeholder="go to police officer"></textarea></label>
             <label>Feature on a coin<select id="goBountyFeature"><option value="">None</option><option value="ETHERPUMP">$ETHERPUMP</option><option value="PUMPVERSE">$PUMPVERSE</option></select></label>
             <label>Duration *<select id="goBountyDays"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option><option value="30">30 days</option></select></label>
@@ -240,7 +248,7 @@
     </div>
 
     <div id="alert" class="alert"></div>
-    <script type="module" src="/js/go.js?v=20260604go3"></script>
-    <script src="/js/sidebar.js?v=20260604go3"></script>
+    <script type="module" src="/js/go.js?v=20260605go4"></script>
+    <script src="/js/sidebar.js?v=20260605go4"></script>
   </body>
 </html>

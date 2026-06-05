@@ -178,6 +178,33 @@ function nativeSymbol(chainId) {
   return getChainOption(chainId)?.nativeCurrency?.symbol || "ETH";
 }
 
+function tipChainIdForAlpha(tip) {
+  return isSolanaChain(tip?.chainId) ? 1 : Number(tip?.chainId || 1);
+}
+
+function isSolanaChain(chainId) {
+  return Number(chainId || 0) === 101;
+}
+
+function isLikelySolanaAddress(value = "") {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(value || "").trim());
+}
+
+function isValidTokenAddressForChain(value = "", chainId = 1) {
+  return isSolanaChain(chainId) ? isLikelySolanaAddress(value) : ethers.isAddress(String(value || ""));
+}
+
+function tokenHref(tip) {
+  if (isSolanaChain(tip.chainId)) {
+    return `https://solscan.io/token/${encodeURIComponent(tip.tokenAddress)}`;
+  }
+  return `/token?address=${encodeURIComponent(tip.tokenAddress)}&chainId=${encodeURIComponent(String(tip.chainId || ""))}`;
+}
+
+function tokenLinkTarget(tip) {
+  return isSolanaChain(tip.chainId) ? ` target="_blank" rel="noreferrer noopener"` : "";
+}
+
 function authorName(tip) {
   return tip?.xHandle ? `@${tip.xHandle}` : tip?.authorName || defaultUsername(tip?.author || tip?.authorWallet || "");
 }
@@ -288,7 +315,7 @@ function renderTipCard(tip) {
             <small>$${escapeHtml(symbol)} token thesis</small>
           </div>
         </div>
-        <a class="alpha-contract-chip" href="/token?address=${encodeURIComponent(tip.tokenAddress)}&chainId=${encodeURIComponent(String(tip.chainId || ""))}">
+        <a class="alpha-contract-chip" href="${escapeHtml(tokenHref(tip))}"${tokenLinkTarget(tip)}>
           <span>contract</span>
           <b>${escapeHtml(shortAddress(tip.tokenAddress))}</b>
         </a>
@@ -393,13 +420,16 @@ async function submitAlpha(event) {
   const ws = await ensureConnected();
   await ensureXConnected();
   const authorWallet = String(ui.authorWallet?.value || ws.address || "").trim();
-  if (!ethers.isAddress(String(ui.tokenAddress?.value || ""))) throw new Error("Enter a valid token contract address");
+  const chainId = Number(ui.chainId.value || 1);
+  if (!isValidTokenAddressForChain(String(ui.tokenAddress?.value || ""), chainId)) {
+    throw new Error(isSolanaChain(chainId) ? "Enter a valid Solana token mint address" : "Enter a valid token contract address");
+  }
   if (!ethers.isAddress(authorWallet)) throw new Error("Enter a valid tip wallet address");
   await api.createAlphaTip({
     projectName: ui.projectName.value,
     tokenSymbol: ui.tokenSymbol.value,
     tokenAddress: ui.tokenAddress.value,
-    chainId: Number(ui.chainId.value || 1),
+    chainId,
     title: ui.title.value,
     teaser: ui.teaser.value,
     body: ui.body.value,
@@ -421,8 +451,13 @@ function openTipModal(id) {
   const tip = state.tips.find((row) => row.id === id);
   if (!tip?.id) throw new Error("Alpha tip not found");
   state.activeTip = tip;
+  const tipChainId = tipChainIdForAlpha(tip);
   if (ui.tipTitle) ui.tipTitle.textContent = `Tip ${authorName(tip)}`;
-  if (ui.tipMeta) ui.tipMeta.textContent = `Sends ${nativeSymbol(tip.chainId)} on ${chainLabel(tip.chainId)} to ${shortAddress(tip.authorWallet)}.`;
+  if (ui.tipMeta) {
+    ui.tipMeta.textContent = isSolanaChain(tip.chainId)
+      ? `This is a Solana token tip. Rewards send ${nativeSymbol(tipChainId)} on ${chainLabel(tipChainId)} to ${shortAddress(tip.authorWallet)}.`
+      : `Sends ${nativeSymbol(tipChainId)} on ${chainLabel(tipChainId)} to ${shortAddress(tip.authorWallet)}.`;
+  }
   if (ui.tipAmount) ui.tipAmount.value = ui.tipAmount.value || "0.001";
   openModal(ui.tipModal);
 }
@@ -433,10 +468,11 @@ async function sendTip(event) {
   if (!tip?.id) return;
   const ws = await ensureConnected();
   const amount = String(ui.tipAmount?.value || "").trim();
+  const tipChainId = tipChainIdForAlpha(tip);
   if (!(Number(amount) > 0)) throw new Error("Enter a tip amount");
   if (!ethers.isAddress(tip.authorWallet)) throw new Error("Author tip wallet is invalid");
-  await ensureWalletChain(Number(tip.chainId || 1));
-  setAlert(ui.alert, `Sending ${amount} ${nativeSymbol(tip.chainId)} tip...`);
+  await ensureWalletChain(tipChainId);
+  setAlert(ui.alert, `Sending ${amount} ${nativeSymbol(tipChainId)} tip...`);
   const tx = await walletState().signer.sendTransaction({
     to: tip.authorWallet,
     value: ethers.parseEther(amount)
@@ -446,7 +482,7 @@ async function sendTip(event) {
     from: ws.address,
     txHash: tx.hash,
     amount,
-    chainId: tip.chainId
+    chainId: tipChainId
   });
   closeModal(ui.tipModal);
   await loadAlpha();

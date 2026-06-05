@@ -495,6 +495,39 @@
   width: min(640px, calc(100vw - 2rem));
   max-height: min(92vh, 920px);
   overflow: auto;
+  position: relative;
+  background:
+    radial-gradient(90% 70% at 12% 0%, rgba(125, 255, 199, 0.08), transparent 48%),
+    linear-gradient(180deg, #141a28 0%, #101522 100%);
+  border-color: rgba(124, 136, 170, 0.34);
+}
+
+.go-modal-card .modal-close {
+  position: sticky;
+  top: 0.72rem;
+  float: right;
+  z-index: 4;
+  width: 34px;
+  height: 34px;
+  margin: 0 0 0.35rem 0.75rem;
+  border: 1px solid rgba(141, 178, 255, 0.3);
+  border-radius: 10px;
+  background: #1a2234;
+  color: #f4f7ff;
+  font-size: 0;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.go-modal-card .modal-close::before {
+  content: "X";
+  font-size: 0.9rem;
+}
+
+.go-modal-card .modal-close:hover {
+  border-color: rgba(125, 255, 199, 0.48);
+  color: #7dffc7;
 }
 
 .go-submit-card {
@@ -613,7 +646,8 @@
 
 .go-info-strip {
   border-radius: 8px;
-  background: #24262b;
+  background: linear-gradient(135deg, rgba(125, 255, 199, 0.1), rgba(141, 178, 255, 0.08)), #202635;
+  border: 1px solid rgba(125, 255, 199, 0.18);
   color: #dfe6ff;
   padding: 0.6rem 0.75rem;
   font-size: 0.78rem;
@@ -638,10 +672,59 @@
   width: 100%;
   border: 1px solid rgba(146, 158, 197, 0.34);
   border-radius: 8px;
-  background: #24262b;
+  background: #202635;
   color: #f7f9ff;
   padding: 0.72rem 0.8rem;
   font: inherit;
+}
+
+.go-bounty-attach {
+  border: 1px solid rgba(125, 255, 199, 0.18);
+  border-radius: 14px;
+  background:
+    radial-gradient(90% 140% at 0% 0%, rgba(125, 255, 199, 0.1), transparent 46%),
+    #151d2e;
+  padding: 0.85rem;
+}
+
+.go-bounty-attach-copy {
+  color: #aeb8d7;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.go-bounty-attach-shell {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.72rem;
+  border: 1px dashed rgba(141, 178, 255, 0.34);
+  border-radius: 12px;
+  background: rgba(9, 13, 24, 0.62);
+  padding: 0.72rem;
+}
+
+.go-bounty-attach-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(125, 255, 199, 0.1);
+  color: #7dffc7;
+  border: 1px solid rgba(125, 255, 199, 0.24);
+}
+
+.go-bounty-attach-icon svg {
+  width: 21px;
+  height: 21px;
+}
+
+.go-bounty-attach-shell input {
+  border: 0;
+  background: transparent;
+  padding: 0.15rem 0;
+  box-shadow: none;
 }
 
 .go-submit-form {

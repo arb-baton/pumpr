@@ -87,6 +87,14 @@ const CHAIN_META = {
     rpcUrls: ["https://rpc.monad.xyz"],
     dexRouter: ethers.ZeroAddress
   },
+  101: {
+    name: "Solana",
+    shortName: "SOL",
+    nativeCurrency: "SOL",
+    explorerBaseUrl: "https://solscan.io",
+    rpcUrls: ["https://api.mainnet-beta.solana.com"],
+    dexRouter: ethers.ZeroAddress
+  },
   11155111: {
     name: "Sepolia",
     shortName: "SEP",
@@ -1243,6 +1251,19 @@ function sanitizeAlphaText(value, max = 500) {
   return Array.from(String(value || "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
 }
 
+function isSolanaAlphaChain(chainId) {
+  return Number(chainId || 0) === 101;
+}
+
+function normalizeSolanaAddress(value = "") {
+  const text = sanitizeAlphaText(value || "", 80);
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text) ? text : "";
+}
+
+function normalizeAlphaTokenAddress(value = "", chainId = 1) {
+  return isSolanaAlphaChain(chainId) ? normalizeSolanaAddress(value) : normalizeAddress(value);
+}
+
 function normalizeAlphaId(value = "") {
   return sanitizeAlphaText(value || `alpha-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, 90)
     .toLowerCase()
@@ -1253,11 +1274,11 @@ function normalizeAlphaTip(row = {}) {
   const id = normalizeAlphaId(row.id || "");
   const title = sanitizeAlphaText(row.title || "", 120);
   const body = sanitizeAlphaText(row.body || row.alpha || "", 2200);
-  const tokenAddress = normalizeAddress(row.tokenAddress || row.token || "");
+  const chainId = parseChainId(row.chainId || 1) || 1;
+  const tokenAddress = normalizeAlphaTokenAddress(row.tokenAddress || row.token || "", chainId);
   if (!id || !title || !body || !tokenAddress) return null;
   const author = normalizeAddress(row.author || row.address || "") || ethers.ZeroAddress;
   const authorWallet = normalizeAddress(row.authorWallet || row.tipWallet || author || "") || ethers.ZeroAddress;
-  const chainId = parseChainId(row.chainId || 1) || 1;
   const minBalance = sanitizeAlphaText(row.minBalance || row.requiredBalance || "1", 40) || "1";
   const tips = Array.isArray(row.tips) ? row.tips : [];
   const unlocks = Array.isArray(row.unlocks) ? row.unlocks.map(normalizeAddress).filter(Boolean) : [];
@@ -4205,9 +4226,12 @@ app.post("/api/alpha", async (req, res) => {
     const body = req.body || {};
     const title = sanitizeAlphaText(body.title || "", 120);
     if (!title) throw new Error("alpha title is required");
-    const tokenAddress = normalizeAddress(body.tokenAddress || body.token || "");
-    if (!tokenAddress) throw new Error("token address is required");
-    if (tokenAddress === ethers.ZeroAddress) throw new Error("token address cannot be the zero address");
+    const chainId = parseChainId(body.chainId || 1) || 1;
+    const tokenAddress = normalizeAlphaTokenAddress(body.tokenAddress || body.token || "", chainId);
+    if (!tokenAddress) {
+      throw new Error(isSolanaAlphaChain(chainId) ? "valid Solana token mint is required" : "token address is required");
+    }
+    if (!isSolanaAlphaChain(chainId) && tokenAddress === ethers.ZeroAddress) throw new Error("token address cannot be the zero address");
     const author = normalizeAddress(body.author || body.address || "");
     if (!author) throw new Error("author wallet is required");
     const authorWallet = normalizeAddress(body.authorWallet || body.tipWallet || author || "");
@@ -4224,6 +4248,7 @@ app.post("/api/alpha", async (req, res) => {
       title,
       body: alphaBody,
       tokenAddress,
+      chainId,
       author,
       authorWallet,
       xHandle,

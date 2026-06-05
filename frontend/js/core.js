@@ -94,6 +94,14 @@ export const CHAIN_OPTIONS = {
     nativeCurrency: { name: "Monad", symbol: "MON", decimals: 18 },
     rpcUrls: ["https://rpc.monad.xyz"],
     blockExplorerUrls: ["https://monadvision.com"]
+  },
+  101: {
+    chainId: 101,
+    name: "Solana",
+    shortName: "SOL",
+    nativeCurrency: { name: "Solana", symbol: "SOL", decimals: 9 },
+    rpcUrls: ["https://api.mainnet-beta.solana.com"],
+    blockExplorerUrls: ["https://solscan.io"]
   }
 };
 
