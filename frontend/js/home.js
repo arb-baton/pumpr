@@ -87,6 +87,7 @@ const state = {
   ethUsd: 3000,
   chainId: 1,
   supportedChains: [],
+  quoteLaunchOptions: [],
   pendingProfileImageUri: "",
   watchlist: loadWatchlist(),
   moverSignals: new Map(),
@@ -192,16 +193,34 @@ function configuredFeedChains() {
   return unique.length ? unique : [Number(state.chainId || 1)];
 }
 
+function configuredFeedTargets() {
+  const nativeTargets = configuredFeedChains().map((chainId) => ({ chainId, quote: "native" }));
+  const quoteTargets = (Array.isArray(state.quoteLaunchOptions) ? state.quoteLaunchOptions : [])
+    .map((row) => ({
+      chainId: Number(row?.chainId || 0),
+      quote: String(row?.mode || "").toLowerCase()
+    }))
+    .filter((row) => Number.isFinite(row.chainId) && row.chainId > 0 && row.quote && row.quote !== "native");
+  const seen = new Set();
+  return [...nativeTargets, ...quoteTargets].filter((row) => {
+    const key = `${row.chainId}:${row.quote}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 async function fetchLaunchesAcrossChains(fetcher, options = {}) {
-  const chainIds = configuredFeedChains();
+  const targets = configuredFeedTargets();
   const results = await Promise.allSettled(
-    chainIds.map(async (chainId) => {
-      const payload = await fetcher({ ...options, chainId });
+    targets.map(async ({ chainId, quote }) => {
+      const payload = await fetcher({ ...options, chainId, quote });
       return {
         total: Number(payload?.total || 0),
         launches: (Array.isArray(payload?.launches) ? payload.launches : []).map((row) => ({
           ...row,
-          chainId: Number(row?.chainId || chainId)
+          chainId: Number(row?.chainId || chainId),
+          quoteMode: String(row?.quoteMode || row?.pool?.quoteMode || quote || "native").toLowerCase()
         }))
       };
     })
@@ -249,7 +268,17 @@ function getTokenId(launch) {
   const token = String(launch?.token || "").toLowerCase();
   if (!token) return "";
   const chainId = Number(launch?.chainId || state.chainId || 1);
-  return `${Number.isFinite(chainId) && chainId > 0 ? Math.floor(chainId) : 1}:${token}`;
+  const quoteMode = launchQuoteMode(launch);
+  return `${Number.isFinite(chainId) && chainId > 0 ? Math.floor(chainId) : 1}:${quoteMode}:${token}`;
+}
+
+function launchQuoteMode(launch) {
+  const quoteMode = String(launch?.quoteMode || launch?.pool?.quoteMode || launch?.pool?.quoteAsset?.mode || "native").toLowerCase();
+  return quoteMode === "usdc" ? "usdc" : "native";
+}
+
+function launchQuoteSymbol(launch) {
+  return String(launch?.pool?.quoteAsset?.symbol || (launchQuoteMode(launch) === "usdc" ? "USDC" : "")).toUpperCase();
 }
 
 function chainMetaForLaunch(launch) {
@@ -274,6 +303,7 @@ function tokenUrl(launch) {
   const params = new URLSearchParams({ token });
   const chainId = Number(launch?.chainId || state.chainId || 1);
   if (Number.isFinite(chainId) && chainId > 0) params.set("chainId", String(Math.floor(chainId)));
+  if (launchQuoteMode(launch) !== "native") params.set("quote", launchQuoteMode(launch));
   if (Number.isFinite(Number(launch?.id))) params.set("launchId", String(Math.floor(Number(launch.id))));
   return `/token?${params.toString()}`;
 }
@@ -418,11 +448,22 @@ function formatLaunchMarketCap(launch) {
   const dexVolUsd = Number(launch?.dexSnapshot?.volume24hUsd || 0);
   const poolMcapWei = launch?.pool?.marketCapWei || "0";
   const poolMcapEth = Number(launch?.pool?.marketCapEth || 0);
+  const poolMcapQuote = Number(launch?.pool?.marketCapQuote || 0);
   const poolEthReserve = Number(launch?.pool?.ethReserveEth || 0);
   const poolTokenReserve = BigInt(String(launch?.pool?.tokenReserve || "0"));
   const isGraduated = Boolean(launch?.pool?.graduated);
-  const poolMcapUsdFromEth = Number.isFinite(poolMcapEth) && poolMcapEth > 0 ? poolMcapEth * Number(state.ethUsd || 0) : 0;
-  const poolMcapUsd = weiToUsd(poolMcapWei, state.ethUsd);
+  const quoteMode = launchQuoteMode(launch);
+  const poolMcapUsdFromEth = quoteMode === "usdc"
+    ? 0
+    : Number.isFinite(poolMcapEth) && poolMcapEth > 0
+      ? poolMcapEth * Number(state.ethUsd || 0)
+      : 0;
+  const poolMcapUsd = quoteMode === "usdc"
+    ? Math.max(
+        Number.isFinite(poolMcapQuote) ? poolMcapQuote : 0,
+        Number.isFinite(poolMcapEth) ? poolMcapEth : 0
+      )
+    : weiToUsd(poolMcapWei, state.ethUsd);
   // Do not trust launch-level marketCapUsd here; it may be a seeded/default value (e.g. 1M target cap),
   // not a live value. Prefer pool/dex-derived numbers only.
   const fallbackUsd = Math.max(poolMcapUsd, poolMcapUsdFromEth, 0);
@@ -432,7 +473,7 @@ function formatLaunchMarketCap(launch) {
     (dexMcapRaw / fallbackUsd > 25 || (dexLiqUsd > 0 && dexMcapRaw / dexLiqUsd > 2500));
   const dexMcap = dexLooksInflated ? 0 : dexMcapRaw;
   const hasDexSignal = dexLiqUsd > 0 || dexVolUsd > 0;
-  const hasPoolSignal = poolEthReserve > 0 || fallbackUsd > 0;
+  const hasPoolSignal = poolEthReserve > 0 || fallbackUsd > 0 || poolTokenReserve > 0n;
   if (!isGraduated && !hasDexSignal && !hasPoolSignal) {
     return "Syncing MC";
   }
@@ -696,6 +737,7 @@ function buildExploreCard(launch) {
   const href = tokenUrl(launch);
   const chain = chainMetaForLaunch(launch);
   const chainClass = chainClassForLaunch(launch);
+  const quoteSymbol = launchQuoteSymbol(launch);
   const tokenKey = getTokenId(launch);
   return `
     <article class="coin-card">
@@ -705,6 +747,7 @@ function buildExploreCard(launch) {
           <span class="coin-image-spark" data-explore-spark="${sparkKey}" aria-hidden="true"></span>
         </a>
         <span class="coin-badge">PumpSwap</span>
+        ${quoteSymbol ? `<span class="coin-badge quote-badge">${escapeHtml(quoteSymbol)}</span>` : ""}
         <span class="chain-badge ${chainClass}" title="${escapeHtml(chain.name)}">${escapeHtml(chain.shortName)}</span>
         <button class="watch-btn ${watched ? "active" : ""}" type="button" data-watch-token="${tokenKey}" aria-label="Toggle watchlist">
           &#9733;
@@ -735,12 +778,14 @@ function buildTrendingCard(launch) {
   const href = tokenUrl(launch);
   const chain = chainMetaForLaunch(launch);
   const chainClass = chainClassForLaunch(launch);
+  const quoteSymbol = launchQuoteSymbol(launch);
   return `
     <article class="trend-item">
       <a href="${href}" class="trend-media-link">
         <img src="${image}" alt="${launch.symbol} logo" onerror="this.onerror=null;this.src='${escapeHtml(fallback)}';" />
         <span class="trend-image-spark" data-trending-spark="${sparkKey}" aria-hidden="true"></span>
         <span class="trend-chain-badge ${chainClass}">${escapeHtml(chain.shortName)}</span>
+        ${quoteSymbol ? `<span class="trend-chain-badge quote">${escapeHtml(quoteSymbol)}</span>` : ""}
         <div class="trend-overlay">
           <strong>${formatLaunchMarketCap(launch)}</strong>
           <span>${trimText(launch.name, 18)}</span>
@@ -818,7 +863,12 @@ async function hydrateVisibleMarketCaps(limit = 12) {
   await Promise.all(
     visible.map(async (launch) => {
       try {
-        const payload = await api.token(launch.token, { lite: true, fresh: true, chainId: Number(launch?.chainId || state.chainId) });
+        const payload = await api.token(launch.token, {
+          lite: true,
+          fresh: true,
+          chainId: Number(launch?.chainId || state.chainId),
+          quote: launchQuoteMode(launch)
+        });
         if (payload?.launch?.token) {
           const token = getTokenId(launch);
           if (token) state.hydrateBackoffUntil.delete(token);
@@ -1118,7 +1168,8 @@ function setupInteractions() {
       const href = new URL(tokenLink.href, window.location.origin);
       const token = String(href.searchParams.get("token") || "").toLowerCase();
       const chainId = Number(href.searchParams.get("chainId") || state.chainId || 1);
-      const launchKey = `${Number.isFinite(chainId) && chainId > 0 ? Math.floor(chainId) : 1}:${token}`;
+      const quoteMode = String(href.searchParams.get("quote") || "native").toLowerCase() === "usdc" ? "usdc" : "native";
+      const launchKey = `${Number.isFinite(chainId) && chainId > 0 ? Math.floor(chainId) : 1}:${quoteMode}:${token}`;
       const launch = state.launches.find((item) => getTokenId(item) === launchKey);
       if (launch) recordViewedLaunch(launch);
     }
@@ -1130,7 +1181,8 @@ function setupInteractions() {
     const href = new URL(tokenLink.href, window.location.origin);
     const token = String(href.searchParams.get("token") || "").toLowerCase();
     const chainId = Number(href.searchParams.get("chainId") || state.chainId || 1);
-    const launchKey = `${Number.isFinite(chainId) && chainId > 0 ? Math.floor(chainId) : 1}:${token}`;
+    const quoteMode = String(href.searchParams.get("quote") || "native").toLowerCase() === "usdc" ? "usdc" : "native";
+    const launchKey = `${Number.isFinite(chainId) && chainId > 0 ? Math.floor(chainId) : 1}:${quoteMode}:${token}`;
     const launch = state.launches.find((item) => getTokenId(item) === launchKey);
     if (launch) recordViewedLaunch(launch);
   });
@@ -1236,6 +1288,7 @@ async function loadConfig() {
   const cfg = await api.config();
   state.chainId = Number(cfg.chainId || 1);
   state.supportedChains = Array.isArray(cfg.supportedChains) ? cfg.supportedChains : [];
+  state.quoteLaunchOptions = Array.isArray(cfg.quoteLaunchOptions) ? cfg.quoteLaunchOptions : [];
   setPreferredChainId(state.chainId);
   if (ui.networkChip) {
     const labels = configuredFeedChains()

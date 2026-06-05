@@ -4048,6 +4048,14 @@ button:disabled {
   padding: 0.14rem 0.44rem;
 }
 
+.coin-badge.quote-badge {
+  top: 3.48rem;
+  z-index: 3;
+  border-color: rgba(122, 255, 197, 0.6);
+  background: rgba(12, 34, 29, 0.9);
+  color: #83ffd0;
+}
+
 .chain-badge,
 .trend-chain-badge {
   position: absolute;
@@ -4091,6 +4099,14 @@ button:disabled {
   border-color: rgba(201, 208, 232, 0.5);
   background: rgba(33, 38, 54, 0.9);
   color: #d9def5;
+}
+
+.trend-chain-badge.quote {
+  top: 2rem;
+  right: 0.44rem;
+  border-color: rgba(122, 255, 197, 0.58);
+  background: rgba(12, 34, 29, 0.9);
+  color: #83ffd0;
 }
 
 .coin-chain-text {
