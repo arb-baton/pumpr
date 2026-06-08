@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Pump-r.fun | Airdrop</title>
+    <link rel="icon" type="image/png" href="/assets/favicon.png?v=20260608pumpr" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260608pumpr2" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="appSidebar">
+        <div class="sidebar-top">
+          <a class="logo" href="/">
+            <img class="logo-mark" src="/assets/pump-r-logo.png?v=20260608r" alt="Pump-r logo" />
+            <span class="logo-title"><span class="logo-name">Pump-r</span><span class="logo-sep">.</span><span class="logo-tld">fun</span></span>
+          </a>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
+            <svg viewBox="0 0 20 12" aria-hidden="true"><rect x="1.5" y="1" width="1.5" height="10" rx="0.75"></rect><rect x="17" y="1" width="1.5" height="10" rx="0.75"></rect><path d="M11.2 3.2L8.2 6l3 2.8"></path></svg>
+          </button>
+        </div>
+        <nav class="side-nav">
+          <a class="side-link side-link-home" href="/">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"></path><path d="M5.5 9.8V21h13V9.8"></path></svg></span>
+            <span class="side-link-label">Home</span>
+          </a>
+          <a class="side-link" href="/go">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l7 4v8l-7 4-7-4v-8l7-4z"></path><path d="M9 12.2l2 2 4-4"></path></svg></span>
+            <span class="side-link-label">GO</span>
+          </a>
+          <a class="side-link" href="/alpha">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8l3 6-7 10-7-10 3-6z"></path><path d="M8 10h8"></path><path d="M12 4v16"></path></svg></span>
+            <span class="side-link-label">Alpha</span>
+          </a>
+          <a class="side-link active" href="/airdrop">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"></path><path d="M7 8l5-5 5 5"></path><path d="M4 17.5h16"></path><path d="M6.5 21h13"></path></svg></span>
+            <span class="side-link-label">Airdrop</span>
+          </a>
+          <a class="side-link side-link-profile" id="profileNavSide" href="/profile">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.7"></circle><path d="M4.6 20c1.8-3.9 4.4-5.9 7.4-5.9s5.6 2 7.4 5.9"></path></svg></span>
+            <span class="side-link-label">Profile</span>
+          </a>
+          <a class="side-link" href="/communities">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11.5a4 4 0 1 1 8 0"></path><path d="M4.5 20c1.2-3 3.7-4.5 6.5-4.5s5.3 1.5 6.5 4.5"></path><path d="M17 8.2a3 3 0 0 1 3 3"></path><path d="M18.5 15.2c1.2.6 2 1.7 2.5 3.1"></path></svg></span>
+            <span class="side-link-label">Communities</span>
+          </a>
+          <a class="side-link" href="https://trade.padre.gg/" target="_blank" rel="noreferrer noopener">
+            <span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"></path><path d="M7 7v10"></path><path d="M17 7v10"></path><path d="M4 17h16"></path></svg></span>
+            <span class="side-link-label">Terminal</span>
+          </a>
+        </nav>
+        <a class="side-create-btn" href="/create">Create</a>
+        <div class="side-footer"><span id="networkChip">Chain -</span><span id="factoryChip">Factory -</span></div>
+      </aside>
+
+      <main class="main-pane">
+        <div class="promo-strip">beta testing</div>
+        <header class="topbar create-topbar">
+          <div class="create-searchbar">
+            <a href="/" class="create-back-btn" aria-label="Back to home">&larr;</a>
+            <div class="airdrop-official-token" id="airdropOfficialTop">Official holder rewards</div>
+          </div>
+          <div class="top-actions">
+            <a class="btn-ghost top-action-btn" href="/create">+ Create</a>
+          </div>
+        </header>
+
+        <section class="airdrop-page">
+          <div class="airdrop-main">
+            <section class="airdrop-hero panel-card">
+              <div>
+                <small>Creator rewards</small>
+                <h1>Official holder airdrop</h1>
+                <p id="airdropHeroCopy">Creator rewards from the official Pump-r token will be distributed to top holders. This page only tracks the Pump-r token after it launches.</p>
+              </div>
+              <div class="airdrop-hero-stats">
+                <span><b id="airdropClaimableStat">0</b> rewards</span>
+                <span><b id="airdropHolderStat">0</b> holders</span>
+                <span><b id="airdropChainStat">-</b> chain</span>
+              </div>
+            </section>
+
+            <section class="panel-card airdrop-builder">
+              <div class="airdrop-builder-head">
+                <div>
+                  <small>Step 1</small>
+                  <h2>Official token</h2>
+                </div>
+                <span id="airdropStatus">Checking official airdrop token...</span>
+              </div>
+              <div class="airdrop-token-lock">
+                <div>
+                  <small>Reward target</small>
+                  <strong id="airdropOfficialName">Pump-r token</strong>
+                  <span id="airdropOfficialMeta">Airdrop opens after the official token is configured.</span>
+                </div>
+                <button id="airdropPreviewBtn" class="btn-primary" type="button">Refresh holders</button>
+              </div>
+            </section>
+
+            <section id="airdropResults" class="airdrop-results-panel" aria-live="polite">
+              <article class="panel-card airdrop-empty-state">
+                <span class="airdrop-empty-icon">0x</span>
+                <h2>Airdrop not live yet</h2>
+                <p>Once the official Pump-r token launches, this page will show the top holders receiving creator-reward drops. No random token contracts are checked here.</p>
+              </article>
+            </section>
+          </div>
+
+          <aside class="airdrop-side">
+            <article class="panel-card airdrop-flow-card">
+              <small>Flow</small>
+              <h3>How payout works</h3>
+              <ol>
+                <li>Pump-r launches the official token.</li>
+                <li>Creator rewards accrue from real trading.</li>
+                <li>Top holders are ranked from that token only.</li>
+                <li>Rewards are dropped back to those holders.</li>
+              </ol>
+            </article>
+            <article class="panel-card airdrop-side-card">
+              <small>Reward source</small>
+              <h3>Official token only</h3>
+              <p>This page is for Pump-r's own holder rewards. It will not preview or distribute rewards for unrelated token contracts.</p>
+            </article>
+            <article class="panel-card airdrop-side-card">
+              <small>Chains</small>
+              <div class="airdrop-chain-pills">
+                <span>ETH</span>
+                <span>BASE</span>
+                <span>MONAD</span>
+                <span>SOL</span>
+              </div>
+            </article>
+          </aside>
+        </section>
+
+        <p id="alert" class="alert"></p>
+      </main>
+    </div>
+
+    <script src="/js/sidebar.js?v=20260608airdrop"></script>
+    <script type="module" src="/js/airdrop.js?v=20260608airdrop"></script>
+  </body>
+</html>

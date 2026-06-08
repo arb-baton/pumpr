@@ -5,6 +5,8 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const { ethers } = require("ethers");
+const { Connection: SolanaConnection, Keypair: SolanaKeypair, PublicKey: SolanaPublicKey, Transaction: SolanaTransaction } = require("@solana/web3.js");
+const { PUMP_SDK } = require("@pump-fun/pump-sdk");
 
 dotenv.config({ override: true });
 
@@ -23,6 +25,7 @@ const SUPPORT_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-support
 const COMMUNITY_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-community.json") : path.join(ROOT, "cache", "community.json");
 const GO_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-go.json") : path.join(ROOT, "cache", "go.json");
 const ALPHA_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-alpha.json") : path.join(ROOT, "cache", "alpha.json");
+const PUMPFUN_METADATA_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-pumpfun-metadata.json") : path.join(ROOT, "cache", "pumpfun-metadata.json");
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || ""
@@ -748,15 +751,15 @@ function sanitizePersistedImageUri(rawImageURI = "") {
   const toUploadPathOrFallback = (pathname = "") => {
     const cleanPath = String(pathname || "").trim();
     if (!cleanPath.startsWith("/uploads/")) {
-      return "/assets/support-pill-main.png";
+      return "/assets/pump-r-logo.png";
     }
     const filename = path.basename(cleanPath);
-    if (!filename) return "/assets/support-pill-main.png";
+    if (!filename) return "/assets/pump-r-logo.png";
     const filePath = path.join(UPLOADS_DIR, filename);
     if (fs.existsSync(filePath)) {
       return `/uploads/${filename}`;
     }
-    return "/assets/support-pill-main.png";
+    return "/assets/pump-r-logo.png";
   };
 
   try {
@@ -766,7 +769,7 @@ function sanitizePersistedImageUri(rawImageURI = "") {
     if (isLoopbackHost) {
       if (parsed.pathname.startsWith("/assets/")) return parsed.pathname;
       if (parsed.pathname.startsWith("/uploads/")) return toUploadPathOrFallback(parsed.pathname);
-      return "/assets/support-pill-main.png";
+      return "/assets/pump-r-logo.png";
     }
     return raw;
   } catch {
@@ -1756,24 +1759,24 @@ function emptyGoStore() {
     bounties: [
       {
         id: "go-spray-wall",
-        title: "Spray paint a wall with the ticker $ETHERPUMP",
-        description: "Create a real-world photo or video showing the $ETHERPUMP ticker on a wall, sign, or public-safe surface.",
+        title: "Spray paint a wall with the ticker $Pump-r",
+        description: "Create a real-world photo or video showing the $Pump-r ticker on a wall, sign, or public-safe surface.",
         deliverables: ["Photo or video proof", "Ticker must be readable", "No illegal or unsafe activity"],
         rewardUsd: 206.92,
-        tokenSymbol: "ETHERPUMP",
+        tokenSymbol: "Pump-r",
         tokenAmount: 3,
         tokenUnit: "ETH",
         creator: "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3",
-        creatorName: "EtherPump",
+        creatorName: "Pump-r",
         status: "open",
-        imageUri: "/assets/etherpump-logo.png",
+        imageUri: "/assets/pump-r-logo.png",
         createdAt: now - 23 * 60,
         endsAt: now + 3 * 24 * 60 * 60
       },
       {
         id: "go-stream-clip",
         title: "Stream snipe a famous creator and get the clip",
-        description: "Clip a live creator seeing or reacting to an EtherPump token mention.",
+        description: "Clip a live creator seeing or reacting to a Pump-r token mention.",
         deliverables: ["Clip link", "Creator visible or audible", "Ticker or token mention included"],
         rewardUsd: 689.45,
         tokenSymbol: "PUMPVERSE",
@@ -1782,7 +1785,7 @@ function emptyGoStore() {
         creator: "0x024469De02f5efFc7c10667f3e2A852Bd4a5149f",
         creatorName: "PumpVerse",
         status: "open",
-        imageUri: "/assets/etherpump-logo.png",
+        imageUri: "/assets/pump-r-logo.png",
         createdAt: now - 26 * 60,
         endsAt: now + 3 * 24 * 60 * 60
       },
@@ -1810,7 +1813,7 @@ function emptyGoStore() {
         author: "0x9bD6814208c60c773E07da8C772Bf5ea8311fC0C",
         authorName: "raresalmonhonor",
         body: "It's done sir!",
-        mediaUrl: "/assets/etherpump-logo.png",
+        mediaUrl: "/assets/pump-r-logo.png",
         likes: [],
         createdAt: now - 16 * 60
       }
@@ -1853,7 +1856,7 @@ function normalizeGoBounty(row = {}) {
     description: sanitizeGoText(row.description || "", 900),
     deliverables,
     rewardUsd: Math.max(0, Number(row.rewardUsd || row.reward || 0) || 0),
-    tokenSymbol: sanitizeGoText(row.tokenSymbol || "ETHERPUMP", 24).replace(/^\$/, "").toUpperCase(),
+    tokenSymbol: sanitizeGoText(row.tokenSymbol || "Pump-r", 24).replace(/^\$/, "").toUpperCase(),
     tokenAmount: Math.max(0, Number(row.tokenAmount || 0) || 0),
     tokenUnit: sanitizeGoText(row.tokenUnit || "ETH", 16).toUpperCase(),
     payoutChainId: parseChainId(row.payoutChainId || row.chainId || 1) || 1,
@@ -1886,7 +1889,7 @@ function goEscrowAddressForChain(chainId) {
 }
 
 function goEscrowConfig() {
-  return [1, 8453, 143].map((chainId) => {
+  return [1, 8453, 143, 101].map((chainId) => {
     const meta = CHAIN_META[chainId] || {};
     const escrowAddress = goEscrowAddressForChain(chainId);
     return {
@@ -1898,6 +1901,97 @@ function goEscrowConfig() {
       enabled: Boolean(escrowAddress)
     };
   });
+}
+
+function officialAirdropConfig() {
+  const rawToken = String(
+    process.env.AIRDROP_TOKEN_ADDRESS ||
+      process.env.OFFICIAL_AIRDROP_TOKEN ||
+      process.env.PUMPR_AIRDROP_TOKEN ||
+      process.env.ETHERPUMP_AIRDROP_TOKEN ||
+      ""
+  ).trim();
+  const chainId = parseChainId(
+    process.env.AIRDROP_CHAIN_ID ||
+      process.env.OFFICIAL_AIRDROP_CHAIN_ID ||
+      process.env.PUMPR_AIRDROP_CHAIN_ID ||
+      process.env.ETHERPUMP_AIRDROP_CHAIN_ID ||
+      "1"
+  ) || 1;
+  const quoteMode = normalizeQuoteMode(process.env.AIRDROP_QUOTE_MODE || process.env.OFFICIAL_AIRDROP_QUOTE || "native");
+  const token = chainId === 101 ? normalizeSolanaAddress(rawToken) : normalizeAddress(rawToken);
+  return {
+    configured: Boolean(token),
+    token,
+    chainId,
+    chainName: CHAIN_META[chainId]?.name || `Chain ${chainId}`,
+    chainShortName: CHAIN_META[chainId]?.shortName || String(chainId),
+    quoteMode,
+    name: String(process.env.AIRDROP_TOKEN_NAME || process.env.OFFICIAL_AIRDROP_TOKEN_NAME || "Pump-r").trim(),
+    symbol: String(process.env.AIRDROP_TOKEN_SYMBOL || process.env.OFFICIAL_AIRDROP_TOKEN_SYMBOL || "Pump-r").trim().replace(/^\$/, "").toUpperCase(),
+    message: String(
+      process.env.AIRDROP_MESSAGE ||
+        "After the official Pump-r token launches, creator rewards will be routed back to top holders from this page."
+    ).trim()
+  };
+}
+
+async function buildSolanaAirdropPreview(rawToken, limit = 20) {
+  const mintText = String(rawToken || "").trim();
+  let mint;
+  try {
+    mint = new SolanaPublicKey(mintText);
+  } catch {
+    throw new Error("Valid Solana token mint is required");
+  }
+
+  const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
+  const connection = new SolanaConnection(rpcUrl, "confirmed");
+  const [largestAccounts, mintInfo] = await Promise.all([
+    connection.getTokenLargestAccounts(mint),
+    connection.getParsedAccountInfo(mint).catch(() => ({ value: null }))
+  ]);
+  const mintParsed = mintInfo?.value?.data?.parsed?.info || {};
+  const supplyRaw = BigInt(String(mintParsed.supply || "0"));
+  const decimals = Number(mintParsed.decimals ?? largestAccounts?.value?.[0]?.decimals ?? 6) || 6;
+  const accounts = (largestAccounts?.value || []).slice(0, Math.max(3, Math.min(50, Number(limit || 20))));
+  const owners = await Promise.all(
+    accounts.map(async (account) => {
+      const info = await connection.getParsedAccountInfo(account.address).catch(() => ({ value: null }));
+      const owner = info?.value?.data?.parsed?.info?.owner || account.address.toBase58();
+      const amountRaw = BigInt(String(account.amount || "0"));
+      return {
+        address: owner,
+        label: "holder",
+        balanceWei: amountRaw.toString(),
+        balanceTokens: Number(account.uiAmountString || account.uiAmount || 0) || Number(amountRaw) / 10 ** decimals,
+        holderPct: supplyRaw > 0n ? Number((amountRaw * 10000n) / supplyRaw) / 100 : 0,
+        allocationWei: "0",
+        allocationTokens: 0
+      };
+    })
+  );
+
+  const totalHolderBalance = owners.reduce((sum, row) => sum + BigInt(row.balanceWei || "0"), 0n);
+  return {
+    chainId: 101,
+    chainName: CHAIN_META[101]?.name || "Solana",
+    token: mint.toBase58(),
+    pool: "",
+    name: "Solana token",
+    symbol: "SOL",
+    creator: "",
+    quoteMode: "native",
+    claimableWei: "0",
+    claimableTokens: 0,
+    claimedWei: "0",
+    claimedTokens: 0,
+    holderCount: owners.length,
+    totalHolderBalanceWei: totalHolderBalance.toString(),
+    totalHolderBalanceTokens: owners.reduce((sum, row) => sum + Number(row.balanceTokens || 0), 0),
+    marketCapUsd: 0,
+    allocations: owners
+  };
 }
 
 function normalizeGoSubmission(row = {}) {
@@ -3704,6 +3798,264 @@ async function findLaunchByToken(factory, tokenAddress) {
   return null;
 }
 
+function pickPumpFunMint(payload = {}) {
+  return String(
+    payload?.mint ||
+      payload?.tokenAddress ||
+      payload?.token ||
+      payload?.address ||
+      payload?.coin?.mint ||
+      payload?.coin?.address ||
+      payload?.data?.mint ||
+      payload?.data?.tokenAddress ||
+      ""
+  ).trim();
+}
+
+function pickPumpFunUrl(payload = {}, mint = "") {
+  const explicit = String(payload?.pumpfunUrl || payload?.coinUrl || payload?.url || payload?.data?.url || "").trim();
+  if (explicit) return explicit;
+  return mint ? `https://pump.fun/coin/${encodeURIComponent(mint)}` : "";
+}
+
+function getPublicBaseUrl(req) {
+  const explicit = String(process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL || "").trim().replace(/\/+$/, "");
+  if (explicit) return explicit;
+  const host = String(req.get("host") || "").trim();
+  const proto = String(req.get("x-forwarded-proto") || req.protocol || "http").split(",")[0].trim();
+  return host ? `${proto}://${host}` : "";
+}
+
+function readPumpFunMetadataDb() {
+  try {
+    if (fs.existsSync(PUMPFUN_METADATA_DB_PATH)) {
+      const parsed = JSON.parse(fs.readFileSync(PUMPFUN_METADATA_DB_PATH, "utf8") || "{}");
+      return parsed && typeof parsed === "object" ? parsed : {};
+    }
+  } catch {
+    // fall through
+  }
+  return {};
+}
+
+function writePumpFunMetadataDb(store) {
+  const safe = store && typeof store === "object" ? store : {};
+  fs.mkdirSync(path.dirname(PUMPFUN_METADATA_DB_PATH), { recursive: true });
+  fs.writeFileSync(PUMPFUN_METADATA_DB_PATH, JSON.stringify(safe, null, 2));
+  return safe;
+}
+
+async function createPumpFunMetadataUri(req, metadata) {
+  const clean = {
+    name: String(metadata?.name || "").slice(0, 32),
+    symbol: String(metadata?.symbol || "").slice(0, 13),
+    description: String(metadata?.description || "").slice(0, 4000),
+    image: String(metadata?.image || ""),
+    showName: true
+  };
+  const binary = Buffer.from(JSON.stringify(clean), "utf8");
+
+  if (isSupabaseStorageConfigured()) {
+    try {
+      return await uploadBinaryToSupabaseStorage(binary, "json", "pumpfun");
+    } catch {
+      if (STRICT_UPLOAD_STORE) throw new Error("Pump.fun metadata storage failed");
+    }
+  }
+
+  const id = crypto.randomBytes(10).toString("hex");
+  if (USE_DISK_UPLOADS) {
+    const filename = `${id}.json`;
+    const filepath = path.join(UPLOADS_DIR, filename);
+    fs.writeFileSync(filepath, binary);
+    const base = getPublicBaseUrl(req);
+    return `${base}/uploads/${filename}`;
+  }
+
+  const store = readPumpFunMetadataDb();
+  store[id] = { ...clean, createdAt: Date.now() };
+  writePumpFunMetadataDb(store);
+  const base = getPublicBaseUrl(req);
+  return `${base}/api/pumpfun/metadata/${id}`;
+}
+
+app.get("/api/pumpfun/metadata/:id", (req, res) => {
+  const id = String(req.params.id || "").replace(/[^a-f0-9]/gi, "");
+  const store = readPumpFunMetadataDb();
+  const row = id ? store[id] : null;
+  if (!row) return res.status(404).json({ error: "Metadata not found" });
+  res.json(row);
+});
+
+app.post("/api/pumpfun/launch", async (req, res) => {
+  try {
+    const name = String(req.body?.name || "").trim().slice(0, 32);
+    const symbol = String(req.body?.symbol || "").trim().toUpperCase().slice(0, 13);
+    if (!name || !symbol) {
+      return res.status(400).json({ error: "name and symbol are required" });
+    }
+    const userPublicKey = String(req.body?.userPublicKey || req.body?.creatorWallet || "").trim();
+    if (!userPublicKey) {
+      return res.status(400).json({ error: "Connect a Solana wallet first" });
+    }
+
+    let user;
+    let creator;
+    try {
+      user = new SolanaPublicKey(userPublicKey);
+      creator = new SolanaPublicKey(String(req.body?.creatorWallet || userPublicKey).trim());
+    } catch {
+      return res.status(400).json({ error: "Invalid Solana wallet public key" });
+    }
+
+    const metadataUri = await createPumpFunMetadataUri(req, {
+      name,
+      symbol,
+      description: String(req.body?.description || "").trim(),
+      image: String(req.body?.imageUri || "").trim()
+    });
+    if (!metadataUri || metadataUri.length > 200) {
+      return res.status(500).json({ error: "Pump.fun metadata URI is missing or too long" });
+    }
+
+    const mintKeypair = SolanaKeypair.generate();
+    const instruction = await PUMP_SDK.createV2Instruction({
+      mint: mintKeypair.publicKey,
+      name,
+      symbol,
+      uri: metadataUri,
+      creator,
+      user,
+      mayhemMode: false,
+      cashback: false
+    });
+
+    const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
+    let latest = {
+      blockhash: String(req.body?.blockhash || "").trim(),
+      lastValidBlockHeight: Number(req.body?.lastValidBlockHeight || 0)
+    };
+    if (!latest.blockhash) {
+      const connection = new SolanaConnection(rpcUrl, "confirmed");
+      latest = await connection.getLatestBlockhash("confirmed");
+    }
+    const tx = new SolanaTransaction({
+      feePayer: user,
+      recentBlockhash: latest.blockhash
+    }).add(instruction);
+    tx.partialSign(mintKeypair);
+
+    const mint = mintKeypair.publicKey.toBase58();
+    res.json({
+      ok: true,
+      mode: "sdk",
+      mint,
+      tokenAddress: mint,
+      pumpfunUrl: pickPumpFunUrl({}, mint),
+      metadataUri,
+      transactionBase64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+      rpcUrl,
+      blockhash: latest.blockhash,
+      lastValidBlockHeight: latest.lastValidBlockHeight
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Pump.fun SDK transaction build failed" });
+  }
+});
+
+app.get("/api/airdrop/preview", async (req, res) => {
+  try {
+    const official = officialAirdropConfig();
+    if (!official.configured) {
+      return res.status(400).json({
+        error: "Official airdrop token is not configured yet. Launch the Pump-r token, then set AIRDROP_TOKEN_ADDRESS and AIRDROP_CHAIN_ID in Vercel."
+      });
+    }
+
+    const rawToken = official.token;
+    const requestedRawChainId = official.chainId;
+    if (requestedRawChainId === 101) {
+      const limit = Math.max(3, Math.min(50, Number(req.query.limit || 20)));
+      const payload = await buildSolanaAirdropPreview(rawToken, limit);
+      return res.json({ ...payload, name: official.name, symbol: official.symbol, officialAirdrop: official });
+    }
+
+    const tokenAddress = normalizeAddress(rawToken);
+    if (!tokenAddress) {
+      return res.status(400).json({ error: "Valid token contract is required" });
+    }
+
+    const deployment = loadDeploymentConfig();
+    const requestedChainId = official.chainId;
+    const quoteMode = official.quoteMode;
+    const ctx = await getContext(requestedChainId, { verify: false, quoteMode });
+    const limit = Math.max(3, Math.min(50, Number(req.query.limit || 20)));
+    const launch = await findLaunchByToken(ctx.factory, tokenAddress);
+    if (!launch) {
+      return res.status(404).json({ error: "Token was not found in this Pump-r factory" });
+    }
+
+    const [holdersRaw, feeSnapshot, poolSnapshot] = await Promise.all([
+      readTopHolders(ctx.provider, launch, limit + 5).catch(() => []),
+      readTokenFeeSnapshot(ctx.provider, launch.token).catch(() => ({
+        creatorClaimableWei: "0",
+        creatorClaimedWei: "0",
+        creatorClaimableTokens: 0,
+        creatorClaimedTokens: 0
+      })),
+      readPoolSnapshot(ctx.provider, launch, { quoteMode: ctx.quoteMode, quoteAsset: ctx.quoteAsset }).catch(() => buildPoolFallbackFromLaunch(launch))
+    ]);
+
+    const holders = (Array.isArray(holdersRaw) ? holdersRaw : [])
+      .filter((row) => String(row?.label || "").toLowerCase() !== "pool")
+      .filter((row) => BigInt(row?.balance || "0") > 0n)
+      .slice(0, limit);
+    const totalHolderBalance = holders.reduce((sum, row) => sum + BigInt(row.balance || "0"), 0n);
+    const claimableWei = BigInt(feeSnapshot?.creatorClaimableWei || "0");
+    const allocations = holders.map((row) => {
+      const balanceWei = BigInt(row.balance || "0");
+      const allocationWei = claimableWei > 0n && totalHolderBalance > 0n ? (claimableWei * balanceWei) / totalHolderBalance : 0n;
+      return {
+        address: row.address,
+        label: row.label,
+        balanceWei: balanceWei.toString(),
+        balanceTokens: toFloat(balanceWei),
+        holderPct: Number(row.pct || 0),
+        allocationWei: allocationWei.toString(),
+        allocationTokens: toFloat(allocationWei)
+      };
+    });
+
+    res.json({
+      chainId: ctx.chainId,
+      chainName: CHAIN_META[ctx.chainId]?.name || `Chain ${ctx.chainId}`,
+      token: launch.token,
+      pool: launch.pool,
+      name: launch.name,
+      symbol: launch.symbol,
+      creator: launch.creator,
+      quoteMode: ctx.quoteMode,
+      claimableWei: claimableWei.toString(),
+      claimableTokens: toFloat(claimableWei),
+      claimedWei: String(feeSnapshot?.creatorClaimedWei || "0"),
+      claimedTokens: toFloat(feeSnapshot?.creatorClaimedWei || "0"),
+      holderCount: holders.length,
+      totalHolderBalanceWei: totalHolderBalance.toString(),
+      totalHolderBalanceTokens: toFloat(totalHolderBalance),
+      marketCapUsd: Number(poolSnapshot?.marketCapUsd || 0),
+      officialAirdrop: official,
+      allocations
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to preview airdrop" });
+  }
+});
+
+app.get("/api/airdrop/official", (_req, res) => {
+  const official = officialAirdropConfig();
+  res.json(official);
+});
+
 app.get("/api/health", async (req, res) => {
   try {
     const deployment = loadDeploymentConfig();
@@ -5192,8 +5544,20 @@ app.get(["/alpha", "/alpha/:alphaId"], (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "alpha.html"));
 });
 
+app.get("/onboard", (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "onboard.html"));
+});
+
+app.get("/airdrop", (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "airdrop.html"));
+});
+
 app.get("/profile", (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "profile.html"));
+});
+
+app.get("/vendor/solana-web3.iife.min.js", (_req, res) => {
+  res.sendFile(path.join(ROOT, "node_modules", "@solana", "web3.js", "lib", "index.iife.min.js"));
 });
 
 app.get("/uploads/:filename", (req, res) => {
@@ -5207,7 +5571,7 @@ app.get("/uploads/:filename", (req, res) => {
     return res.sendFile(filePath);
   }
 
-  return res.redirect(302, "/assets/support-pill-main.png");
+  return res.redirect(302, "/assets/pump-r-logo.png");
 });
 
 app.use(

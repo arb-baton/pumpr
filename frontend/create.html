@@ -6,21 +6,21 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <title>Etherpump.fun | Create</title>
-    <link rel="icon" type="image/png" href="/assets/favicon.png?v=20260426b" />
+    <title>Pump-r.fun | Create</title>
+    <link rel="icon" type="image/png" href="/assets/favicon.png?v=20260608pumpr" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260604monad" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260608pumpr2" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar" id="appSidebar">
         <div class="sidebar-top">
           <a class="logo" href="/">
-            <img class="logo-mark" src="/assets/etherpump-logo.png?v=20260423c" alt="Etherpump logo" />
+            <img class="logo-mark" src="/assets/pump-r-logo.png?v=20260608r" alt="Pump-r logo" />
             <span class="logo-title">
-              <span class="logo-name">Etherpump</span><span class="logo-sep">.</span><span class="logo-tld">fun</span>
+              <span class="logo-name">Pump-r</span><span class="logo-sep">.</span><span class="logo-tld">fun</span>
             </span>
           </a>
           <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
@@ -354,6 +354,10 @@
                   Starter buy market cap estimate (USD)
                   <input id="launchMcapUsd" type="number" step="any" min="0" placeholder="3000" value="3000" />
                 </label>
+                <label>
+                  Pump.fun creator wallet (optional)
+                  <input id="pumpfunCreatorWallet" placeholder="Solana wallet public key for Pump.fun launches" />
+                </label>
                 <div class="create-launch-math" id="launchMathCard">
                   <p id="launchMathPrimary">Bonding curve starts at the configured virtual reserve price.</p>
                   <p id="launchMathSecondary">Launches stay on the bonding curve until the graduation target is reached.</p>
@@ -434,7 +438,7 @@
           <h3>Edit profile</h3>
           <button id="closeEditProfileModal" class="btn-ghost" type="button">X</button>
         </div>
-        <p>Update how you appear across Etherpump.fun.</p>
+        <p>Update how you appear across Pump-r.fun.</p>
         <div class="edit-avatar-row">
           <button id="editAvatarPickBtn" class="edit-avatar-trigger" type="button" aria-label="Choose profile image">
             <span id="editAvatarPreview" class="profile-avatar large edit-avatar-preview">EP</span>
@@ -464,8 +468,8 @@
       </div>
     </div>
 
-    <script src="/js/sidebar.js?v=20260425n"></script>
-    <script type="module" src="/js/create.js?v=20260604monad"></script>
+    <script src="/js/sidebar.js?v=20260608airdrop"></script>
+    <script type="module" src="/js/create.js?v=20260607pumpfunairdrop"></script>
   </body>
 </html>
 

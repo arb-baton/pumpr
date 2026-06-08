@@ -28,7 +28,8 @@ export async function apiGet(path) {
 export async function apiPost(path, body) {
   const target = withPreferredChain(path);
   const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 15000);
+  const timeoutMs = path.startsWith("/api/pumpfun/launch") ? 60000 : 15000;
+  const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
   const res = await fetch(target, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -136,6 +137,16 @@ export const api = {
   supportMessages: (address) => apiGet(`/api/support/messages?address=${encodeURIComponent(String(address || ""))}`),
   supportInbox: (address) => apiGet(`/api/support/inbox?address=${encodeURIComponent(String(address || ""))}`),
   sendSupportMessage: (body = {}) => apiPost("/api/support/message", body),
+  pumpfunLaunch: (body = {}) => apiPost("/api/pumpfun/launch", body),
+  officialAirdrop: () => apiGet("/api/airdrop/official"),
+  airdropPreview: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.token) params.set("token", String(options.token));
+    if (Number.isFinite(Number(options.chainId))) params.set("chainId", String(Math.floor(Number(options.chainId))));
+    if (options.quote) params.set("quote", String(options.quote));
+    if (Number.isFinite(Number(options.limit))) params.set("limit", String(Math.floor(Number(options.limit))));
+    return apiGet(`/api/airdrop/preview?${params.toString()}`);
+  },
   uploadImage: (dataUrl) => apiPost("/api/upload-image", { dataUrl }),
   uploadFile: (dataUrl) => apiPost("/api/upload-file", { dataUrl })
 };

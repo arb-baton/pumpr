@@ -1145,8 +1145,12 @@ function setupEditProfileModal() {
 
       const dataUrl = await readFileAsDataUrl(file);
       setAlert(ui.alert, "Uploading profile image...");
-      const uploaded = await api.uploadImage(dataUrl);
-      state.pendingProfileImageUri = uploaded.url;
+      try {
+        const uploaded = await api.uploadImage(dataUrl);
+        state.pendingProfileImageUri = uploaded.url || dataUrl;
+      } catch {
+        state.pendingProfileImageUri = dataUrl;
+      }
       const text = String(ui.editUsername?.value || "EP").slice(0, 2).toUpperCase();
       updateEditAvatarPreview(text || "EP", state.pendingProfileImageUri);
       setAlert(ui.alert, "Profile image uploaded");

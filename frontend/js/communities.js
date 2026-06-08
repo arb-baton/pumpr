@@ -10,7 +10,7 @@ import {
 import { initWalletControls, setAlert, showCopyToast } from "./ui.js";
 import { initCoinSearchOverlay } from "./searchModal.js?v=20260504e";
 
-const X_AUTH_KEY = "etherpump.community.xauth.v2";
+const X_AUTH_KEY = "Pump-r.community.xauth.v2";
 
 const ui = {
   alert: document.getElementById("alert"),
@@ -281,7 +281,7 @@ function renderShell() {
   const launch = state.launch;
   const symbol = String(launch?.symbol || "coin").toUpperCase();
   const name = String(launch?.name || "Coin communities");
-  const image = launch ? resolveCoinImage(launch) : "/assets/etherpump-logo.png?v=20260423c";
+  const image = launch ? resolveCoinImage(launch) : "/assets/pump-r-logo.png?v=20260608r";
   if (ui.image) ui.image.src = image;
   if (ui.cover) {
     ui.cover.style.backgroundImage = tokenMode
@@ -420,7 +420,7 @@ function renderTopCommunities() {
     const launch = tokenMetaFor(row.token);
     const symbol = String(launch?.symbol || "coin").toUpperCase();
     const name = String(launch?.name || symbol);
-    const image = launch ? resolveCoinImage(launch) : "/assets/etherpump-logo.png?v=20260423c";
+    const image = launch ? resolveCoinImage(launch) : "/assets/pump-r-logo.png?v=20260608r";
     return `
       <a class="community-top-row" href="${communityHref(row.token)}">
         <span class="community-rank">${index + 1}</span>

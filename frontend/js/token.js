@@ -1,4 +1,4 @@
-ï»¿import { api } from "./api.js";
+import { api } from "./api.js";
 import {
   TOKEN_ABI,
   defaultUsername,
@@ -1102,8 +1102,12 @@ function setupEditProfileModal() {
 
       const dataUrl = await readFileAsDataUrl(file);
       setAlert(ui.alert, "Uploading profile image...");
-      const uploaded = await api.uploadImage(dataUrl);
-      state.pendingProfileImageUri = uploaded.url;
+      try {
+        const uploaded = await api.uploadImage(dataUrl);
+        state.pendingProfileImageUri = uploaded.url || dataUrl;
+      } catch {
+        state.pendingProfileImageUri = dataUrl;
+      }
       const text = String(ui.editUsername?.value || "EP").slice(0, 2).toUpperCase();
       updateEditAvatarPreview(text || "EP", state.pendingProfileImageUri);
       setAlert(ui.alert, "Profile image uploaded");
@@ -1180,7 +1184,7 @@ function setTokenHeader(launch) {
   setAvatarNode(ui.creatorRewardAvatar, creatorInitials, creatorImage);
   if (ui.creatorShare) {
     const claimableUsd = creatorClaimableUsdFromLaunch(launch);
-    ui.creatorShare.textContent = `Claimable ${formatCompactUsd(claimableUsd)} Â· Min $${CLAIM_MIN_USD}`;
+    ui.creatorShare.textContent = `Claimable ${formatCompactUsd(claimableUsd)} · Min $${CLAIM_MIN_USD}`;
     ui.creatorShare.hidden = false;
   }
   if (ui.creatorClaimableUsd || ui.creatorUnclaimedLine || ui.creatorSharePct) {
@@ -1742,7 +1746,7 @@ function renderCommunityMini() {
   if (ui.communityMiniMeta) {
     const posts24h = Number(stats.posts24h || 0);
     const total = Number(stats.posts || posts.length || 0);
-    ui.communityMiniMeta.textContent = `${posts24h} posts in the last 24h Â· ${total} total`;
+    ui.communityMiniMeta.textContent = `${posts24h} posts in the last 24h · ${total} total`;
   }
   if (!ui.communityMiniPreview) return;
   const first = posts[0];
@@ -1875,23 +1879,23 @@ function renderTradePanel() {
     if (ui.tradePrimaryAmount) ui.tradePrimaryAmount.textContent = formatTradeNumber(buyEth, 6);
     if (ui.tradePrimaryUnit) ui.tradePrimaryUnit.textContent = qSymbol;
     if (ui.tradeApproxLine) {
-      ui.tradeApproxLine.textContent = `~ ${formatCompactUsd(buyEth * qUsd)} Â· ~ ${formatTradeNumber(
+      ui.tradeApproxLine.textContent = `~ ${formatCompactUsd(buyEth * qUsd)} · ~ ${formatTradeNumber(
         buyToken,
         4
       )} ${symbol}`;
     }
-    if (ui.tradeReceiveLine) ui.tradeReceiveLine.textContent = `You receive Ëœ ${formatTradeNumber(buyToken, 4)} ${symbol}`;
+    if (ui.tradeReceiveLine) ui.tradeReceiveLine.textContent = `You receive ˜ ${formatTradeNumber(buyToken, 4)} ${symbol}`;
     if (ui.buyBtn) ui.buyBtn.textContent = buyEth > 0 ? `Buy ${formatTradeNumber(buyEth, 6)} ${qSymbol}` : "Enter amount to buy";
   } else {
     if (ui.tradePrimaryAmount) ui.tradePrimaryAmount.textContent = formatTradeNumber(sellToken, 4);
     if (ui.tradePrimaryUnit) ui.tradePrimaryUnit.textContent = symbol;
     if (ui.tradeApproxLine) {
-      ui.tradeApproxLine.textContent = `~ ${formatCompactUsd(sellEth * qUsd)} Â· ~ ${formatTradeNumber(
+      ui.tradeApproxLine.textContent = `~ ${formatCompactUsd(sellEth * qUsd)} · ~ ${formatTradeNumber(
         sellEth,
         6
       )} ${qSymbol}`;
     }
-    if (ui.tradeReceiveLine) ui.tradeReceiveLine.textContent = `You receive Ëœ ${formatTradeNumber(sellEth, 6)} ${qSymbol}`;
+    if (ui.tradeReceiveLine) ui.tradeReceiveLine.textContent = `You receive ˜ ${formatTradeNumber(sellEth, 6)} ${qSymbol}`;
     if (ui.sellBtn) ui.sellBtn.textContent = sellToken > 0 ? `Sell ${formatTradeNumber(sellToken, 4)} ${symbol}` : "Enter amount to sell";
   }
 }

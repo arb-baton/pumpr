@@ -97,6 +97,7 @@ const ui = {
   launchMathSecondary: document.getElementById("launchMathSecondary"),
   launchMathTertiary: document.getElementById("launchMathTertiary"),
   launchMathQuaternary: document.getElementById("launchMathQuaternary"),
+  pumpfunCreatorWallet: document.getElementById("pumpfunCreatorWallet"),
   imagePreview: document.getElementById("imagePreview"),
   previewName: document.getElementById("previewName"),
   previewSymbol: document.getElementById("previewSymbol"),
@@ -125,16 +126,24 @@ const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 const state = {
   config: null,
   selectedChainId: 1,
-  selectedLaunchMode: "1",
+  selectedLaunchMode: "pumpfun",
   selectedQuoteMode: "native",
   selectedPumpVerseChains: [1, 8453],
   supportedChains: [],
   quoteLaunchOptions: [],
   ethUsd: 3000,
   lastPumpVerseDetails: null,
-  lastPumpVerseResults: []
+  lastPumpVerseResults: [],
+  solanaWallet: null
 };
 const LAUNCH_CHAIN_CHOICES = [
+  {
+    mode: "pumpfun",
+    name: "Pump.fun",
+    shortName: "SOL",
+    networkLabel: "Launch through Pump.fun",
+    externalLaunch: true
+  },
   { chainId: 1, name: "Ethereum", shortName: "ETH", networkLabel: "Mainnet" },
   { chainId: 8453, name: "Base", shortName: "BASE", networkLabel: "Mainnet" },
   { chainId: 143, name: "Monad", shortName: "MONAD", networkLabel: "Mainnet" },
@@ -234,7 +243,7 @@ function normalizeSupportedChains(config = state.config) {
     });
   }
   const chainRank = (chainId) => {
-    const order = [1, 8453, 143, 11155111, 31337];
+    const order = [1, 8453, 143, 101, 11155111, 31337];
     const index = order.indexOf(Number(chainId));
     return index >= 0 ? index : order.length + Number(chainId || 0);
   };
@@ -247,6 +256,10 @@ function selectedChain() {
 
 function isPumpVerseMode() {
   return String(state.selectedLaunchMode || "").startsWith("pumpverse:");
+}
+
+function isPumpFunMode() {
+  return String(state.selectedLaunchMode || "") === "pumpfun";
 }
 
 function selectedQuoteMode() {
@@ -275,6 +288,7 @@ function chainNameForId(chainId) {
   if (n === 1) return "Ethereum";
   if (n === 8453) return "Base";
   if (n === 143) return "Monad";
+  if (n === 101) return "Solana";
   return `Chain ${n}`;
 }
 
@@ -283,6 +297,7 @@ function chainShortNameForId(chainId) {
   if (n === 1) return "ETH";
   if (n === 8453) return "BASE";
   if (n === 143) return "MONAD";
+  if (n === 101) return "SOL";
   return String(n);
 }
 
@@ -334,7 +349,9 @@ function renderChainSelector() {
     ui.factoryChip.textContent = shortAddress(state.config.factoryAddress);
   }
   if (ui.launchChainHint) {
-    ui.launchChainHint.textContent = isPumpVerseMode()
+    ui.launchChainHint.textContent = isPumpFunMode()
+      ? "Pump.fun launches require a Solana wallet, hosted image metadata, a valid ticker, and enough SOL for Pump.fun fees and network gas. After signing, you will be redirected to the Pump.fun coin page."
+      : isPumpVerseMode()
       ? `PumpVerse launches the same token details on ${pumpVerseLabel()}. MetaMask will ask for separate confirmations.`
       : selectedQuoteMode() === "usdc"
       ? "USDC launches use a USDC-paired bonding curve. Buyers can still route from ETH through Uniswap after graduation."
@@ -348,9 +365,12 @@ function renderChainSelector() {
         const mode = choice.mode || String(choice.chainId);
         const isPumpVerseParent = mode === "pumpverse";
         const isUsdcMode = choice.quoteMode === "usdc";
+        const isExternalLaunch = Boolean(choice.externalLaunch);
         const requiredChains = Array.isArray(choice.requiredChains) ? choice.requiredChains : [choice.chainId];
         const enabled = isPumpVerseParent
           ? configuredCount >= Number(choice.requiredMinChains || 2)
+          : isExternalLaunch
+          ? true
           : isUsdcMode
           ? quoteOptions.some((row) => row.mode === "usdc" && Number(row.chainId) === 1 && row.factoryAddress)
           : requiredChains.every((chainId) => supported.has(Number(chainId)));
@@ -359,6 +379,8 @@ function renderChainSelector() {
         const chainAttr = choice.chainId ? `data-chain-id="${choice.chainId}"` : "";
         const description = isPumpVerseParent
           ? "Choose two or three chains"
+          : isExternalLaunch
+          ? "Solana launch + Pump.fun redirect"
           : isUsdcMode
           ? `USDC pair${enabled ? "" : " - configure USDC factory"}`
           : `${row?.shortName || choice.shortName} ${choice.networkLabel}${enabled ? "" : " - configure factory"}`;
@@ -451,6 +473,14 @@ async function selectUsdcLaunchMode() {
   }
 }
 
+function selectPumpFunLaunchMode() {
+  state.selectedLaunchMode = "pumpfun";
+  state.selectedQuoteMode = "native";
+  renderChainSelector();
+  updateProfileIdentity();
+  setAlert(ui.alert, "Pump.fun launch selected. Sign in with Phantom or Solflare, then launch with the official Pump.fun SDK transaction.");
+}
+
 async function selectPumpVerseMode(mode) {
   const supported = configuredChainMap();
   let requested = parsePumpVerseMode(mode);
@@ -503,6 +533,27 @@ function setProfileMenuOpen(open) {
 }
 
 function updateProfileIdentity() {
+  if (isPumpFunMode() && state.solanaWallet?.publicKey) {
+    const publicKey = state.solanaWallet.publicKey;
+    const username = `sol_${publicKey.slice(0, 6)}`;
+    if (ui.profileMenuName) ui.profileMenuName.textContent = username;
+    if (ui.profileMenuNameLarge) ui.profileMenuNameLarge.textContent = username;
+    if (ui.profileMenuMeta) ui.profileMenuMeta.textContent = "Solana wallet connected";
+    if (ui.signInBtn) ui.signInBtn.style.display = "none";
+    if (ui.walletHubBtn) ui.walletHubBtn.style.display = "none";
+    if (ui.profileMenuBtn) ui.profileMenuBtn.style.display = "inline-flex";
+    if (ui.profileNav) ui.profileNav.href = "/profile";
+    if (ui.profileNavSide) ui.profileNavSide.href = "/profile";
+    if (ui.editProfileBtn) {
+      ui.editProfileBtn.disabled = true;
+      ui.editProfileBtn.style.opacity = "0.6";
+      ui.editProfileBtn.style.cursor = "not-allowed";
+    }
+    if (ui.menuLogoutBtn) ui.menuLogoutBtn.textContent = "Disconnect Solana";
+    setAvatarNode(ui.profileAvatar, "SOL", "");
+    setAvatarNode(ui.profileAvatarLarge, "SOL", "");
+    return;
+  }
   const ws = walletState();
   const connected = Boolean(ws.signer && ws.address);
   const profile = connected ? loadUserProfile(ws.address) : { username: "Guest", bio: "", imageUri: "" };
@@ -622,6 +673,18 @@ function setupProfileMenu() {
   });
 
   ui.menuLogoutBtn?.addEventListener("click", () => {
+    if (isPumpFunMode() && state.solanaWallet?.publicKey) {
+      try {
+        state.solanaWallet.provider?.disconnect?.();
+      } catch {
+        // optional wallet API
+      }
+      state.solanaWallet = null;
+      setAlert(ui.alert, "Solana wallet disconnected");
+      setProfileMenuOpen(false);
+      updateProfileIdentity();
+      return;
+    }
     const ws = walletState();
     if (!ws.signer || !ws.address) {
       if (walletControls?.connect) {
@@ -672,8 +735,12 @@ function setupEditProfileModal() {
 
       const dataUrl = await readFileAsDataUrl(file);
       setAlert(ui.alert, "Uploading profile image...");
-      const uploaded = await api.uploadImage(dataUrl);
-      pendingProfileImageUri = uploaded.url;
+      try {
+        const uploaded = await api.uploadImage(dataUrl);
+        pendingProfileImageUri = uploaded.url || dataUrl;
+      } catch {
+        pendingProfileImageUri = dataUrl;
+      }
       const text = String(ui.editUsername?.value || "EP").slice(0, 2).toUpperCase();
       updateEditAvatarPreview(text || "EP", pendingProfileImageUri);
       setAlert(ui.alert, "Profile image uploaded");
@@ -1062,8 +1129,13 @@ function renderLaunchResults(results = []) {
   ui.launchResultList.innerHTML = rows
     .map((row) => {
       const ok = Boolean(row.ok && row.token);
-      const label = chainLabel(row.chainId);
-      const href = ok ? `/token?token=${encodeURIComponent(row.token)}&chainId=${encodeURIComponent(String(row.chainId))}` : "#";
+      const isPumpFun = String(row.chainId || "") === "pumpfun";
+      const label = isPumpFun ? "Pump.fun" : chainLabel(row.chainId);
+      const href = ok
+        ? isPumpFun
+          ? row.pumpfunUrl || `https://pump.fun/coin/${encodeURIComponent(row.token)}`
+          : `/token?token=${encodeURIComponent(row.token)}&chainId=${encodeURIComponent(String(row.chainId))}`
+        : "#";
       const body = ok
         ? `<a href="${href}">Open ${escapeHtml(label)} token ${escapeHtml(shortAddress(row.token))}</a>`
         : `<span>${escapeHtml(row.error || "Launch failed")}</span><button class="btn-ghost small" type="button" data-retry-chain="${escapeHtml(row.chainId)}">Retry</button>`;
@@ -1121,6 +1193,14 @@ async function prepareLaunchDetails() {
   const initialLiquidityEthInput = ui.devBuyEth.value.trim();
 
   if (!name || !symbol) throw new Error("Coin name and ticker are required");
+  if (isPumpFunMode()) {
+    if (!/^[A-Z0-9]{2,10}$/.test(symbol)) {
+      throw new Error("Pump.fun tickers must be 2-10 letters/numbers.");
+    }
+    if (!ui.image.value.trim()) {
+      throw new Error("Pump.fun launches require an uploaded image before launch.");
+    }
+  }
   if (!Number.isFinite(creatorAllocationPct) || creatorAllocationPct < 0) {
     throw new Error("Creator allocation must be 0 or higher");
   }
@@ -1139,7 +1219,10 @@ async function prepareLaunchDetails() {
   }
 
   if (imageUri.startsWith("data:image/")) {
-    imageUri = `${window.location.origin}/assets/etherpump-logo.png`;
+    if (isPumpFunMode()) {
+      throw new Error("Pump.fun needs a hosted image URL. Upload failed, so retry the image upload before launching.");
+    }
+    imageUri = `${window.location.origin}/assets/pump-r-logo.png`;
     ui.image.value = imageUri;
     setAlert(
       ui.alert,
@@ -1154,7 +1237,8 @@ async function prepareLaunchDetails() {
     description,
     totalSupply: ethers.parseUnits(totalSupplyInput, 18),
     creatorBps: BigInt(Math.round(creatorAllocationPct * 100)),
-    starterBuyEth: ethers.parseUnits(initialLiquidityEthInput || "0", selectedQuoteAsset().decimals || 18)
+    starterBuyEth: ethers.parseUnits(initialLiquidityEthInput || "0", selectedQuoteAsset().decimals || 18),
+    pumpfunCreatorWallet: ui.pumpfunCreatorWallet?.value?.trim?.() || ""
   };
 }
 
@@ -1268,6 +1352,125 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
   };
 }
 
+async function loadSolanaWeb3() {
+  if (window.solanaWeb3?.Transaction && window.solanaWeb3?.Connection) return window.solanaWeb3;
+  await new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-solana-web3="true"]');
+    if (existing) {
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", reject, { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "/vendor/solana-web3.iife.min.js";
+    script.async = true;
+    script.dataset.solanaWeb3 = "true";
+    script.onload = resolve;
+    script.onerror = () => reject(new Error("Could not load Solana web3 library"));
+    document.head.appendChild(script);
+  });
+  if (!window.solanaWeb3?.Transaction) {
+    throw new Error("Solana web3 library did not initialize");
+  }
+  return window.solanaWeb3;
+}
+
+function getSolanaProvider() {
+  return window.phantom?.solana || window.solana || window.solflare || null;
+}
+
+async function connectSolanaWallet() {
+  const provider = getSolanaProvider();
+  if (!provider) {
+    throw new Error("Install or enable a Solana wallet like Phantom or Solflare to launch on Pump.fun.");
+  }
+  const response = await provider.connect();
+  const publicKey = response?.publicKey || provider.publicKey;
+  const text = publicKey?.toBase58?.() || String(publicKey || "");
+  if (!text) throw new Error("Solana wallet did not return a public key");
+  state.solanaWallet = { provider, publicKey: text };
+  updateProfileIdentity();
+  return { provider, publicKey: text };
+}
+
+function base64ToBytes(value = "") {
+  const binary = atob(String(value || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function launchPumpFun(details) {
+  const { provider, publicKey } = await connectSolanaWallet();
+  const solanaWeb3 = await loadSolanaWeb3();
+  const rpcUrl = "https://api.mainnet-beta.solana.com";
+  const connection = new solanaWeb3.Connection(rpcUrl, "confirmed");
+  const lamports = await connection.getBalance(new solanaWeb3.PublicKey(publicKey), "confirmed").catch(() => 0);
+  if (lamports < 0.03 * 1_000_000_000) {
+    throw new Error("Pump.fun launches need a Solana wallet with enough SOL for launch and network fees. Add at least ~0.03 SOL and retry.");
+  }
+  setAlert(ui.alert, "Preparing official Pump.fun SDK transaction...");
+  const latest = await connection.getLatestBlockhash("confirmed");
+  const payload = await api.pumpfunLaunch({
+    name: details.name,
+    symbol: details.symbol,
+    description: details.description,
+    imageUri: details.imageUri,
+    totalSupply: details.totalSupply?.toString?.() || String(details.totalSupply || ""),
+    creatorBps: details.creatorBps?.toString?.() || String(details.creatorBps || "0"),
+    starterBuy: details.starterBuyEth?.toString?.() || "0",
+    creatorWallet: details.pumpfunCreatorWallet || publicKey,
+    userPublicKey: publicKey,
+    blockhash: latest.blockhash,
+    lastValidBlockHeight: latest.lastValidBlockHeight,
+    source: "Pump-r"
+  });
+  const mint = String(payload?.mint || payload?.tokenAddress || payload?.token || "");
+  const pumpfunUrl = String(payload?.pumpfunUrl || payload?.url || (mint ? `https://pump.fun/coin/${mint}` : ""));
+  const transactionBase64 = String(payload?.transactionBase64 || "");
+  if (!mint || !pumpfunUrl || !transactionBase64) throw new Error("Pump.fun SDK did not return a complete transaction.");
+
+  setAlert(ui.alert, "Open your Solana wallet and approve the Pump.fun launch transaction...");
+  const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
+  let signature = "";
+  if (typeof provider.signAndSendTransaction === "function") {
+    const sent = await provider.signAndSendTransaction(transaction);
+    signature = sent?.signature || String(sent || "");
+  } else if (typeof provider.signTransaction === "function") {
+    const signed = await provider.signTransaction(transaction);
+    signature = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
+    await connection.confirmTransaction(
+      {
+        signature,
+        blockhash: payload.blockhash,
+        lastValidBlockHeight: payload.lastValidBlockHeight
+      },
+      "confirmed"
+    );
+  } else {
+    throw new Error("Your Solana wallet does not support transaction signing in this browser.");
+  }
+
+  renderLaunchResults([
+    {
+      ok: true,
+      chainId: "pumpfun",
+      token: mint || pumpfunUrl,
+      pumpfunUrl
+    }
+  ]);
+  ui.resultLink.href = pumpfunUrl || `https://pump.fun/coin/${encodeURIComponent(mint)}`;
+  ui.resultLink.textContent = "Open Pump.fun token page";
+  ui.resultLink.style.display = "inline-block";
+  setAlert(ui.alert, `Pump.fun transaction sent${signature ? ` (${shortAddress(signature)})` : ""}. Redirecting...`);
+  window.setTimeout(() => {
+    window.location.href = ui.resultLink.href;
+  }, 900);
+  return { ...payload, signature };
+}
+
 async function launchPumpVerse(details) {
   const targets = normalizePumpVerseChains(state.selectedPumpVerseChains);
   if (targets.length < 2) {
@@ -1344,7 +1547,7 @@ async function onCreate(event) {
   event.preventDefault();
 
   try {
-    setSubmitting(true, isPumpVerseMode() ? "Launching PumpVerse..." : "Launching...");
+    setSubmitting(true, isPumpFunMode() ? "Launching on Pump.fun..." : isPumpVerseMode() ? "Launching PumpVerse..." : "Launching...");
     renderLaunchResults([]);
     if (ui.resultLink) {
       ui.resultLink.style.display = "none";
@@ -1352,16 +1555,19 @@ async function onCreate(event) {
       ui.resultLink.textContent = "";
     }
 
-    const ws = walletState();
-    if (!ws.signer) throw new Error("Connect wallet first");
     const details = await prepareLaunchDetails();
-    const pumpVerse = isPumpVerseMode();
-    if (pumpVerse) {
+    if (isPumpFunMode()) {
+      await launchPumpFun(details);
+    } else if (isPumpVerseMode()) {
+      const ws = walletState();
+      if (!ws.signer) throw new Error("Connect wallet first");
       const results = await launchPumpVerse(details);
       if (results.some((row) => !row.ok)) {
         return;
       }
     } else {
+      const ws = walletState();
+      if (!ws.signer) throw new Error("Connect wallet first");
       await loadChainConfig(state.selectedChainId);
       state.selectedLaunchMode = String(state.selectedChainId);
       const result = await launchOnChain(state.selectedChainId, details, { showModal: true });
@@ -1369,9 +1575,11 @@ async function onCreate(event) {
       setAlert(ui.alert, details.starterBuyEth > 0n ? "Bonding-curve launch created with starter buy" : "Bonding-curve launch created");
     }
 
-    ui.createForm.reset();
-    updatePreview();
-    updateLaunchMath({ source: "liquidity" });
+    if (!isPumpFunMode()) {
+      ui.createForm.reset();
+      updatePreview();
+      updateLaunchMath({ source: "liquidity" });
+    }
   } catch (err) {
     setAlert(ui.alert, parseUiError(err), true);
   } finally {
@@ -1465,6 +1673,10 @@ async function init() {
       selectUsdcLaunchMode();
       return;
     }
+    if (String(button.dataset.launchMode || "") === "pumpfun") {
+      selectPumpFunLaunchMode();
+      return;
+    }
     selectLaunchChain(button.dataset.chainId);
   });
 
@@ -1483,16 +1695,22 @@ async function init() {
     retryPumpVerseChain(button.dataset.retryChain);
   });
 
-  window.addEventListener("etherpump:chainChanged", (event) => {
+  const handleChainChanged = (event) => {
     const nextChainId = Number(event?.detail?.chainId || 0);
     if (!Number.isFinite(nextChainId) || nextChainId <= 0) return;
     const supported = state.supportedChains.some((row) => Number(row.chainId) === nextChainId);
     if (supported) {
       loadChainConfig(nextChainId).catch((err) => setAlert(ui.alert, parseUiError(err), true));
     }
-  });
+  };
+  window.addEventListener("etherpump:chainChanged", handleChainChanged);
+  window.addEventListener("Pump-r:chainChanged", handleChainChanged);
 
   ui.signInBtn?.addEventListener("click", () => {
+    if (isPumpFunMode()) {
+      connectSolanaWallet().catch((err) => setAlert(ui.alert, parseUiError(err), true));
+      return;
+    }
     if (walletControls?.connect) {
       walletControls.connect();
       return;

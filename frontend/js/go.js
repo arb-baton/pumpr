@@ -304,7 +304,8 @@ function renderPayoutOptions() {
   const chains = state.goConfig?.payoutChains?.length ? state.goConfig.payoutChains : [
     { chainId: 1, name: "Ethereum", nativeCurrency: "ETH", enabled: false },
     { chainId: 8453, name: "Base", nativeCurrency: "ETH", enabled: false },
-    { chainId: 143, name: "Monad", nativeCurrency: "MON", enabled: false }
+    { chainId: 143, name: "Monad", nativeCurrency: "MON", enabled: false },
+    { chainId: 101, name: "Solana", nativeCurrency: "SOL", enabled: false }
   ];
   const previous = ui.bountyToken.value || "1";
   ui.bountyToken.innerHTML = chains

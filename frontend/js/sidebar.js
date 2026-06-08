@@ -10,6 +10,52 @@
   const toggle = document.getElementById("sidebarToggle") || sidebar?.querySelector(".sidebar-toggle");
   if (!sidebar || !toggle) return;
 
+  const sideNav = sidebar.querySelector(".side-nav");
+  if (sideNav && !sideNav.querySelector('a[href="/onboard"]')) {
+    const homeLink = sideNav.querySelector('a[href="/"]');
+    const onboardLink = document.createElement("a");
+    onboardLink.className = `side-link${location.pathname.startsWith("/onboard") ? " active" : ""}`;
+    onboardLink.href = "/onboard";
+    onboardLink.innerHTML = `
+      <span class="side-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3.5l7.5 4.25v8.5L12 20.5l-7.5-4.25v-8.5L12 3.5z"></path>
+          <path d="M8.7 12h6.6"></path>
+          <path d="M12 8.7v6.6"></path>
+        </svg>
+      </span>
+      <span class="side-link-label">Onboard</span>
+    `;
+    if (homeLink) {
+      homeLink.insertAdjacentElement("afterend", onboardLink);
+    } else {
+      sideNav.prepend(onboardLink);
+    }
+  }
+
+  if (sideNav && !sideNav.querySelector('a[href="/airdrop"]')) {
+    const alphaLink = sideNav.querySelector('a[href="/alpha"]');
+    const airdropLink = document.createElement("a");
+    airdropLink.className = `side-link${location.pathname.startsWith("/airdrop") ? " active" : ""}`;
+    airdropLink.href = "/airdrop";
+    airdropLink.innerHTML = `
+      <span class="side-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v14"></path>
+          <path d="M7 8l5-5 5 5"></path>
+          <path d="M4 17.5h16"></path>
+          <path d="M6.5 21h13"></path>
+        </svg>
+      </span>
+      <span class="side-link-label">Airdrop</span>
+    `;
+    if (alphaLink) {
+      alphaLink.insertAdjacentElement("afterend", airdropLink);
+    } else {
+      sideNav.appendChild(airdropLink);
+    }
+  }
+
   const createBtn = sidebar.querySelector(".side-create-btn");
   const rewardsCard = document.createElement("a");
   rewardsCard.className = "side-rewards-card";

@@ -10,18 +10,18 @@ const HELP_COLLECTIONS = [
     key: "creating",
     title: "Creating and Managing Coins",
     description: "Token setup, launch flow, and post-launch management.",
-    author: "Etherpump Team",
+    author: "Pump-r Team",
     articles: [
       {
         key: "create-coin",
-        title: "Create a Coin on Etherpump.fun",
+        title: "Create a Coin on Pump-r.fun",
         summary: "Launch flow, costs, and setup FAQs.",
         blocks: [
-          { type: "p", text: "Coin creation on Etherpump.fun deploys your token and opens Uniswap trading in one flow." },
+          { type: "p", text: "Coin creation on Pump-r.fun deploys your token and opens PumpSwap-style bonding curve trading in one flow." },
           {
             type: "faq",
             items: [
-              { q: "How much does it cost to create and buy?", a: "You pay Ethereum gas, launch fee, chosen initial liquidity, and optional creator buy amount." },
+              { q: "How much does it cost to create and buy?", a: "You pay the selected network gas, launch fee, chosen initial liquidity, and optional creator buy amount." },
               { q: "What is a ticker?", a: "Ticker is your short symbol like PEPE, EP, DOGE." },
               { q: "What image files are supported?", a: "Use PNG, JPG, WEBP, or GIF. Square images are best for cards and profile rows." },
               { q: "How do I add socials?", a: "Fill optional social fields in Create. External indexers may need extra time to sync." },
@@ -40,7 +40,7 @@ const HELP_COLLECTIONS = [
           {
             type: "list",
             items: [
-              "Confirm you are on Ethereum mainnet.",
+              "Confirm you are on the chain where the coin launched.",
               "Verify token contract on Etherscan.",
               "Use pair address for Dex pair checks.",
               "Some indexers can lag 30-120 seconds."
@@ -65,7 +65,7 @@ const HELP_COLLECTIONS = [
     key: "wallet",
     title: "Managing Your Wallet",
     description: "Depositing, making a trade, and withdrawing.",
-    author: "Etherpump Team",
+    author: "Pump-r Team",
     articles: [
       {
         key: "depositing-funds",
@@ -107,11 +107,11 @@ const HELP_COLLECTIONS = [
     key: "fees",
     title: "Tokenomics & Fees",
     description: "Launch fee, creator rewards, and platform split.",
-    author: "Etherpump Team",
+    author: "Pump-r Team",
     articles: [
       {
         key: "tx-fees",
-        title: "Transaction Fees on Etherpump.fun",
+        title: "Transaction Fees on Pump-r.fun",
         summary: "Fee structure in one place.",
         blocks: [
           {
@@ -138,13 +138,13 @@ const HELP_COLLECTIONS = [
   },
   {
     key: "liquidity",
-    title: "Uniswap Liquidity",
+    title: "PumpSwap Liquidity",
     description: "How launch liquidity works and risk basics.",
-    author: "Etherpump Team",
+    author: "Pump-r Team",
     articles: [
       {
         key: "liquidity-basics",
-        title: "Liquidity on Uniswap",
+        title: "Liquidity on PumpSwap",
         summary: "What initial liquidity impacts.",
         blocks: [
           {
@@ -371,7 +371,7 @@ export function initSupportWidget({ alertEl = null } = {}) {
     return `
       <div class="support-home-hero">
         <div class="support-home-top">
-          <div class="support-home-logo"><img src="/assets/support-pill-main.png" alt="Etherpump logo" /></div>
+          <div class="support-home-logo"><img src="/assets/pump-r-logo.png" alt="Pump-r logo" /></div>
           <div class="support-home-avatars">
             <img src="/assets/support-nft-1.jpg" alt="NFT avatar 1" loading="lazy" />
             <img src="/assets/support-nft-2.png" alt="NFT avatar 2" loading="lazy" />
@@ -511,7 +511,7 @@ export function initSupportWidget({ alertEl = null } = {}) {
     body.innerHTML = `
       <div class="support-pane support-compose-pane">
         <div class="support-back-row"><button type="button" class="support-back-btn" data-back="messages"><</button><h4>Support chat</h4></div>
-        <div class="support-note-box">This chat is for Etherpump support. Please keep messages focused on support issues.</div>
+        <div class="support-note-box">This chat is for Pump-r support. Please keep messages focused on support issues.</div>
         <form id="supportComposeForm" class="support-compose-form">
           <label>Subject<input id="supportSubject" maxlength="120" value="${escapeHtml(category === "general" ? "Support request" : category.replaceAll("-", " "))}" /></label>
           <label>Token address (optional)<input id="supportTokenAddress" placeholder="0x..." /></label>

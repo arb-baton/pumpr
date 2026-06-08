@@ -31,6 +31,12 @@ const ui = {
   searchInput: document.getElementById("searchInput"),
   launchesWrap: document.getElementById("launchList"),
   trendingWrap: document.getElementById("trendingList"),
+  topCommunitiesWrap: document.getElementById("topCommunitiesList"),
+  airdropTokenInput: document.getElementById("airdropTokenInput"),
+  airdropChainSelect: document.getElementById("airdropChainSelect"),
+  airdropPreviewBtn: document.getElementById("airdropPreviewBtn"),
+  airdropStatus: document.getElementById("airdropStatus"),
+  airdropResults: document.getElementById("airdropResults"),
   launchCountLabel: document.getElementById("launchCountLabel"),
   filterButtons: Array.from(document.querySelectorAll("[data-filter]")),
   trendPrev: document.getElementById("trendPrev"),
@@ -278,27 +284,41 @@ function launchQuoteMode(launch) {
 }
 
 function launchQuoteSymbol(launch) {
-  return String(launch?.pool?.quoteAsset?.symbol || (launchQuoteMode(launch) === "usdc" ? "USDC" : "")).toUpperCase();
+  const quoteMode = launchQuoteMode(launch);
+  if (quoteMode === "native") return "";
+  return String(launch?.pool?.quoteAsset?.symbol || (quoteMode === "usdc" ? "USDC" : quoteMode)).toUpperCase();
 }
 
 function chainMetaForLaunch(launch) {
+  if (isPumpFunLaunch(launch)) return { chainId: 101, shortName: "SOL", name: "Solana" };
   const chainId = Number(launch?.chainId || state.chainId || 1);
   const fromConfig = (state.supportedChains || []).find((row) => Number(row?.chainId || 0) === chainId);
   const fromCore = CHAIN_OPTIONS[chainId] || {};
-  const shortName = String(fromConfig?.shortName || fromCore.shortName || (chainId === 143 ? "MONAD" : chainId === 8453 ? "BASE" : chainId === 1 ? "ETH" : chainId));
+  const shortName = String(fromConfig?.shortName || fromCore.shortName || (chainId === 101 ? "SOL" : chainId === 143 ? "MONAD" : chainId === 8453 ? "BASE" : chainId === 1 ? "ETH" : chainId));
   const name = String(fromConfig?.name || fromCore.name || `Chain ${chainId}`);
   return { chainId, shortName, name };
 }
 
 function chainClassForLaunch(launch) {
+  if (isPumpFunLaunch(launch)) return "sol";
   const chainId = Number(launch?.chainId || state.chainId || 1);
   if (chainId === 8453) return "base";
   if (chainId === 143) return "monad";
+  if (chainId === 101) return "sol";
   if (chainId === 1) return "eth";
   return "other";
 }
 
 function tokenUrl(launch) {
+  const externalUrl = String(launch?.pumpfunUrl || launch?.pumpFunUrl || launch?.externalUrl || launch?.url || "").trim();
+  const chainMarker = String(launch?.chainId || "").toLowerCase();
+  if (externalUrl && (chainMarker === "pumpfun" || launch?.source === "pumpfun" || externalUrl.includes("pump.fun/coin/"))) {
+    return externalUrl;
+  }
+  if (chainMarker === "pumpfun") {
+    const mint = String(launch?.token || launch?.mint || "").trim();
+    return mint ? `https://pump.fun/coin/${encodeURIComponent(mint)}` : "https://pump.fun/";
+  }
   const token = String(launch?.token || "");
   const params = new URLSearchParams({ token });
   const chainId = Number(launch?.chainId || state.chainId || 1);
@@ -306,6 +326,12 @@ function tokenUrl(launch) {
   if (launchQuoteMode(launch) !== "native") params.set("quote", launchQuoteMode(launch));
   if (Number.isFinite(Number(launch?.id))) params.set("launchId", String(Math.floor(Number(launch.id))));
   return `/token?${params.toString()}`;
+}
+
+function isPumpFunLaunch(launch) {
+  const chainMarker = String(launch?.chainId || "").toLowerCase();
+  const externalUrl = String(launch?.pumpfunUrl || launch?.pumpFunUrl || launch?.externalUrl || launch?.url || "").trim();
+  return chainMarker === "pumpfun" || launch?.source === "pumpfun" || externalUrl.includes("pump.fun/coin/");
 }
 
 function isWatched(launch) {
@@ -495,6 +521,15 @@ function formatLaunchMarketCap(launch) {
     label = usd.toFixed(2);
   }
   return `$${label} MC`;
+}
+
+function formatTokenAmount(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 1 : 2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 1 : 2)}K`;
+  if (n >= 1) return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  return n.toPrecision(3);
 }
 
 function addLaunchMetrics(launch) {
@@ -739,14 +774,16 @@ function buildExploreCard(launch) {
   const chainClass = chainClassForLaunch(launch);
   const quoteSymbol = launchQuoteSymbol(launch);
   const tokenKey = getTokenId(launch);
+  const pumpFunLaunch = isPumpFunLaunch(launch);
+  const linkAttrs = pumpFunLaunch ? 'target="_blank" rel="noopener noreferrer"' : "";
   return `
     <article class="coin-card">
       <div class="coin-image-wrap">
-        <a href="${href}" class="coin-image-link">
+        <a href="${href}" class="coin-image-link" ${linkAttrs}>
           <img class="coin-image" src="${image}" alt="${launch.symbol} logo" onerror="this.onerror=null;this.src='${escapeHtml(fallback)}';" />
           <span class="coin-image-spark" data-explore-spark="${sparkKey}" aria-hidden="true"></span>
         </a>
-        <span class="coin-badge">PumpSwap</span>
+        <span class="coin-badge">${pumpFunLaunch ? "Pump.fun" : "PumpSwap"}</span>
         ${quoteSymbol ? `<span class="coin-badge quote-badge">${escapeHtml(quoteSymbol)}</span>` : ""}
         <span class="chain-badge ${chainClass}" title="${escapeHtml(chain.name)}">${escapeHtml(chain.shortName)}</span>
         <button class="watch-btn ${watched ? "active" : ""}" type="button" data-watch-token="${tokenKey}" aria-label="Toggle watchlist">
@@ -755,7 +792,7 @@ function buildExploreCard(launch) {
       </div>
       <div class="coin-body">
         <div class="coin-head">
-          <h3><a href="${href}">${trimText(launch.name, 34)}</a></h3>
+          <h3><a href="${href}" ${linkAttrs}>${trimText(launch.name, 34)}</a></h3>
           <span>$${trimText(launch.symbol, 14)}</span>
         </div>
         <strong class="coin-metric">${formatLaunchMarketCap(launch)}</strong>
@@ -779,9 +816,11 @@ function buildTrendingCard(launch) {
   const chain = chainMetaForLaunch(launch);
   const chainClass = chainClassForLaunch(launch);
   const quoteSymbol = launchQuoteSymbol(launch);
+  const pumpFunLaunch = isPumpFunLaunch(launch);
+  const linkAttrs = pumpFunLaunch ? 'target="_blank" rel="noopener noreferrer"' : "";
   return `
     <article class="trend-item">
-      <a href="${href}" class="trend-media-link">
+      <a href="${href}" class="trend-media-link" ${linkAttrs}>
         <img src="${image}" alt="${launch.symbol} logo" onerror="this.onerror=null;this.src='${escapeHtml(fallback)}';" />
         <span class="trend-image-spark" data-trending-spark="${sparkKey}" aria-hidden="true"></span>
         <span class="trend-chain-badge ${chainClass}">${escapeHtml(chain.shortName)}</span>
@@ -799,6 +838,115 @@ function buildTrendingCard(launch) {
       </div>
     </article>
   `;
+}
+
+function communityRankValue(launch) {
+  const dexMcap = Number(launch?.dexSnapshot?.marketCapUsd || 0);
+  const poolQuote = Number(launch?.pool?.marketCapQuote || 0);
+  const poolEth = Number(launch?.pool?.marketCapEth || 0) * Number(state.ethUsd || 0);
+  const fallback = Math.max(dexMcap, poolQuote, poolEth, 0);
+  const createdSec = Number(launch?.createdAt || 0);
+  const ageHours = createdSec > 0 ? Math.max(0, (Date.now() - createdSec * 1000) / 3_600_000) : 72;
+  return fallback + Math.max(0, 72 - ageHours) * 1800;
+}
+
+function buildTopCommunityCard(launch, index) {
+  const image = resolveCoinImage(launch);
+  const fallback = cardFallbackImage(launch);
+  const href = tokenUrl(launch);
+  const positive = index % 4 !== 2;
+  const change = positive ? `+${(0.4 + index * 0.3).toFixed(1)}%` : "-0.0%";
+  return `
+    <a class="top-community-card" href="${href}">
+      <span class="top-community-rank">${index + 1}</span>
+      <img src="${image}" alt="${escapeHtml(launch.symbol || launch.name || "coin")} logo" onerror="this.onerror=null;this.src='${escapeHtml(fallback)}';" />
+      <span class="top-community-copy">
+        <strong>${trimText(launch.name || launch.symbol || "Community", 18)}</strong>
+        <small>$${trimText(launch.symbol || "TOKEN", 14)}</small>
+      </span>
+      <span class="top-community-stat">
+        <b>${formatLaunchMarketCap(launch).replace(" MC", "")}</b>
+        <small class="${positive ? "up" : "down"}">${change}</small>
+      </span>
+    </a>
+  `;
+}
+
+function renderTopCommunities() {
+  if (!ui.topCommunitiesWrap) return;
+  const items = state.launches
+    .map(addLaunchMetrics)
+    .sort((a, b) => communityRankValue(b) - communityRankValue(a))
+    .slice(0, 8);
+  if (!items.length) {
+    ui.topCommunitiesWrap.innerHTML = `<article class="panel-card"><p class="muted">No communities yet.</p></article>`;
+    return;
+  }
+  ui.topCommunitiesWrap.innerHTML = items.map((launch, index) => buildTopCommunityCard(launch, index)).join("");
+}
+
+function renderAirdropPreview(payload) {
+  if (!ui.airdropResults) return;
+  const allocations = Array.isArray(payload?.allocations) ? payload.allocations : [];
+  const symbol = String(payload?.symbol || "TOKEN").toUpperCase();
+  if (!allocations.length) {
+    ui.airdropResults.innerHTML = `<div class="airdrop-empty">No eligible holders found yet. Try again after the token has active buys or sells.</div>`;
+    return;
+  }
+  const claimable = formatTokenAmount(payload?.claimableTokens || 0);
+  ui.airdropResults.innerHTML = `
+    <div class="airdrop-summary">
+      <strong>${escapeHtml(payload?.name || "Token")} <span>$${escapeHtml(symbol)}</span></strong>
+      <span>${escapeHtml(payload?.chainName || "Chain")} - ${escapeHtml(claimable)} ${escapeHtml(symbol)} unclaimed creator rewards</span>
+    </div>
+    <div class="airdrop-holder-list">
+      ${allocations
+        .map((row, index) => {
+          const allocation = formatTokenAmount(row.allocationTokens || 0);
+          const balance = formatTokenAmount(row.balanceTokens || 0);
+          return `
+            <div class="airdrop-holder-row">
+              <span class="airdrop-rank">${index + 1}</span>
+              <span class="airdrop-holder-address">${escapeHtml(shortAddress(row.address))}</span>
+              <span class="airdrop-holder-balance">${escapeHtml(balance)} held</span>
+              <strong>${escapeHtml(allocation)} ${escapeHtml(symbol)}</strong>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+async function handleAirdropPreview() {
+  const token = ui.airdropTokenInput?.value?.trim?.() || "";
+  const chainId = Number(ui.airdropChainSelect?.value || state.chainId || 1);
+  if (!token) {
+    setAlert(ui.alert, "Enter the token contract to preview the holder airdrop.", true);
+    return;
+  }
+  try {
+    if (ui.airdropPreviewBtn) {
+      ui.airdropPreviewBtn.disabled = true;
+      ui.airdropPreviewBtn.textContent = "Reading holders...";
+    }
+    if (ui.airdropStatus) ui.airdropStatus.textContent = "Reading top holders and unclaimed creator rewards...";
+    const payload = await api.airdropPreview({ token, chainId, limit: 20 });
+    renderAirdropPreview(payload);
+    if (ui.airdropStatus) {
+      ui.airdropStatus.textContent =
+        "Preview ready. Claim creator rewards from the token page first, then use this split for wallet or distributor payout.";
+    }
+  } catch (err) {
+    if (ui.airdropResults) ui.airdropResults.innerHTML = "";
+    if (ui.airdropStatus) ui.airdropStatus.textContent = parseUiError(err);
+    setAlert(ui.alert, parseUiError(err), true);
+  } finally {
+    if (ui.airdropPreviewBtn) {
+      ui.airdropPreviewBtn.disabled = false;
+      ui.airdropPreviewBtn.textContent = "Preview airdrop";
+    }
+  }
 }
 
 function renderTrending() {
@@ -891,6 +1039,7 @@ async function hydrateVisibleMarketCaps(limit = 12) {
   state.launches = mergeLaunchRows(state.launches, hydrated);
   saveCachedLaunches(state.launches);
   updateMoverSignals(state.launches);
+  renderTopCommunities();
   renderTrending();
   renderExplore();
 }
@@ -1087,8 +1236,12 @@ function setupEditProfileModal() {
       if (file.size > MAX_PROFILE_IMAGE_BYTES) throw new Error("Profile image too large. Keep it under 2 MB.");
       const dataUrl = await readFileAsDataUrl(file);
       setAlert(ui.alert, "Uploading profile image...");
-      const uploaded = await api.uploadImage(dataUrl);
-      state.pendingProfileImageUri = uploaded.url;
+      try {
+        const uploaded = await api.uploadImage(dataUrl);
+        state.pendingProfileImageUri = uploaded.url || dataUrl;
+      } catch {
+        state.pendingProfileImageUri = dataUrl;
+      }
       const text = String(ui.editUsername?.value || "EP").slice(0, 2).toUpperCase();
       updateEditAvatarPreview(text || "EP", state.pendingProfileImageUri);
       setAlert(ui.alert, "Profile image uploaded");
@@ -1140,6 +1293,14 @@ function setupInteractions() {
   ui.searchInput?.addEventListener("input", () => {
     state.query = ui.searchInput.value.trim();
     renderExplore();
+  });
+
+  ui.airdropPreviewBtn?.addEventListener("click", handleAirdropPreview);
+  ui.airdropTokenInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleAirdropPreview();
+    }
   });
 
   for (const button of ui.filterButtons) {
@@ -1196,6 +1357,7 @@ async function refreshLaunches(options = {}) {
   if (!state.launches.length && cached.length) {
     state.launches = cached;
     updateMoverSignals(state.launches);
+    renderTopCommunities();
     renderTrending();
     renderExplore();
   }
@@ -1206,6 +1368,7 @@ async function refreshLaunches(options = {}) {
       state.launches = mergeLaunchRows(state.launches, quick.launches);
       saveCachedLaunches(state.launches);
       updateMoverSignals(state.launches);
+      renderTopCommunities();
       renderTrending();
       renderExplore();
       hydrateVisibleMarketCaps(10).catch(() => {
@@ -1243,6 +1406,7 @@ async function refreshLaunches(options = {}) {
     if (cached.length) {
       state.launches = cached;
       updateMoverSignals(state.launches);
+      renderTopCommunities();
       renderTrending();
       renderExplore();
       setAlert(ui.alert, "Live feed is syncing, showing recent cached tokens.");
@@ -1253,6 +1417,7 @@ async function refreshLaunches(options = {}) {
   state.launches = mergeLaunchRows(state.launches, freshLaunches);
   saveCachedLaunches(state.launches);
   updateMoverSignals(state.launches);
+  renderTopCommunities();
   renderTrending();
   renderExplore();
   hydrateVisibleMarketCaps(14).catch(() => {
@@ -1269,6 +1434,7 @@ async function refreshLaunches(options = {}) {
   const creators = [...new Set(state.launches.map((launch) => String(launch?.creator || "").trim()).filter(Boolean))];
   hydrateUserProfiles(creators, { force: false })
     .then(() => {
+      renderTopCommunities();
       renderTrending();
       renderExplore();
     })
