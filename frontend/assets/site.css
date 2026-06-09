@@ -11616,7 +11616,7 @@ body {
   width: min(450px, 100%);
 }
 
-.top-communities-row,
+.top-community-row,
 .trending-row,
 .coin-grid,
 .launch-grid,
@@ -11624,16 +11624,22 @@ body {
   max-width: 100%;
 }
 
-.top-communities-row,
+.top-community-row,
 .trending-row {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-inline: contain;
 }
 
-.top-communities-row > *,
+.top-community-row > *,
 .trending-row > * {
   flex-shrink: 0;
+}
+
+.top-community-row {
+  padding-inline: 0.7rem 1rem;
+  margin-inline: -0.7rem 0;
+  scroll-padding-inline: 0.7rem;
 }
 
 .home-section,

@@ -1307,7 +1307,10 @@ function setupTopCommunityHoverPan() {
     });
   });
 
-  row.addEventListener("mouseleave", () => cancelAnimationFrame(frame));
+  row.addEventListener("mouseleave", () => {
+    cancelAnimationFrame(frame);
+    row.scrollTo({ left: 0, behavior: "smooth" });
+  });
 }
 
 function setupInteractions() {
