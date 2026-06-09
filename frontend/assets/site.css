@@ -8095,8 +8095,14 @@ select:focus,
   grid-auto-columns: minmax(230px, 1fr);
   gap: 0.5rem;
   overflow-x: auto;
-  padding-bottom: 0.12rem;
-  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+  padding-bottom: 0.75rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.top-community-row::-webkit-scrollbar {
+  display: none;
 }
 
 .top-community-card {
