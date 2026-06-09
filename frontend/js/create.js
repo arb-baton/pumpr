@@ -1405,6 +1405,14 @@ function base64ToBytes(value = "") {
   return bytes;
 }
 
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
 async function launchPumpFun(details) {
   const { provider, publicKey } = await connectSolanaWallet();
   const solanaWeb3 = await loadSolanaWeb3();
@@ -1424,27 +1432,20 @@ async function launchPumpFun(details) {
   const mint = String(payload?.mint || payload?.tokenAddress || payload?.token || "");
   const pumpfunUrl = String(payload?.pumpfunUrl || payload?.url || (mint ? `https://pump.fun/coin/${mint}` : ""));
   const transactionBase64 = String(payload?.transactionBase64 || "");
-  if (!mint || !pumpfunUrl || !transactionBase64) throw new Error("Pump.fun SDK did not return a complete transaction.");
+  const signingToken = String(payload?.signingToken || "");
+  if (!mint || !pumpfunUrl || !transactionBase64 || !signingToken) throw new Error("Pump.fun SDK did not return a complete transaction.");
 
-  setAlert(ui.alert, "Open your Solana wallet to sign the Pump.fun token creation transaction. Pump-r will broadcast it through the configured Solana RPC.");
+  setAlert(ui.alert, "Open Phantom to sign first. Pump-r will add the mint signature after your approval, simulate the transaction, then broadcast through the configured Solana RPC.");
   const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
   let signature = "";
   if (typeof provider.signTransaction === "function") {
-    const rpcUrl = String(payload?.rpcUrl || "https://sparkling-blue-sponge.solana-mainnet.quiknode.pro/1a7f99d93cb6940285e9a095de8fc546c3c76d35/");
-    const connection = new solanaWeb3.Connection(rpcUrl, "confirmed");
     const signed = await provider.signTransaction(transaction);
-    signature = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
-    await connection.confirmTransaction(
-      {
-        signature,
-        blockhash: payload.blockhash,
-        lastValidBlockHeight: payload.lastValidBlockHeight
-      },
-      "confirmed"
-    );
-  } else if (typeof provider.signAndSendTransaction === "function") {
-    const sent = await provider.signAndSendTransaction(transaction);
-    signature = sent?.signature || String(sent || "");
+    setAlert(ui.alert, "Finalizing Pump.fun launch with the mint signature...");
+    const finalized = await api.pumpfunFinalize({
+      signingToken,
+      signedTransactionBase64: bytesToBase64(signed.serialize({ requireAllSignatures: false, verifySignatures: false }))
+    });
+    signature = String(finalized?.signature || "");
   } else {
     throw new Error("Your Solana wallet does not support transaction signing in this browser.");
   }

@@ -28,7 +28,7 @@ export async function apiGet(path) {
 export async function apiPost(path, body) {
   const target = withPreferredChain(path);
   const ctrl = new AbortController();
-  const timeoutMs = path.startsWith("/api/pumpfun/launch") ? 60000 : 15000;
+  const timeoutMs = path.startsWith("/api/pumpfun/launch") || path.startsWith("/api/pumpfun/finalize") ? 60000 : 15000;
   const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
   const res = await fetch(target, {
     method: "POST",
@@ -138,6 +138,7 @@ export const api = {
   supportInbox: (address) => apiGet(`/api/support/inbox?address=${encodeURIComponent(String(address || ""))}`),
   sendSupportMessage: (body = {}) => apiPost("/api/support/message", body),
   pumpfunLaunch: (body = {}) => apiPost("/api/pumpfun/launch", body),
+  pumpfunFinalize: (body = {}) => apiPost("/api/pumpfun/finalize", body),
   officialAirdrop: () => apiGet("/api/airdrop/official"),
   airdropPreview: (options = {}) => {
     const params = new URLSearchParams();

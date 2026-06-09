@@ -2172,9 +2172,13 @@ function base64Url(buffer) {
   return Buffer.from(buffer).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function decodeBase64UrlText(value) {
+function decodeBase64UrlBuffer(value) {
   const text = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
-  return Buffer.from(text.padEnd(text.length + ((4 - text.length % 4) % 4), "="), "base64").toString("utf8");
+  return Buffer.from(text.padEnd(text.length + ((4 - text.length % 4) % 4), "="), "base64");
+}
+
+function decodeBase64UrlText(value) {
+  return decodeBase64UrlBuffer(value).toString("utf8");
 }
 
 function makePkceVerifier() {
@@ -3854,6 +3858,53 @@ function pickPumpFunUrl(payload = {}, mint = "") {
   return mint ? `https://pump.fun/coin/${encodeURIComponent(mint)}` : "";
 }
 
+function pumpFunSigningSecretKey() {
+  const seed = String(
+    process.env.PUMPFUN_SIGNING_SECRET ||
+      process.env.X_CLIENT_SECRET ||
+      process.env.PRIVATE_KEY ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      "pump-r-local-pumpfun-signing-secret"
+  );
+  return crypto.createHash("sha256").update(seed).digest();
+}
+
+function encryptPumpFunSigningPayload(payload = {}) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", pumpFunSigningSecretKey(), iv);
+  const plaintext = Buffer.from(JSON.stringify(payload), "utf8");
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return base64Url(Buffer.concat([iv, tag, ciphertext]));
+}
+
+function decryptPumpFunSigningPayload(token = "") {
+  const packed = decodeBase64UrlBuffer(token);
+  if (packed.length < 29) throw new Error("Invalid Pump.fun signing token");
+  const iv = packed.subarray(0, 12);
+  const tag = packed.subarray(12, 28);
+  const ciphertext = packed.subarray(28);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", pumpFunSigningSecretKey(), iv);
+  decipher.setAuthTag(tag);
+  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  const payload = JSON.parse(plaintext);
+  if (!payload || typeof payload !== "object") throw new Error("Invalid Pump.fun signing token");
+  if (Number(payload.expiresAt || 0) < Date.now()) throw new Error("Pump.fun signing token expired. Rebuild the launch transaction.");
+  return payload;
+}
+
+async function simulateSolanaTransaction(connection, tx, label = "Solana transaction") {
+  const simulated = await connection.simulateTransaction(tx, {
+    sigVerify: false,
+    replaceRecentBlockhash: false
+  });
+  const err = simulated?.value?.err;
+  if (err) {
+    throw new Error(`${label} simulation failed: ${JSON.stringify(err)}`);
+  }
+  return simulated;
+}
+
 function getPublicBaseUrl(req) {
   const explicit = String(process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL || "").trim().replace(/\/+$/, "");
   if (explicit) return explicit;
@@ -4001,9 +4052,20 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       feePayer: user,
       recentBlockhash: latest.blockhash
     }).add(instruction);
-    tx.partialSign(mintKeypair);
+    const connection = new SolanaConnection(rpcUrl, "confirmed");
+    await simulateSolanaTransaction(connection, tx, "Pump.fun create");
 
     const mint = mintKeypair.publicKey.toBase58();
+    const signingToken = encryptPumpFunSigningPayload({
+      mint,
+      user: user.toBase58(),
+      creator: creator.toBase58(),
+      mintSecretKey: Buffer.from(mintKeypair.secretKey).toString("base64"),
+      rpcUrl,
+      blockhash: latest.blockhash,
+      lastValidBlockHeight: latest.lastValidBlockHeight,
+      expiresAt: Date.now() + 5 * 60 * 1000
+    });
     res.json({
       ok: true,
       mode: "sdk",
@@ -4012,12 +4074,68 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       pumpfunUrl: pickPumpFunUrl({}, mint),
       metadataUri,
       transactionBase64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+      signingToken,
       rpcUrl,
       blockhash: latest.blockhash,
       lastValidBlockHeight: latest.lastValidBlockHeight
     });
   } catch (error) {
     res.status(500).json({ error: error.message || "Pump.fun SDK transaction build failed" });
+  }
+});
+
+app.post("/api/pumpfun/finalize", async (req, res) => {
+  try {
+    const {
+      Connection: SolanaConnection,
+      Keypair: SolanaKeypair,
+      PublicKey: SolanaPublicKey,
+      Transaction: SolanaTransaction
+    } = await loadSolanaWeb3();
+    const signedTransactionBase64 = String(req.body?.signedTransactionBase64 || req.body?.transactionBase64 || "").trim();
+    const signingToken = String(req.body?.signingToken || "").trim();
+    if (!signedTransactionBase64 || !signingToken) {
+      return res.status(400).json({ error: "Signed transaction and signing token are required" });
+    }
+
+    const pending = decryptPumpFunSigningPayload(signingToken);
+    const mintKeypair = SolanaKeypair.fromSecretKey(Uint8Array.from(Buffer.from(String(pending.mintSecretKey || ""), "base64")));
+    const user = new SolanaPublicKey(String(pending.user || ""));
+    const mint = String(pending.mint || mintKeypair.publicKey.toBase58());
+    if (mintKeypair.publicKey.toBase58() !== mint) {
+      return res.status(400).json({ error: "Pump.fun mint signer mismatch" });
+    }
+
+    const tx = SolanaTransaction.from(Buffer.from(signedTransactionBase64, "base64"));
+    const userSignature = tx.signatures.find((row) => row.publicKey?.equals?.(user));
+    if (!userSignature?.signature) {
+      return res.status(400).json({ error: "Phantom did not sign the Pump.fun transaction. Reconnect wallet and try again." });
+    }
+    tx.partialSign(mintKeypair);
+
+    const rpcUrl = String(pending.rpcUrl || process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
+    const connection = new SolanaConnection(rpcUrl, "confirmed");
+    await simulateSolanaTransaction(connection, tx, "Signed Pump.fun create");
+    const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
+    await connection.confirmTransaction(
+      {
+        signature,
+        blockhash: String(pending.blockhash || ""),
+        lastValidBlockHeight: Number(pending.lastValidBlockHeight || 0)
+      },
+      "confirmed"
+    );
+
+    res.json({
+      ok: true,
+      signature,
+      mint,
+      tokenAddress: mint,
+      pumpfunUrl: pickPumpFunUrl({}, mint),
+      rpcUrl
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Pump.fun transaction finalization failed" });
   }
 });
 
