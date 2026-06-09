@@ -61,7 +61,7 @@ async function loadSolanaWeb3() {
 
 async function loadPumpFunSdk() {
   if (!pumpSdkPromise) {
-    pumpSdkPromise = nativeImport("@pump-fun/pump-sdk");
+    pumpSdkPromise = Promise.resolve(require("@pump-fun/pump-sdk"));
   }
   const mod = await pumpSdkPromise;
   return mod.PUMP_SDK || mod.default?.PUMP_SDK || mod.default;
