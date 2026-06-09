@@ -1376,7 +1376,10 @@ async function loadSolanaWeb3() {
 }
 
 function getSolanaProvider() {
-  return window.phantom?.solana || window.solana || window.solflare || null;
+  if (window.phantom?.solana?.isPhantom) return window.phantom.solana;
+  if (window.solflare) return window.solflare;
+  if (window.solana?.isPhantom) return window.solana;
+  return window.phantom?.solana || window.solana || null;
 }
 
 async function connectSolanaWallet() {
@@ -1407,9 +1410,15 @@ async function launchPumpFun(details) {
   const solanaWeb3 = await loadSolanaWeb3();
   const rpcUrl = "https://api.mainnet-beta.solana.com";
   const connection = new solanaWeb3.Connection(rpcUrl, "confirmed");
-  const lamports = await connection.getBalance(new solanaWeb3.PublicKey(publicKey), "confirmed").catch(() => 0);
-  if (lamports < 0.03 * 1_000_000_000) {
-    throw new Error("Pump.fun launches need a Solana wallet with enough SOL for launch and network fees. Add at least ~0.03 SOL and retry.");
+  const minimumLamports = 0.003 * 1_000_000_000;
+  let lamports = null;
+  try {
+    lamports = await connection.getBalance(new solanaWeb3.PublicKey(publicKey), "confirmed");
+  } catch {
+    lamports = null;
+  }
+  if (typeof lamports === "number" && lamports > 0 && lamports < minimumLamports) {
+    throw new Error(`Pump.fun launch needs a little SOL for network and launch fees. Wallet ${publicKey.slice(0, 4)}...${publicKey.slice(-4)} shows ${(lamports / 1_000_000_000).toFixed(4)} SOL; add a bit more and retry.`);
   }
   setAlert(ui.alert, "Preparing official Pump.fun SDK transaction...");
   const latest = await connection.getLatestBlockhash("confirmed");

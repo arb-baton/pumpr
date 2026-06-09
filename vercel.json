@@ -91,6 +91,14 @@
       "dest": "/frontend/alpha.html"
     },
     {
+      "src": "/onboard$",
+      "dest": "/frontend/onboard.html"
+    },
+    {
+      "src": "/airdrop$",
+      "dest": "/frontend/airdrop.html"
+    },
+    {
       "src": "/home$",
       "dest": "/frontend/index.html"
     },
