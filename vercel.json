@@ -51,6 +51,10 @@
       "dest": "backend/server.js"
     },
     {
+      "src": "/vendor/(.*)",
+      "dest": "backend/server.js"
+    },
+    {
       "src": "/(favicon\\.ico|robots\\.txt)",
       "dest": "/frontend/$1"
     },
