@@ -1,7 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { pathToFileURL } = require("url");
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -48,8 +47,8 @@ const nativeImport = new Function("specifier", "return import(specifier)");
 
 async function loadSolanaWeb3() {
   if (!solanaWeb3Promise) {
-    const browserBundlePath = path.join(ROOT, "node_modules", "@solana", "web3.js", "lib", "index.browser.esm.js");
-    solanaWeb3Promise = nativeImport(pathToFileURL(browserBundlePath).href);
+    const browserBundlePath = path.join(ROOT, "node_modules", "@solana", "web3.js", "lib", "index.browser.cjs.js");
+    solanaWeb3Promise = Promise.resolve(require(browserBundlePath));
   }
   const mod = await solanaWeb3Promise;
   return {

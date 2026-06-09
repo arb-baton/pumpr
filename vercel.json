@@ -9,7 +9,7 @@
           "artifacts/**",
           "cache/**",
           "frontend/**",
-          "node_modules/@solana/web3.js/lib/index.browser.esm.js"
+          "node_modules/@solana/web3.js/lib/index.browser.cjs.js"
         ]
       }
     },
