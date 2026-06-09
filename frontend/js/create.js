@@ -1426,13 +1426,10 @@ async function launchPumpFun(details) {
   const transactionBase64 = String(payload?.transactionBase64 || "");
   if (!mint || !pumpfunUrl || !transactionBase64) throw new Error("Pump.fun SDK did not return a complete transaction.");
 
-  setAlert(ui.alert, "Open your Solana wallet and approve the Pump.fun launch transaction...");
+  setAlert(ui.alert, "Open your Solana wallet to sign the Pump.fun token creation transaction. Pump-r will broadcast it through the configured Solana RPC.");
   const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
   let signature = "";
-  if (typeof provider.signAndSendTransaction === "function") {
-    const sent = await provider.signAndSendTransaction(transaction);
-    signature = sent?.signature || String(sent || "");
-  } else if (typeof provider.signTransaction === "function") {
+  if (typeof provider.signTransaction === "function") {
     const rpcUrl = String(payload?.rpcUrl || "https://sparkling-blue-sponge.solana-mainnet.quiknode.pro/1a7f99d93cb6940285e9a095de8fc546c3c76d35/");
     const connection = new solanaWeb3.Connection(rpcUrl, "confirmed");
     const signed = await provider.signTransaction(transaction);
@@ -1445,6 +1442,9 @@ async function launchPumpFun(details) {
       },
       "confirmed"
     );
+  } else if (typeof provider.signAndSendTransaction === "function") {
+    const sent = await provider.signAndSendTransaction(transaction);
+    signature = sent?.signature || String(sent || "");
   } else {
     throw new Error("Your Solana wallet does not support transaction signing in this browser.");
   }
