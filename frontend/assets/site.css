@@ -11366,3 +11366,199 @@ body {
   opacity: 0.52;
   filter: grayscale(0.25);
 }
+
+/* Final compact typography pass: closer to Pump.fun's lighter, denser UI. */
+:root {
+  --ui-scale: 1;
+}
+
+html,
+body {
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  font-size: 14px;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+body,
+input,
+button,
+select,
+textarea {
+  font-weight: 500;
+}
+
+.app-shell {
+  zoom: 1;
+}
+
+@supports not (zoom: 1) {
+  .app-shell {
+    transform: none;
+    width: auto;
+    min-height: 100vh;
+  }
+}
+
+.sidebar {
+  width: 184px;
+  padding: 0.92rem 0.62rem;
+  gap: 0.82rem;
+}
+
+.side-nav {
+  gap: 0.32rem;
+}
+
+.side-link {
+  min-height: 34px;
+  padding: 0.48rem 0.62rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.side-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.side-create-btn {
+  height: 36px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.topbar,
+.home-topbar,
+.create-topbar {
+  min-height: 58px;
+  padding: 0.58rem clamp(0.9rem, 2vw, 1.7rem);
+}
+
+.promo-strip {
+  height: 30px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.search-wrap input,
+.create-searchbar input,
+.coin-search-input {
+  height: 38px;
+  font-size: 0.88rem;
+}
+
+.top-action-btn,
+.btn-primary,
+.btn-ghost,
+.tag,
+.filter-tabs button,
+.trade-tab,
+.amount-chip,
+.create-upload-select-btn,
+#launchSubmitBtn {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.main-pane h1,
+.main-pane h2,
+.main-pane h3,
+.coin-head h3,
+.trend-copy strong,
+.go-title-row h1,
+.go-detail-head h1,
+.alpha-hero h1,
+.profile-resolved-name,
+.support-widget h1,
+.create-section-title,
+.token-title {
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.coin-head h3,
+.coin-metric,
+.trend-overlay strong,
+.top-community-card strong,
+.go-card-title,
+.alpha-card h2,
+.profile-created-head h3 {
+  font-weight: 700;
+}
+
+.coin-card {
+  border-radius: 7px;
+}
+
+.coin-body {
+  padding: 0.66rem 0.68rem 0.72rem;
+}
+
+.coin-head h3,
+.coin-head span,
+.coin-meta,
+.coin-body p {
+  font-size: 0.82rem;
+}
+
+.coin-metric {
+  font-size: 1.02rem;
+  line-height: 1.12;
+}
+
+.coin-badge,
+.chain-badge,
+.trend-chain-badge,
+.creator-pill,
+.coin-chain-text {
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.trend-item {
+  max-width: 236px;
+}
+
+.trend-overlay strong {
+  font-size: 0.98rem;
+}
+
+.trend-copy strong {
+  font-size: 0.86rem;
+}
+
+.panel-card,
+.token-hero-card,
+.trade-card,
+.chart-card,
+.side-panel,
+.go-card,
+.alpha-card,
+.support-widget,
+.create-card {
+  border-radius: 8px;
+}
+
+.token-title {
+  font-size: clamp(1.08rem, 1.8vw, 1.35rem);
+}
+
+.market-cap-value,
+.chart-stat-value {
+  font-size: clamp(1.55rem, 2.5vw, 2.05rem);
+  font-weight: 700;
+}
+
+.trade-card,
+.token-side-card {
+  font-size: 0.86rem;
+}
+
+.buy-sell-panel input,
+.trade-input,
+.amount-input {
+  font-size: 0.95rem;
+  font-weight: 500;
+}
