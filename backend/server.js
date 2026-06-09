@@ -3853,6 +3853,17 @@ function getPublicBaseUrl(req) {
   return host ? `${proto}://${host}` : "";
 }
 
+function isPublicHostedUrl(value = "") {
+  try {
+    const parsed = new URL(String(value || ""));
+    if (!["http:", "https:"].includes(parsed.protocol)) return false;
+    const host = parsed.hostname.toLowerCase();
+    return host && host !== "localhost" && host !== "127.0.0.1" && host !== "::1";
+  } catch {
+    return false;
+  }
+}
+
 function readPumpFunMetadataDb() {
   try {
     if (fs.existsSync(PUMPFUN_METADATA_DB_PATH)) {
@@ -4269,6 +4280,7 @@ app.get("/api/sparkline", async (req, res) => {
 app.post("/api/upload-image", async (req, res) => {
   try {
     const dataUrl = String(req.body?.dataUrl || "");
+    const requireHosted = req.body?.requireHosted === true || String(req.body?.requireHosted || "") === "1";
     if (!dataUrl.startsWith("data:image/")) {
       return res.status(400).json({ error: "Invalid image payload" });
     }
@@ -4294,18 +4306,24 @@ app.post("/api/upload-image", async (req, res) => {
       try {
         const storageUrl = await uploadImageToSupabaseStorage(binary, ext);
         if (storageUrl) {
+          if (requireHosted && !isPublicHostedUrl(storageUrl)) {
+            return res.status(500).json({ error: "Image storage returned a non-public URL. Pump.fun launches require a hosted image URL." });
+          }
           return res.json({ url: storageUrl });
         }
       } catch (uploadError) {
-        if (STRICT_UPLOAD_STORE) {
+        if (STRICT_UPLOAD_STORE || requireHosted) {
           throw uploadError;
         }
       }
     }
 
     if (!USE_DISK_UPLOADS) {
-      if (STRICT_UPLOAD_STORE) {
-        return res.status(500).json({ error: "Image storage is not configured on this deployment" });
+      if (STRICT_UPLOAD_STORE || requireHosted) {
+        return res.status(500).json({
+          error:
+            "Hosted image storage is not configured. Add SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_STORAGE_BUCKET on Vercel, then retry the Pump.fun launch."
+        });
       }
       return res.json({ url: dataUrl });
     }
@@ -4313,6 +4331,14 @@ app.post("/api/upload-image", async (req, res) => {
     const filename = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}.${ext}`;
     const filepath = path.join(UPLOADS_DIR, filename);
     fs.writeFileSync(filepath, binary);
+
+    if (requireHosted) {
+      const publicUrl = `${getPublicBaseUrl(req)}/uploads/${filename}`;
+      if (!isPublicHostedUrl(publicUrl)) {
+        return res.status(500).json({ error: "Pump.fun launches require a public hosted image URL. Local uploads cannot be used from localhost." });
+      }
+      return res.json({ url: publicUrl });
+    }
 
     res.json({ url: `/uploads/${filename}` });
   } catch (error) {

@@ -147,6 +147,6 @@ export const api = {
     if (Number.isFinite(Number(options.limit))) params.set("limit", String(Math.floor(Number(options.limit))));
     return apiGet(`/api/airdrop/preview?${params.toString()}`);
   },
-  uploadImage: (dataUrl) => apiPost("/api/upload-image", { dataUrl }),
+  uploadImage: (dataUrl, options = {}) => apiPost("/api/upload-image", { dataUrl, ...options }),
   uploadFile: (dataUrl) => apiPost("/api/upload-file", { dataUrl })
 };

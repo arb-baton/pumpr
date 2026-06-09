@@ -1213,7 +1213,7 @@ async function prepareLaunchDetails() {
   }
 
   if (imageUri.startsWith("data:image/")) {
-    const uploaded = await api.uploadImage(imageUri);
+    const uploaded = await api.uploadImage(imageUri, { requireHosted: isPumpFunMode() });
     imageUri = uploaded.url;
     ui.image.value = imageUri;
   }
