@@ -1901,12 +1901,16 @@ function normalizeGoBounty(row = {}) {
 
 function goEscrowAddressForChain(chainId) {
   const id = parseChainId(chainId);
+  const defaults = {
+    1: "0x72C17284180122A94866bbb54BcE0060Af172832",
+    143: "0x2fe6a113c7C5c0696A02676cCfC2235539424c89"
+  };
   const direct = String(process.env[`GO_ESCROW_ADDRESS_${id}`] || process.env[`BOUNTY_ESCROW_ADDRESS_${id}`] || "").trim();
   const fallback =
     id === 1
       ? String(process.env.GO_ESCROW_ADDRESS || process.env.BOUNTY_ESCROW_ADDRESS || "").trim()
       : "";
-  const address = direct || fallback;
+  const address = direct || fallback || defaults[id] || "";
   return ethers.isAddress(address) ? ethers.getAddress(address) : "";
 }
 
