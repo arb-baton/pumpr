@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { pathToFileURL } = require("url");
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -43,10 +44,12 @@ const USE_DISK_UPLOADS = !IS_VERCEL_RUNTIME && UPLOAD_MODE !== "inline";
 
 let solanaWeb3Promise = null;
 let pumpSdkPromise = null;
+const nativeImport = new Function("specifier", "return import(specifier)");
 
 async function loadSolanaWeb3() {
   if (!solanaWeb3Promise) {
-    solanaWeb3Promise = import("@solana/web3.js");
+    const browserBundlePath = path.join(ROOT, "node_modules", "@solana", "web3.js", "lib", "index.browser.esm.js");
+    solanaWeb3Promise = nativeImport(pathToFileURL(browserBundlePath).href);
   }
   const mod = await solanaWeb3Promise;
   return {
@@ -59,7 +62,7 @@ async function loadSolanaWeb3() {
 
 async function loadPumpFunSdk() {
   if (!pumpSdkPromise) {
-    pumpSdkPromise = import("@pump-fun/pump-sdk");
+    pumpSdkPromise = nativeImport("@pump-fun/pump-sdk");
   }
   const mod = await pumpSdkPromise;
   return mod.PUMP_SDK || mod.default?.PUMP_SDK || mod.default;
