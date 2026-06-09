@@ -3894,10 +3894,21 @@ function decryptPumpFunSigningPayload(token = "") {
 }
 
 async function simulateSolanaTransaction(connection, tx, label = "Solana transaction") {
-  const simulated = await connection.simulateTransaction(tx, {
-    sigVerify: false,
-    replaceRecentBlockhash: false
-  });
+  const wireTransaction = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+  const encodedTransaction = Buffer.from(wireTransaction).toString("base64");
+  const raw = await connection._rpcRequest("simulateTransaction", [
+    encodedTransaction,
+    {
+      encoding: "base64",
+      commitment: "confirmed",
+      sigVerify: false,
+      replaceRecentBlockhash: false
+    }
+  ]);
+  if (raw?.error) {
+    throw new Error(`${label} simulation failed: ${raw.error.message || JSON.stringify(raw.error)}`);
+  }
+  const simulated = raw?.result;
   const err = simulated?.value?.err;
   if (err) {
     throw new Error(`${label} simulation failed: ${JSON.stringify(err)}`);
