@@ -273,6 +273,7 @@ function persistWatchlist() {
 function getTokenId(launch) {
   const token = String(launch?.token || "").toLowerCase();
   if (!token) return "";
+  if (isPumpFunLaunch(launch)) return `pumpfun:native:${token}`;
   const chainId = Number(launch?.chainId || state.chainId || 1);
   const quoteMode = launchQuoteMode(launch);
   return `${Number.isFinite(chainId) && chainId > 0 ? Math.floor(chainId) : 1}:${quoteMode}:${token}`;

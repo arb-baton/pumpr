@@ -24,6 +24,7 @@ const COMMUNITY_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-commu
 const GO_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-go.json") : path.join(ROOT, "cache", "go.json");
 const ALPHA_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-alpha.json") : path.join(ROOT, "cache", "alpha.json");
 const PUMPFUN_METADATA_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-pumpfun-metadata.json") : path.join(ROOT, "cache", "pumpfun-metadata.json");
+const PUMPFUN_LAUNCHES_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-pumpfun-launches.json") : path.join(ROOT, "cache", "pumpfun-launches.json");
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || ""
@@ -34,6 +35,7 @@ const SUPABASE_SCHEMA = String(process.env.SUPABASE_SCHEMA || "public").trim();
 const SUPABASE_STORAGE_BUCKET = String(process.env.SUPABASE_STORAGE_BUCKET || "uploads").trim();
 const SUPABASE_COMMUNITY_OBJECT = String(process.env.SUPABASE_COMMUNITY_OBJECT || "community/community.json").trim();
 const SUPABASE_ALPHA_OBJECT = String(process.env.SUPABASE_ALPHA_OBJECT || "alpha/alpha.json").trim();
+const SUPABASE_PUMPFUN_LAUNCHES_OBJECT = String(process.env.SUPABASE_PUMPFUN_LAUNCHES_OBJECT || "pumpfun/launches.json").trim();
 const PROFILE_IMAGE_URI_MAX_LENGTH = 2 * 1024 * 1024;
 const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || "0") === "1";
 const STRICT_SOCIAL_STORE = String(process.env.STRICT_SOCIAL_STORE || (STRICT_PROFILE_STORE ? "1" : "0")) === "1";
@@ -238,6 +240,8 @@ let communityDbRemoteLoaded = false;
 let goDbCache = null;
 let alphaDbCache = null;
 let alphaDbRemoteLoaded = false;
+let pumpFunLaunchesDbCache = null;
+let pumpFunLaunchesRemoteLoaded = false;
 const profileLastKnownCache = new Map();
 const xOauthStates = new Map();
 
@@ -3858,6 +3862,144 @@ function pickPumpFunUrl(payload = {}, mint = "") {
   return mint ? `https://pump.fun/coin/${encodeURIComponent(mint)}` : "";
 }
 
+function emptyPumpFunLaunchesStore() {
+  return { launches: [] };
+}
+
+function normalizePumpFunLaunch(row = {}) {
+  const mint = String(row.mint || row.token || row.tokenAddress || "").trim();
+  if (!mint || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) return null;
+  const symbol = String(row.symbol || "").trim().replace(/^\$/, "").toUpperCase().slice(0, 13);
+  return {
+    id: String(row.id || mint).trim(),
+    chainId: "pumpfun",
+    source: "pumpfun",
+    token: mint,
+    tokenAddress: mint,
+    mint,
+    name: String(row.name || symbol || "Pump.fun token").trim().slice(0, 80),
+    symbol: symbol || mint.slice(0, 6).toUpperCase(),
+    description: String(row.description || "").trim().slice(0, 4000),
+    imageUri: String(row.imageUri || row.image || "").trim().slice(0, 2048),
+    creator: String(row.creator || row.user || "").trim(),
+    pumpfunUrl: pickPumpFunUrl(row, mint),
+    signature: String(row.signature || "").trim(),
+    metadataUri: String(row.metadataUri || "").trim(),
+    createdAt: Number(row.createdAt || Math.floor(Date.now() / 1000))
+  };
+}
+
+function sanitizePumpFunLaunchesStore(store = {}) {
+  const seen = new Set();
+  const launches = (Array.isArray(store?.launches) ? store.launches : [])
+    .map(normalizePumpFunLaunch)
+    .filter(Boolean)
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    .filter((row) => {
+      const key = row.mint.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 300);
+  return { launches };
+}
+
+function readPumpFunLaunchesDb() {
+  if (pumpFunLaunchesDbCache) return pumpFunLaunchesDbCache;
+  try {
+    if (fs.existsSync(PUMPFUN_LAUNCHES_DB_PATH)) {
+      const parsed = JSON.parse(fs.readFileSync(PUMPFUN_LAUNCHES_DB_PATH, "utf8") || "{}");
+      pumpFunLaunchesDbCache = sanitizePumpFunLaunchesStore(parsed);
+      return pumpFunLaunchesDbCache;
+    }
+  } catch {
+    // fall through
+  }
+  pumpFunLaunchesDbCache = emptyPumpFunLaunchesStore();
+  return pumpFunLaunchesDbCache;
+}
+
+function writePumpFunLaunchesDb(store) {
+  const safe = sanitizePumpFunLaunchesStore(store);
+  pumpFunLaunchesDbCache = safe;
+  try {
+    fs.mkdirSync(path.dirname(PUMPFUN_LAUNCHES_DB_PATH), { recursive: true });
+    fs.writeFileSync(PUMPFUN_LAUNCHES_DB_PATH, JSON.stringify(safe, null, 2));
+  } catch {
+    // Vercel /tmp can fail under rare pressure; remote write below is still attempted.
+  }
+  return safe;
+}
+
+async function readPumpFunLaunchesRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_PUMPFUN_LAUNCHES_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPFUN_LAUNCHES_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase Pump.fun launch read failed: ${response.status} ${text}`.trim());
+  }
+  return sanitizePumpFunLaunchesStore(await response.json());
+}
+
+async function writePumpFunLaunchesRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_PUMPFUN_LAUNCHES_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPFUN_LAUNCHES_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizePumpFunLaunchesStore(store), null, 2)
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase Pump.fun launch write failed: ${response.status} ${text}`.trim());
+  }
+  return true;
+}
+
+async function readPumpFunLaunchesPersistent(options = {}) {
+  const refresh = Boolean(options.refresh);
+  if (isSupabaseStorageConfigured() && (refresh || !pumpFunLaunchesRemoteLoaded)) {
+    try {
+      const remote = await readPumpFunLaunchesRemote();
+      if (remote) writePumpFunLaunchesDb(remote);
+      pumpFunLaunchesRemoteLoaded = true;
+    } catch (error) {
+      console.warn(`Supabase Pump.fun launch read failed: ${error?.message || "connection error"}`);
+      pumpFunLaunchesRemoteLoaded = true;
+    }
+  }
+  return sanitizePumpFunLaunchesStore(readPumpFunLaunchesDb());
+}
+
+async function writePumpFunLaunchesPersistent(store) {
+  const safe = writePumpFunLaunchesDb(store);
+  if (isSupabaseStorageConfigured()) {
+    await writePumpFunLaunchesRemote(safe);
+  }
+  return safe;
+}
+
+async function recordPumpFunLaunch(row = {}) {
+  const normalized = normalizePumpFunLaunch(row);
+  if (!normalized) return null;
+  const store = await readPumpFunLaunchesPersistent({ refresh: true });
+  const launches = [normalized, ...(Array.isArray(store.launches) ? store.launches : []).filter((item) => String(item?.mint || "").toLowerCase() !== normalized.mint.toLowerCase())];
+  await writePumpFunLaunchesPersistent({ launches });
+  return normalized;
+}
+
 function pumpFunSigningSecretKey() {
   const seed = String(
     process.env.PUMPFUN_SIGNING_SECRET ||
@@ -4078,6 +4220,11 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       mint,
       user: user.toBase58(),
       creator: creator.toBase58(),
+      name,
+      symbol,
+      description: String(req.body?.description || "").trim(),
+      imageUri: String(req.body?.imageUri || "").trim(),
+      metadataUri,
       mintSecretKey: Buffer.from(mintKeypair.secretKey).toString("base64"),
       rpcUrl,
       blockhash: latest.blockhash,
@@ -4145,12 +4292,25 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
       "confirmed"
     );
 
+    const recordedLaunch = await recordPumpFunLaunch({
+      mint,
+      name: pending.name,
+      symbol: pending.symbol,
+      description: pending.description,
+      imageUri: pending.imageUri,
+      creator: pending.creator || pending.user,
+      signature,
+      metadataUri: pending.metadataUri,
+      createdAt: Math.floor(Date.now() / 1000)
+    }).catch(() => null);
+
     res.json({
       ok: true,
       signature,
       mint,
       tokenAddress: mint,
       pumpfunUrl: pickPumpFunUrl({}, mint),
+      launch: recordedLaunch,
       rpcUrl
     });
   } catch (error) {
@@ -4398,6 +4558,19 @@ app.get("/api/launches", async (req, res) => {
       return { total: page.total, launches };
     };
     const payload = forceFresh ? await builder() : await withCache(launchesCache, launchesKey, LAUNCHES_CACHE_TTL_MS, builder);
+    const includePumpFunFeed = offset === 0 && ctx.chainId === 1 && ctx.quoteMode === "native";
+    if (includePumpFunFeed) {
+      const pumpFunStore = await readPumpFunLaunchesPersistent({ refresh: forceFresh });
+      const pumpFunLaunches = Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : [];
+      const launches = [...pumpFunLaunches, ...(Array.isArray(payload.launches) ? payload.launches : [])]
+        .sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0))
+        .slice(0, limit);
+      return res.json({
+        ...payload,
+        total: Number(payload.total || 0) + pumpFunLaunches.length,
+        launches
+      });
+    }
 
     res.json(payload);
   } catch (error) {

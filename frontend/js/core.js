@@ -428,7 +428,7 @@ export function makeFallbackImage(name = "", symbol = "") {
 }
 
 export function resolveCoinImage(coin) {
-  const raw = String(coin?.imageURI || "").trim();
+  const raw = String(coin?.imageURI || coin?.imageUri || coin?.image || "").trim();
   if (raw) {
     try {
       const parsed = new URL(raw, window.location.origin);
