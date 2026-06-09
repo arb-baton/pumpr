@@ -23,7 +23,7 @@ import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } fro
 import { initSupportWidget } from "./support.js";
 
 const WATCHLIST_KEY = "etherpump.watchlist.v1";
-const LAUNCH_CACHE_KEY = "etherpump.launches.cache.v2";
+const LAUNCH_CACHE_KEY = "etherpump.launches.cache.v3";
 const LAUNCH_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 
@@ -138,6 +138,38 @@ function saveCachedLaunches(launches) {
   }
 }
 
+function isPumpVerseLaunchRow(launch = {}) {
+  const name = String(launch?.name || "").toLowerCase();
+  const symbol = String(launch?.symbol || "").toLowerCase();
+  return name.includes("pumpverse") || symbol.includes("pumpverse");
+}
+
+function launchRankValue(launch = {}) {
+  const dexMcap = Number(launch?.dexSnapshot?.marketCapUsd || 0);
+  const poolQuote = Number(launch?.pool?.marketCapQuote || 0);
+  const poolEth = Number(launch?.pool?.marketCapEth || 0) * Number(state.ethUsd || 0);
+  const created = Number(launch?.createdAt || 0);
+  return Math.max(dexMcap, poolQuote, poolEth, 0) * 1_000_000 + created;
+}
+
+function collapsePumpVerseRows(rows = []) {
+  const out = [];
+  const pumpVerseByChain = new Map();
+  for (const row of rows) {
+    if (!isPumpVerseLaunchRow(row)) {
+      out.push(row);
+      continue;
+    }
+    const chainId = Number(row?.chainId || state.chainId || 1);
+    const key = Number.isFinite(chainId) && chainId > 0 ? Math.floor(chainId) : 1;
+    const previous = pumpVerseByChain.get(key);
+    if (!previous || launchRankValue(row) > launchRankValue(previous)) {
+      pumpVerseByChain.set(key, row);
+    }
+  }
+  return [...out, ...pumpVerseByChain.values()];
+}
+
 function mergeLaunchRows(base = [], updates = []) {
   const byToken = new Map();
   for (const row of base) {
@@ -156,7 +188,7 @@ function mergeLaunchRows(base = [], updates = []) {
     const dexSnapshot = row.dexSnapshot || previous.dexSnapshot || null;
     byToken.set(token, { ...previous, ...row, pool, dexSnapshot });
   }
-  return Array.from(byToken.values()).sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
+  return collapsePumpVerseRows(Array.from(byToken.values())).sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
 }
 
 async function fetchLaunchPages(options = {}) {

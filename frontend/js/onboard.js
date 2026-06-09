@@ -69,7 +69,7 @@ const demoCoins = [
     name: "Frog Finance",
     symbol: "FROG",
     chain: "ETH",
-    image: "/assets/pump-r-logo.png?v=20260608r",
+    image: "/assets/pump-r-logo.png?v=20260609brand",
     basePrice: 0.024,
     supply: 1000000000,
     move: 18.4,
@@ -85,7 +85,7 @@ const demoCoins = [
     name: "Toast Cat",
     symbol: "TOAST",
     chain: "BASE",
-    image: "/assets/pump-r-logo.png?v=20260608r",
+    image: "/assets/pump-r-logo.png?v=20260609brand",
     basePrice: 0.071,
     supply: 1000000000,
     move: -6.2,
@@ -101,7 +101,7 @@ const demoCoins = [
     name: "Laser Doge",
     symbol: "LASER",
     chain: "MONAD",
-    image: "/assets/pump-r-logo.png?v=20260608r",
+    image: "/assets/pump-r-logo.png?v=20260609brand",
     basePrice: 0.018,
     supply: 1000000000,
     move: 31.7,
@@ -117,7 +117,7 @@ const demoCoins = [
     name: "Byte Banana",
     symbol: "BYTE",
     chain: "SOL",
-    image: "/assets/pump-r-logo.png?v=20260608r",
+    image: "/assets/pump-r-logo.png?v=20260609brand",
     basePrice: 0.039,
     supply: 1000000000,
     move: 8.1,
@@ -618,7 +618,7 @@ function renderCreate() {
   const draft = state.launchDraft;
   const name = draft.name || "Practice coin";
   const symbol = (draft.symbol || "PRACTICE").toUpperCase();
-  const image = draft.imageData || "/assets/pump-r-logo.png?v=20260608r";
+  const image = draft.imageData || "/assets/pump-r-logo.png?v=20260609brand";
   const modeLabel = draft.mode === "pumpverse" ? "PumpVerse multi-chain" : draft.mode === "usdc" ? "USDC pair" : "Native pair";
   const readiness = Math.min(
     100,
@@ -939,7 +939,7 @@ function createPracticeCoin() {
     name,
     symbol,
     chain: String(draft.chain || "ETH").toUpperCase(),
-    image: draft.imageData || "/assets/pump-r-logo.png?v=20260608r",
+    image: draft.imageData || "/assets/pump-r-logo.png?v=20260609brand",
     basePrice: Math.max(0.000001, 0.000018 + starter * 0.000012),
     supply,
     move: starter > 0 ? 12.4 + starter * 4 : 2.8,

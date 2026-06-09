@@ -427,7 +427,16 @@ export function makeFallbackImage(name = "", symbol = "") {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+const PUMPR_BRAND_IMAGE = "/assets/pump-r-logo.png?v=20260609brand";
+
+function isPumpVerseBrandCoin(coin = {}) {
+  const name = String(coin?.name || "").toLowerCase();
+  const symbol = String(coin?.symbol || coin?.tokenSymbol || "").toLowerCase();
+  return name.includes("pumpverse") || symbol.includes("pumpverse") || symbol === "pumpr";
+}
+
 export function resolveCoinImage(coin) {
+  if (isPumpVerseBrandCoin(coin)) return PUMPR_BRAND_IMAGE;
   const raw = String(coin?.imageURI || coin?.imageUri || coin?.image || "").trim();
   if (raw) {
     try {

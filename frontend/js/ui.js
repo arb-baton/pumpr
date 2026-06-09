@@ -389,7 +389,7 @@ function showWalletPickerModal(wallets = []) {
         <button type="button" class="wallet-picker-close" aria-label="Close">x</button>
         <div class="wallet-picker-head">
           <div class="wallet-picker-brand">
-            <img src="/assets/pump-r-logo.png?v=20260608r" alt="Pump-r" />
+            <img src="/assets/pump-r-logo.png?v=20260609brand" alt="Pump-r" />
           </div>
           <h3>Welcome back</h3>
           <p>Connect your wallet or continue with email.</p>
