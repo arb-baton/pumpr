@@ -8101,6 +8101,10 @@ select:focus,
   -ms-overflow-style: none;
 }
 
+.top-community-row:hover {
+  cursor: ew-resize;
+}
+
 .top-community-row::-webkit-scrollbar {
   display: none;
 }

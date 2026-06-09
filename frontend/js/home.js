@@ -1289,6 +1289,26 @@ function setupTrendingNav() {
   });
 }
 
+function setupTopCommunityHoverPan() {
+  const row = ui.topCommunitiesWrap;
+  if (!row || !window.matchMedia?.("(pointer: fine)").matches) return;
+  let frame = 0;
+
+  row.addEventListener("mousemove", (event) => {
+    const maxScroll = row.scrollWidth - row.clientWidth;
+    if (maxScroll <= 4) return;
+    const rect = row.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)));
+    const target = maxScroll * ratio;
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      row.scrollLeft += (target - row.scrollLeft) * 0.2;
+    });
+  });
+
+  row.addEventListener("mouseleave", () => cancelAnimationFrame(frame));
+}
+
 function setupInteractions() {
   ui.searchInput?.addEventListener("input", () => {
     state.query = ui.searchInput.value.trim();
@@ -1347,6 +1367,8 @@ function setupInteractions() {
     const launch = state.launches.find((item) => getTokenId(item) === launchKey);
     if (launch) recordViewedLaunch(launch);
   });
+
+  setupTopCommunityHoverPan();
 }
 
 async function refreshLaunches(options = {}) {
