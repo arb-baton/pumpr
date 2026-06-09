@@ -4053,7 +4053,14 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       recentBlockhash: latest.blockhash
     }).add(instruction);
     const connection = new SolanaConnection(rpcUrl, "confirmed");
-    await simulateSolanaTransaction(connection, tx, "Pump.fun create");
+    let presignSimulationWarning = "";
+    try {
+      await simulateSolanaTransaction(connection, tx, "Pump.fun create");
+    } catch (error) {
+      // Some Solana runtimes reject simulation while the browser wallet signature is absent.
+      // Finalization performs the blocking simulation after Phantom signs and we add the mint signer.
+      presignSimulationWarning = error.message || "Unsigned Pump.fun create simulation skipped";
+    }
 
     const mint = mintKeypair.publicKey.toBase58();
     const signingToken = encryptPumpFunSigningPayload({
@@ -4075,6 +4082,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       metadataUri,
       transactionBase64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
       signingToken,
+      presignSimulationWarning,
       rpcUrl,
       blockhash: latest.blockhash,
       lastValidBlockHeight: latest.lastValidBlockHeight
