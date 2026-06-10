@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260609rowfix" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260610onboardqr" />
   </head>
   <body>
     <div class="app-shell">
@@ -110,6 +110,22 @@
               <article class="panel-card onboard-side-card">
                 <small>Badges</small>
                 <div class="onboard-badge-list" id="onboardBadgeList"></div>
+              </article>
+              <article class="panel-card onboard-side-card onboard-qr-card">
+                <div>
+                  <small>Open on phone</small>
+                  <h3>Scan Pump-r.fun</h3>
+                  <p>Use the QR to jump straight into the onboarding arena from mobile.</p>
+                </div>
+                <a class="onboard-qr-box" href="https://pump-r.fun/" target="_blank" rel="noreferrer noopener" aria-label="Open pump-r.fun">
+                  <img
+                    src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=12&data=https%3A%2F%2Fpump-r.fun%2F"
+                    alt="QR code for https://pump-r.fun/"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </a>
+                <a class="onboard-qr-link" href="https://pump-r.fun/" target="_blank" rel="noreferrer noopener">pump-r.fun</a>
               </article>
             </aside>
           </section>
