@@ -261,9 +261,12 @@ function configuredFeedTargets() {
 
 async function fetchLaunchesAcrossChains(fetcher, options = {}) {
   const targets = configuredFeedTargets();
+  let pumpFunFeedRequested = false;
   const results = await Promise.allSettled(
     targets.map(async ({ chainId, quote }) => {
-      const payload = await fetcher({ ...options, chainId, quote });
+      const includePumpFun = quote === "native" && !pumpFunFeedRequested;
+      if (includePumpFun) pumpFunFeedRequested = true;
+      const payload = await fetcher({ ...options, chainId, quote, includePumpFun });
       return {
         total: Number(payload?.total || 0),
         launches: (Array.isArray(payload?.launches) ? payload.launches : []).map((row) => ({

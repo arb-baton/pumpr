@@ -93,6 +93,7 @@ export const api = {
     });
     if (options.lite) params.set("lite", "1");
     if (options.fresh) params.set("fresh", "1");
+    if (options.includePumpFun) params.set("includePumpFun", "1");
     if (Number.isFinite(Number(options.chainId))) params.set("chainId", String(Math.floor(Number(options.chainId))));
     if (options.quote) params.set("quote", String(options.quote));
     return apiGet(`/api/launches?${params.toString()}`);

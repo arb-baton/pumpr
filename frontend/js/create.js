@@ -29,6 +29,8 @@ import { initCoinSearchOverlay } from "./searchModal.js?v=20260505a";
 import { initSupportWidget } from "./support.js";
 
 const MIN_INITIAL_LIQUIDITY_ETH = 0;
+const HOME_LAUNCH_CACHE_KEY = "etherpump.launches.cache.v3";
+const HOME_LAUNCH_CACHE_MAX_ITEMS = 120;
 
 const ui = {
   walletSelect: document.getElementById("walletChoice"),
@@ -1465,6 +1467,54 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+function normalizePumpFunHomeLaunch(row = {}) {
+  const mint = String(row.mint || row.token || row.tokenAddress || "").trim();
+  if (!mint) return null;
+  const symbol = String(row.symbol || "").trim().replace(/^\$/, "").toUpperCase().slice(0, 13);
+  return {
+    id: String(row.id || mint),
+    chainId: "pumpfun",
+    source: "pumpfun",
+    token: mint,
+    tokenAddress: mint,
+    mint,
+    name: String(row.name || symbol || "Pump.fun token").trim().slice(0, 80),
+    symbol: symbol || mint.slice(0, 6).toUpperCase(),
+    description: String(row.description || "").trim().slice(0, 4000),
+    imageUri: String(row.imageUri || row.image || "").trim().slice(0, 2048),
+    creator: String(row.creator || row.user || "").trim(),
+    pumpfunUrl: String(row.pumpfunUrl || row.url || `https://pump.fun/coin/${encodeURIComponent(mint)}`).trim(),
+    signature: String(row.signature || "").trim(),
+    metadataUri: String(row.metadataUri || "").trim(),
+    createdAt: Number(row.createdAt || Math.floor(Date.now() / 1000))
+  };
+}
+
+function cachePumpFunLaunchForHome(row = {}) {
+  const normalized = normalizePumpFunHomeLaunch(row);
+  if (!normalized) return;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HOME_LAUNCH_CACHE_KEY) || "{}");
+    const existing = Array.isArray(parsed?.launches) ? parsed.launches : [];
+    const mintKey = normalized.mint.toLowerCase();
+    const launches = [
+      normalized,
+      ...existing.filter((item) => String(item?.mint || item?.token || "").toLowerCase() !== mintKey)
+    ]
+      .sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0))
+      .slice(0, HOME_LAUNCH_CACHE_MAX_ITEMS);
+    localStorage.setItem(
+      HOME_LAUNCH_CACHE_KEY,
+      JSON.stringify({
+        ts: Date.now(),
+        launches
+      })
+    );
+  } catch {
+    // Home will still pick the launch up from the server feed when persistence syncs.
+  }
+}
+
 async function launchPumpFun(details) {
   const { provider, publicKey } = await connectSolanaWallet();
   await ensurePumpRHolderAccess({
@@ -1503,6 +1553,18 @@ async function launchPumpFun(details) {
       signedTransactionBase64: bytesToBase64(signed.serialize({ requireAllSignatures: false, verifySignatures: false }))
     });
     signature = String(finalized?.signature || "");
+    cachePumpFunLaunchForHome(finalized?.launch || {
+      mint,
+      name: details.name,
+      symbol: details.symbol,
+      description: details.description,
+      imageUri: details.imageUri,
+      creator: publicKey,
+      pumpfunUrl,
+      signature,
+      metadataUri: payload?.metadataUri,
+      createdAt: Math.floor(Date.now() / 1000)
+    });
   } else {
     throw new Error("Your Solana wallet does not support transaction signing in this browser.");
   }

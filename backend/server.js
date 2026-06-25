@@ -5238,7 +5238,11 @@ async function readPumpFunLaunchesPersistent(options = {}) {
 async function writePumpFunLaunchesPersistent(store) {
   const safe = writePumpFunLaunchesDb(store);
   if (isSupabaseStorageConfigured()) {
-    await writePumpFunLaunchesRemote(safe);
+    try {
+      await writePumpFunLaunchesRemote(safe);
+    } catch (error) {
+      console.warn(`Supabase Pump.fun launch write failed: ${error?.message || "connection error"}`);
+    }
   }
   return safe;
 }
@@ -6045,7 +6049,7 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
       signature,
       metadataUri: pending.metadataUri,
       createdAt: Math.floor(Date.now() / 1000)
-    }).catch(() => null);
+    });
 
     res.json({
       ok: true,
@@ -6341,7 +6345,10 @@ app.get("/api/launches", async (req, res) => {
       return { total: page.total, launches };
     };
     const payload = forceFresh ? await builder() : await withCache(launchesCache, launchesKey, LAUNCHES_CACHE_TTL_MS, builder);
-    const includePumpFunFeed = offset === 0 && ctx.chainId === 1 && ctx.quoteMode === "native";
+    const includePumpFunFeed =
+      offset === 0 &&
+      ctx.quoteMode === "native" &&
+      (ctx.chainId === 1 || String(req.query.includePumpFun || "0") === "1");
     if (includePumpFunFeed) {
       const pumpFunStore = await readPumpFunLaunchesPersistent({ refresh: forceFresh });
       const pumpFunLaunches = Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : [];
