@@ -11,6 +11,10 @@
   if (!sidebar || !toggle) return;
 
   const sideNav = sidebar.querySelector(".side-nav");
+  sideNav?.querySelectorAll('a[href="/go"] .side-link-label').forEach((label) => {
+    label.textContent = "GO";
+  });
+
   if (sideNav && !sideNav.querySelector('a[href="/onboard"]')) {
     const homeLink = sideNav.querySelector('a[href="/"]');
     const onboardLink = document.createElement("a");
@@ -77,6 +81,18 @@
       alphaLink.insertAdjacentElement("afterend", agentsLink);
     } else {
       sideNav.appendChild(agentsLink);
+    }
+  }
+
+  if (sideNav) {
+    const alphaLink = sideNav.querySelector('a[href="/alpha"]');
+    const agentsLink = sideNav.querySelector('a[href="/agents"]');
+    const airdropLink = sideNav.querySelector('a[href="/airdrop"]');
+    if (alphaLink && agentsLink) {
+      alphaLink.insertAdjacentElement("afterend", agentsLink);
+    }
+    if (agentsLink && airdropLink) {
+      agentsLink.insertAdjacentElement("afterend", airdropLink);
     }
   }
 
