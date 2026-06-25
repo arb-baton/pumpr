@@ -117,8 +117,11 @@ function loadCachedLaunches() {
     const ts = Number(payload?.ts || 0);
     const launches = Array.isArray(payload?.launches) ? payload.launches : [];
     if (!launches.length) return [];
-    if (!Number.isFinite(ts) || Date.now() - ts > LAUNCH_CACHE_MAX_AGE_MS) return [];
-    return filterHomeLaunchRows(launches);
+    const rows = filterHomeLaunchRows(launches);
+    if (!Number.isFinite(ts) || Date.now() - ts > LAUNCH_CACHE_MAX_AGE_MS) {
+      return rows.filter((launch) => isPumpFunLaunch(launch));
+    }
+    return rows;
   } catch {
     return [];
   }

@@ -168,6 +168,7 @@ export const api = {
   voteAlphaTip: (id, body = {}) => apiPost(`/api/alpha/${encodeURIComponent(String(id || ""))}/vote`, body),
   commentAlphaTip: (id, body = {}) => apiPost(`/api/alpha/${encodeURIComponent(String(id || ""))}/comment`, body),
   recordAlphaTip: (id, body = {}) => apiPost(`/api/alpha/${encodeURIComponent(String(id || ""))}/tip`, body),
+  pumprCardWaitlist: (body = {}) => apiPost("/api/pumpr-card/waitlist", body),
   supportConfig: () => apiGet("/api/support/config"),
   supportMessages: (address) => apiGet(`/api/support/messages?address=${encodeURIComponent(String(address || ""))}`),
   supportInbox: (address) => apiGet(`/api/support/inbox?address=${encodeURIComponent(String(address || ""))}`),

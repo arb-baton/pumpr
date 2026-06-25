@@ -29,6 +29,7 @@ const PUMPFUN_PREPARED_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-pu
 const PUMPFUN_SESSIONS_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-pumpfun-sessions.json") : path.join(ROOT, "cache", "pumpfun-sessions.json");
 const PUMPFUN_METADATA_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-pumpfun-metadata.json") : path.join(ROOT, "cache", "pumpfun-metadata.json");
 const PUMPFUN_LAUNCHES_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-pumpfun-launches.json") : path.join(ROOT, "cache", "pumpfun-launches.json");
+const PUMPR_CARD_WAITLIST_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-card-waitlist.json") : path.join(ROOT, "cache", "pumpr-card-waitlist.json");
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || ""
@@ -43,6 +44,8 @@ const SUPABASE_AGENTS_OBJECT = String(process.env.SUPABASE_AGENTS_OBJECT || "age
 const SUPABASE_PUMPFUN_PREPARED_OBJECT = String(process.env.SUPABASE_PUMPFUN_PREPARED_OBJECT || "pumpfun/prepared-submissions.json").trim();
 const SUPABASE_PUMPFUN_SESSIONS_OBJECT = String(process.env.SUPABASE_PUMPFUN_SESSIONS_OBJECT || "pumpfun/sessions.json").trim();
 const SUPABASE_PUMPFUN_LAUNCHES_OBJECT = String(process.env.SUPABASE_PUMPFUN_LAUNCHES_OBJECT || "pumpfun/launches.json").trim();
+const SUPABASE_PUMPR_CARD_WAITLIST_OBJECT = String(process.env.SUPABASE_PUMPR_CARD_WAITLIST_OBJECT || "pumpr-card/waitlist.json").trim();
+const COMMUNITY_RESET_BEFORE_UNIX = Math.max(0, Number(process.env.COMMUNITY_RESET_BEFORE_UNIX || "1782413298"));
 const PROFILE_IMAGE_URI_MAX_LENGTH = 2 * 1024 * 1024;
 const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || "0") === "1";
 const STRICT_SOCIAL_STORE = String(process.env.STRICT_SOCIAL_STORE || (STRICT_PROFILE_STORE ? "1" : "0")) === "1";
@@ -1364,9 +1367,30 @@ function emptyCommunityStore() {
 
 function sanitizeCommunityStore(store) {
   if (!store || typeof store !== "object" || Array.isArray(store)) return emptyCommunityStore();
+  const resetBefore = COMMUNITY_RESET_BEFORE_UNIX;
+  const commentsByPost = {};
+  if (store.comments && typeof store.comments === "object" && !Array.isArray(store.comments)) {
+    for (const [postId, comments] of Object.entries(store.comments)) {
+      const rows = Array.isArray(comments)
+        ? comments
+            .map((comment) => normalizeCommunityComment(comment, postId))
+            .filter(Boolean)
+            .filter((comment) => Number(comment.createdAt || 0) >= resetBefore)
+        : [];
+      if (rows.length) commentsByPost[postId] = rows.slice(-100);
+    }
+  }
+  const posts = (Array.isArray(store.posts) ? store.posts : [])
+    .map(normalizeCommunityPost)
+    .filter(Boolean)
+    .map((post) => ({
+      ...post,
+      comments: (Array.isArray(post.comments) ? post.comments : []).filter((comment) => Number(comment?.createdAt || 0) >= resetBefore)
+    }))
+    .filter((post) => Number(post.createdAt || 0) >= resetBefore);
   return {
-    posts: Array.isArray(store.posts) ? store.posts : [],
-    comments: store.comments && typeof store.comments === "object" && !Array.isArray(store.comments) ? store.comments : {},
+    posts,
+    comments: commentsByPost,
     likes: store.likes && typeof store.likes === "object" && !Array.isArray(store.likes) ? store.likes : {}
   };
 }
@@ -1433,6 +1457,132 @@ async function writeCommunityDbPersistent(store) {
     await writeCommunityDbRemote(safe);
   }
   return safe;
+}
+
+function emptyPumprCardWaitlistStore() {
+  return { entries: [] };
+}
+
+function sanitizePumprCardText(value = "", max = 240) {
+  return Array.from(String(value || "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
+}
+
+function normalizePumprCardEmail(value = "") {
+  const email = String(value || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "";
+  return email.slice(0, 180);
+}
+
+function sanitizePumprCardWaitlistStore(store = {}) {
+  const seen = new Set();
+  const entries = (Array.isArray(store?.entries) ? store.entries : [])
+    .map((row) => {
+      const email = normalizePumprCardEmail(row?.email || "");
+      if (!email) return null;
+      return {
+        email,
+        wallet: sanitizePumprCardText(row?.wallet || row?.address || "", 90),
+        source: sanitizePumprCardText(row?.source || "pumpr-card", 80),
+        createdAt: Number(row?.createdAt || Math.floor(Date.now() / 1000)),
+        userAgent: sanitizePumprCardText(row?.userAgent || "", 220)
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    .filter((row) => {
+      if (seen.has(row.email)) return false;
+      seen.add(row.email);
+      return true;
+    })
+    .slice(0, 5000);
+  return { entries };
+}
+
+function readPumprCardWaitlistDb() {
+  try {
+    if (fs.existsSync(PUMPR_CARD_WAITLIST_DB_PATH)) {
+      return sanitizePumprCardWaitlistStore(JSON.parse(fs.readFileSync(PUMPR_CARD_WAITLIST_DB_PATH, "utf8") || "{}"));
+    }
+  } catch {
+    // fall through
+  }
+  return emptyPumprCardWaitlistStore();
+}
+
+function writePumprCardWaitlistDb(store) {
+  const safe = sanitizePumprCardWaitlistStore(store);
+  try {
+    fs.mkdirSync(path.dirname(PUMPR_CARD_WAITLIST_DB_PATH), { recursive: true });
+    fs.writeFileSync(PUMPR_CARD_WAITLIST_DB_PATH, JSON.stringify(safe, null, 2));
+  } catch {
+    // /tmp/local cache failures should not block remote storage attempts.
+  }
+  return safe;
+}
+
+async function readPumprCardWaitlistRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_PUMPR_CARD_WAITLIST_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPR_CARD_WAITLIST_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Supabase PUMPR Card waitlist read failed: ${response.status}`);
+  return sanitizePumprCardWaitlistStore(await response.json().catch(() => emptyPumprCardWaitlistStore()));
+}
+
+async function writePumprCardWaitlistRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_PUMPR_CARD_WAITLIST_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPR_CARD_WAITLIST_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizePumprCardWaitlistStore(store), null, 2)
+  });
+  if (!response.ok) throw new Error(`Supabase PUMPR Card waitlist write failed: ${response.status}`);
+  return true;
+}
+
+async function readPumprCardWaitlistPersistent(options = {}) {
+  if (isSupabaseStorageConfigured() && options.refresh) {
+    const remote = await readPumprCardWaitlistRemote().catch(() => null);
+    if (remote) writePumprCardWaitlistDb(remote);
+  }
+  return sanitizePumprCardWaitlistStore(readPumprCardWaitlistDb());
+}
+
+async function writePumprCardWaitlistPersistent(store) {
+  const safe = writePumprCardWaitlistDb(store);
+  if (isSupabaseStorageConfigured()) {
+    await writePumprCardWaitlistRemote(safe).catch((error) => {
+      console.warn(`Supabase PUMPR Card waitlist write failed: ${error?.message || "connection error"}`);
+    });
+  }
+  return safe;
+}
+
+async function addPumprCardWaitlistEntry(value = {}) {
+  const email = normalizePumprCardEmail(value.email || "");
+  if (!email) throw new Error("Enter a valid email address");
+  const store = await readPumprCardWaitlistPersistent({ refresh: true });
+  const entry = {
+    email,
+    wallet: sanitizePumprCardText(value.wallet || value.address || "", 90),
+    source: sanitizePumprCardText(value.source || "pumpr-card", 80),
+    createdAt: Math.floor(Date.now() / 1000),
+    userAgent: sanitizePumprCardText(value.userAgent || "", 220)
+  };
+  const entries = [entry, ...(store.entries || []).filter((row) => row.email !== email)];
+  await writePumprCardWaitlistPersistent({ entries });
+  return entry;
 }
 
 function emptyAlphaStore() {
@@ -7545,6 +7695,35 @@ app.post("/api/support/message", async (req, res) => {
   }
 });
 
+app.post("/api/pumpr-card/waitlist", async (req, res) => {
+  try {
+    const entry = await addPumprCardWaitlistEntry({
+      email: req.body?.email || "",
+      wallet: req.body?.wallet || req.body?.address || "",
+      source: req.body?.source || "pumpr-card",
+      userAgent: req.get("user-agent") || ""
+    });
+    res.json({ ok: true, entry: { email: entry.email, createdAt: entry.createdAt } });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Could not join the PUMPR Card waitlist" });
+  }
+});
+
+app.get("/api/pumpr-card/waitlist", async (req, res) => {
+  try {
+    const configuredKey = String(process.env.PUMPR_CARD_WAITLIST_ADMIN_KEY || "").trim();
+    const providedKey = String(req.query.key || req.get("x-admin-key") || "").trim();
+    if (configuredKey && providedKey !== configuredKey) return res.status(403).json({ error: "Forbidden" });
+    if (!configuredKey && IS_VERCEL_RUNTIME) {
+      return res.status(403).json({ error: "Set PUMPR_CARD_WAITLIST_ADMIN_KEY to view waitlist entries" });
+    }
+    const store = await readPumprCardWaitlistPersistent({ refresh: true });
+    res.json({ entries: store.entries || [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Could not load PUMPR Card waitlist" });
+  }
+});
+
 app.get("/api/support/messages", async (req, res) => {
   try {
     const address = normalizeAddress(req.query.address || "");
@@ -8133,6 +8312,10 @@ app.get(["/alpha", "/alpha/:alphaId"], (_req, res) => {
 
 app.get(["/agents", "/agents/:agentId"], (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "agents.html"));
+});
+
+app.get(["/pumpr-card", "/card"], (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "pumpr-card.html"));
 });
 
 app.get("/onboard", (_req, res) => {
