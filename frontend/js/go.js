@@ -83,7 +83,7 @@ const ui = {
   agentGenerateImage: document.getElementById("goAgentGenerateImage"),
   submitAgree: document.getElementById("goSubmitAgree"),
   submitIdentity: document.getElementById("goSubmitIdentity"),
-  submitBountyName: document.getElementById("goSubmitBountyName"),
+  submitBountyName: document.getElementById("goSubmitTaskName"),
   submitAddLink: document.getElementById("goSubmitAddLink"),
   detailCrumb: document.getElementById("goDetailCrumb"),
   detailStatus: document.getElementById("goDetailStatus"),
@@ -504,6 +504,12 @@ function preparedPumpFunText(prepared = state.preparedPumpFunSubmission) {
   const body = String(prepared?.body || "").trim();
   const links = Array.isArray(prepared?.links) ? prepared.links.map((link) => String(link || "").trim()).filter(Boolean) : [];
   return [body, links.length ? `Links:\n${links.map((link) => `- ${link}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
+}
+
+function isPumpFunBounty(bounty = state.activeBounty) {
+  return String(bounty?.source || "").toLowerCase().includes("pump.fun")
+    || String(bounty?.sourceUrl || "").toLowerCase().includes("pump.fun")
+    || String(bounty?.id || "").toLowerCase().startsWith("pumpfun-");
 }
 
 function renderPumpFunBridge(prepared = null, sourceUrl = "") {
@@ -969,9 +975,11 @@ function renderDetail() {
   ui.listView.hidden = true;
   ui.detailView.hidden = false;
   ui.submitWorkBtn.hidden = false;
+  const isPumpFun = isPumpFunBounty(bounty);
+  ui.submitWorkBtn.textContent = isPumpFun ? "Submit to Pump.fun" : "Submit work";
   if (ui.externalSubmitBtn) {
     ui.externalSubmitBtn.hidden = !bounty.sourceUrl;
-    ui.externalSubmitBtn.textContent = String(bounty.source || "").toLowerCase().includes("pump.fun") ? "Copy work & open Pump.fun" : "Open original bounty";
+    ui.externalSubmitBtn.textContent = isPumpFun ? "Copy work & open Pump.fun" : "Open original bounty";
   }
   if (ui.agentSubmitBox) ui.agentSubmitBox.hidden = false;
   renderPumpFunBridge(null);
@@ -1058,7 +1066,10 @@ function updateSubmitModalCopy() {
   const identity = currentIdentity();
   if (ui.submitBountyName) ui.submitBountyName.textContent = state.activeBounty?.title || "Bounty submission";
   if (ui.submitIdentity) {
-    ui.submitIdentity.innerHTML = `Submitting as ${escapeHtml(identity.name)}<br />No submission fee. Network fees may still apply.`;
+    const isPumpFun = isPumpFunBounty();
+    ui.submitIdentity.innerHTML = isPumpFun
+      ? `Submitting to Pump.fun as ${escapeHtml(identity.name)}<br />Pump.fun may require a Phantom signature for the submission fee.`
+      : `Submitting as ${escapeHtml(identity.name)}<br />No submission fee. Network fees may still apply.`;
   }
 }
 
@@ -1207,7 +1218,7 @@ async function submitWork(event) {
       .map((row) => row.trim())
       .filter(Boolean);
 
-    const isPumpFun = String(state.activeBounty?.source || "").toLowerCase().includes("pump.fun");
+    const isPumpFun = isPumpFunBounty();
     if (isPumpFun) {
       ui.submitForm?.querySelector('button[type="submit"]')?.setAttribute("disabled", "disabled");
       setAlert(ui.alert, "Submitting to Pump.fun through Pump-r...");
@@ -1317,7 +1328,7 @@ async function runAgentSubmit() {
 async function openExternalSubmit() {
   const bounty = state.activeBounty;
   if (!bounty?.sourceUrl) throw new Error("Original bounty link is not available");
-  if (String(bounty.source || "").toLowerCase().includes("pump.fun")) {
+  if (isPumpFunBounty(bounty)) {
     await submitDirectToPumpFun();
     return;
   }
