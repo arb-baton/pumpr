@@ -154,7 +154,7 @@ function saveXAuth(profile) {
 }
 
 function tokenFromUrl() {
-  const pathMatch = window.location.pathname.match(/\/communities\/(0x[a-fA-F0-9]{40})/);
+  const pathMatch = window.location.pathname.match(/\/communities\/([^/?#]+)/);
   if (pathMatch?.[1]) return pathMatch[1];
   const params = new URLSearchParams(window.location.search);
   return params.get("token") || params.get("ca") || "";
@@ -181,6 +181,53 @@ function tokenHref(token) {
 
 function communityHref(token) {
   return token ? `/communities/${encodeURIComponent(token)}` : "/communities";
+}
+
+function isLikelySolanaAddress(value = "") {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(value || "").trim());
+}
+
+function isEvmAddress(value = "") {
+  return /^0x[a-fA-F0-9]{40}$/.test(String(value || "").trim());
+}
+
+function activeWalletAddress() {
+  const ws = walletState();
+  return String(ws.address || ws.solanaAddress || "").trim();
+}
+
+function activeWalletType() {
+  const ws = walletState();
+  if (ws.signer && ws.address) return "evm";
+  if (ws.solanaAddress) return "solana";
+  return "";
+}
+
+function isPumpFunLaunch(launch = {}) {
+  const chainMarker = String(launch?.chainId || "").toLowerCase();
+  const externalUrl = String(launch?.pumpfunUrl || launch?.pumpFunUrl || launch?.externalUrl || launch?.url || "").trim();
+  return chainMarker === "pumpfun" || Number(launch?.chainId || 0) === 101 || launch?.source === "pumpfun" || externalUrl.includes("pump.fun/coin/");
+}
+
+function currentCommunityChainType() {
+  if (!state.token) return "";
+  if (isPumpFunLaunch(state.launch)) return "solana";
+  if (isEvmAddress(state.token)) return "evm";
+  if (isLikelySolanaAddress(state.token)) return "solana";
+  return "evm";
+}
+
+function walletMatchesCommunity() {
+  const walletType = activeWalletType();
+  const communityType = currentCommunityChainType();
+  return Boolean(walletType && communityType && walletType === communityType);
+}
+
+function walletRequirementText() {
+  const communityType = currentCommunityChainType();
+  if (communityType === "solana") return "Connect Phantom for this Pump.fun community";
+  if (communityType === "evm") return "Connect an EVM wallet for this EVM community";
+  return "Connect your wallet";
 }
 
 function xIntent(text) {
@@ -233,24 +280,25 @@ function coinPill(post) {
 }
 
 function renderGates() {
-  const ws = walletState();
-  const connected = Boolean(ws.signer && ws.address);
+  const address = activeWalletAddress();
+  const connected = Boolean(address);
+  const walletAllowed = walletMatchesCommunity();
   const xConnected = Boolean(state.xProfile?.authorized && state.xProfile?.username);
-  if (ui.signInBtn) ui.signInBtn.textContent = connected ? shortAddress(ws.address) : "Sign in";
-  if (ui.profileNavSide && connected) ui.profileNavSide.href = `/profile?address=${ws.address}`;
+  if (ui.signInBtn) ui.signInBtn.textContent = connected ? shortAddress(address) : "Sign in";
+  if (ui.profileNavSide) ui.profileNavSide.href = activeWalletType() === "evm" && address ? `/profile?address=${address}` : "/profile";
   if (ui.xIdentityPill) {
     ui.xIdentityPill.textContent = xConnected ? `@${state.xProfile.username}` : "X disconnected";
     ui.xIdentityPill.classList.toggle("connected", xConnected);
   }
   if (ui.connectXBtn) ui.connectXBtn.textContent = xConnected ? "Reconnect X" : "Connect X";
   if (ui.composerWalletBtn) {
-    ui.composerWalletBtn.hidden = connected;
-    ui.composerWalletBtn.textContent = "Connect wallet";
+    ui.composerWalletBtn.hidden = Boolean(connected && (!state.token || walletAllowed));
+    ui.composerWalletBtn.textContent = connected && !walletAllowed ? walletRequirementText() : "Connect wallet";
   }
   if (ui.xStep) ui.xStep.classList.toggle("complete", xConnected);
   if (ui.holdStep) {
-    ui.holdStep.textContent = connected ? "Wallet connected" : "Connect your wallet";
-    ui.holdStep.classList.toggle("complete", connected);
+    ui.holdStep.textContent = connected && walletAllowed ? "Wallet connected" : walletRequirementText();
+    ui.holdStep.classList.toggle("complete", connected && walletAllowed);
   }
   if (ui.xProfileCard) {
     ui.xProfileCard.hidden = !xConnected;
@@ -265,7 +313,7 @@ function renderGates() {
       `;
     }
   }
-  const canPost = Boolean(state.token && connected && xConnected);
+  const canPost = Boolean(state.token && connected && walletAllowed && xConnected);
   if (ui.postInput) ui.postInput.disabled = !canPost;
   if (ui.publishBtn) ui.publishBtn.disabled = !canPost;
 }
@@ -346,8 +394,9 @@ function sortedPosts() {
 }
 
 function postCard(post) {
-  const ws = walletState();
-  const liked = ws.address && (post.likes || []).includes(String(ws.address).toLowerCase());
+  const address = activeWalletAddress();
+  const likeKey = activeWalletType() === "evm" ? address.toLowerCase() : address;
+  const liked = likeKey && (post.likes || []).includes(likeKey);
   const comments = (post.comments || []).map((comment) => `
     <div class="community-comment">
       <img src="${escapeHtml(comment.xImage || fallbackAvatar(comment.xHandle || comment.author))}" alt="" />
@@ -475,7 +524,19 @@ async function hydrateLaunchMeta(tokens = []) {
   const missing = [...new Set(tokens.map((token) => String(token || "")).filter(Boolean))]
     .filter((token) => !state.launchesByToken.has(token.toLowerCase()))
     .slice(0, 30);
-  await Promise.all(missing.map(async (token) => {
+  const solanaMissing = missing.filter((token) => isLikelySolanaAddress(token) && !isEvmAddress(token));
+  if (solanaMissing.length) {
+    try {
+      const payload = await api.launches(120, 0, { lite: true, includeDex: false, includePumpFun: true, fresh: true });
+      const launches = Array.isArray(payload?.launches) ? payload.launches : [];
+      for (const launch of launches) {
+        if (launch?.token) state.launchesByToken.set(String(launch.token).toLowerCase(), launch);
+      }
+    } catch {
+      // fall through to generic Solana community labels
+    }
+  }
+  await Promise.all(missing.filter((token) => isEvmAddress(token)).map(async (token) => {
     try {
       const payload = await api.token(token, { lite: true });
       if (payload?.launch?.token) state.launchesByToken.set(String(payload.launch.token).toLowerCase(), payload.launch);
@@ -488,7 +549,7 @@ async function hydrateLaunchMeta(tokens = []) {
 async function loadGlobalCommunities() {
   const [communityPayload, launchesPayload] = await Promise.all([
     api.communities(80),
-    api.launches(24, 0, { lite: true, includeDex: true }).catch(() => ({ launches: [] }))
+    api.launches(48, 0, { lite: true, includeDex: true, includePumpFun: true }).catch(() => ({ launches: [] }))
   ]);
   const launches = Array.isArray(launchesPayload?.launches) ? launchesPayload.launches.filter((row) => row?.token) : [];
   for (const launch of launches) state.launchesByToken.set(String(launch.token).toLowerCase(), launch);
@@ -502,11 +563,24 @@ async function loadGlobalCommunities() {
 }
 
 async function loadTokenCommunity() {
+  const isSolanaToken = isLikelySolanaAddress(state.token) && !isEvmAddress(state.token);
   const [tokenPayload, communityPayload] = await Promise.all([
-    api.token(state.token, { lite: true }).catch(() => null),
+    isSolanaToken
+      ? api.launches(120, 0, { lite: true, includeDex: false, includePumpFun: true, fresh: true }).catch(() => null)
+      : api.token(state.token, { lite: true }).catch(() => null),
     api.community(state.token, 80)
   ]);
-  state.launch = tokenPayload?.launch || null;
+  state.launch = isSolanaToken
+    ? (Array.isArray(tokenPayload?.launches) ? tokenPayload.launches : []).find((launch) => String(launch?.token || "").toLowerCase() === String(state.token).toLowerCase()) || {
+        token: state.token,
+        tokenAddress: state.token,
+        chainId: "pumpfun",
+        source: "pumpfun",
+        symbol: String(state.token).slice(0, 6).toUpperCase(),
+        name: "Pump.fun token",
+        description: "Pump.fun community"
+      }
+    : tokenPayload?.launch || null;
   if (state.launch?.token) state.launchesByToken.set(String(state.launch.token).toLowerCase(), state.launch);
   state.posts = Array.isArray(communityPayload.posts) ? communityPayload.posts : [];
   state.stats = communityPayload.stats || null;
@@ -546,10 +620,14 @@ function scheduleLiveRefresh(delay = 0) {
 }
 
 function startXOAuth() {
-  const ws = walletState();
-  if (!ws.signer || !ws.address) {
+  const address = activeWalletAddress();
+  if (!address) {
     setAlert(ui.alert, "Connect wallet before authorizing X", true);
     ui.connectBtn?.click();
+    return;
+  }
+  if (state.token && !walletMatchesCommunity()) {
+    setAlert(ui.alert, walletRequirementText(), true);
     return;
   }
   const returnTo = `${window.location.pathname}${window.location.search}`;
@@ -557,14 +635,15 @@ function startXOAuth() {
 }
 
 async function publishPost() {
-  const ws = walletState();
+  const address = activeWalletAddress();
   const body = String(ui.postInput?.value || "").trim();
   if (!state.token) throw new Error("Open a token community first");
-  if (!ws.signer || !ws.address) throw new Error("Connect wallet first");
+  if (!address) throw new Error("Connect wallet first");
+  if (!walletMatchesCommunity()) throw new Error(walletRequirementText());
   if (!state.xProfile?.username) throw new Error("Authorize X first");
   if (!body) throw new Error("Write a post first");
   const payload = await api.communityPost(state.token, {
-    author: ws.address,
+    author: address,
     ...xProfilePayload(),
     body
   });
@@ -602,17 +681,31 @@ function setupEvents() {
     const button = event.target.closest("button[data-action='like']");
     if (!button) return;
     const postEl = event.target.closest("[data-post-id]");
-    const ws = walletState();
-    if (!ws.signer || !ws.address) {
+    const address = activeWalletAddress();
+    if (!address) {
       setAlert(ui.alert, "Connect wallet first", true);
       return;
     }
     const token = postEl?.dataset?.token || state.token;
+    const previousToken = state.token;
+    const previousLaunch = state.launch;
+    if (!state.token && token) {
+      state.token = token;
+      state.launch = tokenMetaFor(token);
+    }
+    const allowed = walletMatchesCommunity();
+    state.token = previousToken;
+    state.launch = previousLaunch;
+    if (!allowed) {
+      setAlert(ui.alert, isLikelySolanaAddress(token) && !isEvmAddress(token) ? "Connect Phantom for this Pump.fun community" : "Connect an EVM wallet for this EVM community", true);
+      return;
+    }
     const postId = postEl?.dataset?.postId || "";
     const source = state.token ? state.posts : state.globalPosts;
     const current = source.find((post) => post.id === postId);
-    const liked = !(current?.likes || []).includes(String(ws.address).toLowerCase());
-    const payload = await api.communityLike(token, postId, ws.address, liked);
+    const likeKey = activeWalletType() === "evm" ? address.toLowerCase() : address;
+    const liked = !(current?.likes || []).includes(likeKey);
+    const payload = await api.communityLike(token, postId, address, liked);
     const replace = (post) => post.id === payload.post.id ? payload.post : post;
     if (state.token) state.posts = state.posts.map(replace);
     else state.globalPosts = state.globalPosts.map(replace);
@@ -625,9 +718,13 @@ function setupEvents() {
     event.preventDefault();
     const form = event.target.closest(".community-comment-form");
     const postEl = event.target.closest("[data-post-id]");
-    const ws = walletState();
-    if (!ws.signer || !ws.address) {
+    const address = activeWalletAddress();
+    if (!address) {
       setAlert(ui.alert, "Connect wallet first", true);
+      return;
+    }
+    if (!walletMatchesCommunity()) {
+      setAlert(ui.alert, walletRequirementText(), true);
       return;
     }
     if (!state.xProfile?.username) {
@@ -638,7 +735,7 @@ function setupEvents() {
     const body = String(input?.value || "").trim();
     if (!body) return;
     const payload = await api.communityComment(state.token, postEl?.dataset?.postId || "", {
-      author: ws.address,
+      author: address,
       ...xProfilePayload(),
       body
     });
