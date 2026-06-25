@@ -4831,6 +4831,26 @@ button:disabled {
   content: " ^";
 }
 
+.create-pumpfun-options {
+  border: 1px solid rgba(77, 255, 163, 0.22);
+  border-radius: 12px;
+  background: rgba(9, 18, 16, 0.44);
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.create-pumpfun-options[hidden] {
+  display: none;
+}
+
+.create-pumpfun-note {
+  margin: -0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .create-launch-math {
   border: 1px solid rgba(138, 146, 178, 0.34);
   border-radius: 12px;

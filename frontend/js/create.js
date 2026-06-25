@@ -72,6 +72,8 @@ const ui = {
   launchChainLabel: document.getElementById("launchChainLabel"),
   launchChainHint: document.getElementById("launchChainHint"),
   advancedDetails: document.querySelector(".create-advanced"),
+  pumpfunOptions: null,
+  pumpfunDevBuySol: null,
   createForm: document.getElementById("createForm"),
   launchSubmitBtn: document.getElementById("launchSubmitBtn"),
   name: document.getElementById("name"),
@@ -200,6 +202,23 @@ const PUMPVERSE_COMBO_CHOICES = [
 let pendingProfileImageUri = "";
 let walletHub = null;
 let walletControls = null;
+
+function ensurePumpFunOptions() {
+  if (ui.pumpfunOptions) return;
+  const panel = document.createElement("div");
+  panel.className = "create-pumpfun-options";
+  panel.hidden = true;
+  panel.innerHTML = `
+    <label>
+      Pump.fun dev wallet buy (SOL)
+      <input id="pumpfunDevBuySol" type="number" step="any" min="0" placeholder="0" value="0" />
+    </label>
+    <p class="create-pumpfun-note">Optional initial buy from the connected Phantom/dev wallet in the same Pump.fun launch transaction.</p>
+  `;
+  ui.advancedDetails?.insertAdjacentElement("afterend", panel);
+  ui.pumpfunOptions = panel;
+  ui.pumpfunDevBuySol = panel.querySelector("#pumpfunDevBuySol");
+}
 
 function followerMetaText(count) {
   const numeric = Math.max(0, Number(count || 0));
@@ -359,10 +378,12 @@ function renderChainSelector() {
   const quoteOptions = Array.isArray(state.quoteLaunchOptions) ? state.quoteLaunchOptions : [];
   const monadConfigured = supported.has(143);
   const configuredCount = supported.size;
+  ensurePumpFunOptions();
   if (ui.advancedDetails) {
     ui.advancedDetails.hidden = isPumpFunMode();
     if (isPumpFunMode()) ui.advancedDetails.open = false;
   }
+  if (ui.pumpfunOptions) ui.pumpfunOptions.hidden = !isPumpFunMode();
   if (ui.launchChainLabel) {
     ui.launchChainLabel.textContent = isPumpVerseMode()
       ? "PumpVerse"
@@ -1216,6 +1237,7 @@ async function prepareLaunchDetails() {
   let imageUri = ui.image.value.trim();
   const description = composeDescription();
   const initialLiquidityEthInput = ui.devBuyEth.value.trim();
+  const pumpfunDevBuySol = parseNumberInput(ui.pumpfunDevBuySol?.value, 0);
 
   if (!name || !symbol) throw new Error("Coin name and ticker are required");
   if (isPumpFunMode()) {
@@ -1224,6 +1246,9 @@ async function prepareLaunchDetails() {
     }
     if (!ui.image.value.trim()) {
       throw new Error("Pump.fun launches require an uploaded image before launch.");
+    }
+    if (!Number.isFinite(pumpfunDevBuySol) || pumpfunDevBuySol < 0) {
+      throw new Error("Pump.fun dev wallet buy must be 0 SOL or higher.");
     }
   }
   if (!Number.isFinite(creatorAllocationPct) || creatorAllocationPct < 0) {
@@ -1263,6 +1288,8 @@ async function prepareLaunchDetails() {
     totalSupply: ethers.parseUnits(totalSupplyInput, 18),
     creatorBps: BigInt(Math.round(creatorAllocationPct * 100)),
     starterBuyEth: ethers.parseUnits(initialLiquidityEthInput || "0", selectedQuoteAsset().decimals || 18),
+    pumpfunDevBuySol,
+    pumpfunDevBuyLamports: ethers.parseUnits(String(pumpfunDevBuySol || 0), 9),
     pumpfunCreatorWallet: ui.pumpfunCreatorWallet?.value?.trim?.() || ""
   };
 }
@@ -1452,7 +1479,8 @@ async function launchPumpFun(details) {
     imageUri: details.imageUri,
     totalSupply: details.totalSupply?.toString?.() || String(details.totalSupply || ""),
     creatorBps: details.creatorBps?.toString?.() || String(details.creatorBps || "0"),
-    starterBuy: details.starterBuyEth?.toString?.() || "0",
+    starterBuy: details.pumpfunDevBuyLamports?.toString?.() || "0",
+    starterBuySol: String(details.pumpfunDevBuySol || 0),
     creatorWallet: details.pumpfunCreatorWallet || publicKey,
     userPublicKey: publicKey,
     source: "Pump-r"
