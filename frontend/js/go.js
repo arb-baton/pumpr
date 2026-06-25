@@ -1,15 +1,16 @@
 ﻿import { api } from "./api.js?v=20260617pumpfeedfix";
 import {
   defaultUsername,
-  connectWallet,
+  connectSolanaWallet,
   ensureWalletChain,
   ethers,
   getChainOption,
   loadUserProfile,
   parseUiError,
   shortAddress,
+  solanaWalletState,
   walletState
-} from "./core.js?v=20260616freshphantom";
+} from "./core.js";
 import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260616freshphantom";
 import { initSupportWidget } from "./support.js?v=20260611phantomdirect";
 
@@ -254,6 +255,10 @@ function activeAgentOwner() {
   return String(walletState().address || "").trim() || localAgentOwner();
 }
 
+function activePumpFunOwner() {
+  return String(solanaWalletState().address || walletState().solanaAddress || "").trim();
+}
+
 function setAgentSubmitStatus(message = "", type = "info", action = null) {
   if (!ui.agentSubmitStatus) return;
   ui.agentSubmitStatus.textContent = message;
@@ -404,7 +409,7 @@ function renderPumpFunSession(session = state.pumpFunSession) {
   }
 }
 
-async function refreshPumpFunSession(owner = walletState().address || "") {
+async function refreshPumpFunSession(owner = activePumpFunOwner()) {
   const address = String(owner || "").trim();
   if (!address) {
     state.pumpFunSession = { configured: false };
@@ -417,9 +422,9 @@ async function refreshPumpFunSession(owner = walletState().address || "") {
 }
 
 async function requirePumpFunSession() {
-  const ws = walletState();
-  if (!ws?.address) throw new Error("Connect Phantom before using Pump.fun auto-submit");
-  const session = await refreshPumpFunSession(ws.address);
+  const owner = activePumpFunOwner();
+  if (!owner) throw new Error("Connect Phantom Solana before using Pump.fun auto-submit");
+  const session = await refreshPumpFunSession(owner);
   if (!session?.configured) {
     throw new Error("Add your Pump.fun session key for this Phantom wallet before auto-submitting work");
   }
@@ -439,16 +444,15 @@ async function waitForPumpFunSubmissionReceipt({ bountyId, submissionId, publicK
 
 async function connectSolanaForPumpFun() {
   await ensureWalletChain(101);
-  let ws = walletState();
-  if (!ws?.provider || !ws?.address || ws?.chainType !== "solana") {
-    await connectWallet("phantom", { forcePrompt: true });
-    ws = walletState();
+  let solana = solanaWalletState();
+  if (!solana?.provider || !solana?.address) {
+    solana = await connectSolanaWallet({ forcePrompt: true });
   }
-  if (!ws?.provider || !ws?.address) throw new Error("Connect Phantom before publishing to Pump.fun");
-  if (typeof ws.provider.signTransaction !== "function") {
+  if (!solana?.provider || !solana?.address) throw new Error("Connect Phantom Solana before publishing to Pump.fun");
+  if (typeof solana.provider.signTransaction !== "function") {
     throw new Error("Phantom did not expose transaction signing");
   }
-  return { provider: ws.provider, publicKey: ws.address };
+  return { provider: solana.provider, publicKey: solana.address };
 }
 
 async function publishPumpFunSubmission(submissionId = "") {
@@ -1013,7 +1017,7 @@ function renderDetail() {
     renderAgentSelect();
     setAgentSubmitStatus("Could not load agents. Open Agents to create one.", "error");
   });
-  refreshPumpFunSession(walletState().address || "").catch(() => {
+  refreshPumpFunSession(activePumpFunOwner()).catch(() => {
     state.pumpFunSession = { configured: false };
     renderPumpFunSession();
   });
@@ -1105,6 +1109,19 @@ function updateProfileLinks() {
 }
 
 async function initWallet() {
+  ui.signInBtn?.addEventListener("click", async (event) => {
+    if (!isPumpFunBounty()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    try {
+      const { publicKey } = await connectSolanaForPumpFun();
+      setAlert(ui.alert, `Phantom connected: ${shortAddress(publicKey)}`);
+      await refreshPumpFunSession(publicKey);
+    } catch (error) {
+      setAlert(ui.alert, parseUiError(error), true);
+    }
+  }, { capture: true });
+
   state.walletControls = initTopbarWalletProfile({
     signInBtn: ui.signInBtn,
     connectBtn: ui.connectBtn,
@@ -1288,14 +1305,13 @@ async function runAgentSubmit() {
       }
       setAgentSubmitStatus("Submitting to Pump.fun with the configured server session...");
       try {
-        const ws = walletState();
-        if (!ws?.address) throw new Error("Connect Phantom before using Pump.fun auto-submit");
+        const { publicKey } = await connectSolanaForPumpFun();
         await requirePumpFunSession();
-          const attachments = await currentSubmitAttachments(result?.generatedAttachment || null);
-          const direct = await api.pumpfunPreparedSubmit(prepared.id, { owner: ws.address, userPublicKey: ws.address, attachments });
-          if (attachments.some((attachment) => attachment.dataUrl) && !Number(direct?.attachmentCount || 0)) {
-            throw new Error("Pump.fun accepted the submission text but did not attach the selected file. Try a PNG/JPG/WebP/GIF under 5 MB or an MP4/WebM/MOV under 200 MB.");
-          }
+        const attachments = await currentSubmitAttachments(result?.generatedAttachment || null);
+        const direct = await api.pumpfunPreparedSubmit(prepared.id, { owner: publicKey, userPublicKey: publicKey, attachments });
+        if (attachments.some((attachment) => attachment.dataUrl) && !Number(direct?.attachmentCount || 0)) {
+          throw new Error("Pump.fun accepted the submission text but did not attach the selected file. Try a PNG/JPG/WebP/GIF under 5 MB or an MP4/WebM/MOV under 200 MB.");
+        }
         const attachedText = Number(direct?.attachmentCount || 0) ? ` with ${Number(direct.attachmentCount)} evidence file${Number(direct.attachmentCount) === 1 ? "" : "s"}` : "";
         const suffix = direct?.submissionId ? ` (${direct.submissionId})` : "";
         const submissionId = String(direct?.submissionId || "");
@@ -1410,16 +1426,12 @@ async function init() {
     openExternalSubmit().catch((error) => setAlert(ui.alert, parseUiError(error), true));
   });
   ui.savePumpFunSession?.addEventListener("click", async () => {
-    const ws = walletState();
-    if (!ws?.address) {
-      setPumpFunSessionMessage("Connect Phantom first, then save the Pump.fun session for that wallet.", "error");
-      return;
-    }
     try {
+      const { publicKey } = await connectSolanaForPumpFun();
       const authToken = String(ui.pumpFunAuthToken?.value || "").trim();
       const cookieInput = String(ui.pumpFunCookie?.value || "").trim();
       const cookie = cookieInput || (authToken ? `auth_token=${authToken}` : "");
-      const saved = await api.savePumpfunSession({ owner: ws.address, bearer: authToken, cookie });
+      const saved = await api.savePumpfunSession({ owner: publicKey, bearer: authToken, cookie });
       state.pumpFunSession = saved;
       renderPumpFunSession(saved);
       if (ui.pumpFunAuthToken) ui.pumpFunAuthToken.value = "";
@@ -1430,13 +1442,9 @@ async function init() {
     }
   });
   ui.clearPumpFunSession?.addEventListener("click", async () => {
-    const ws = walletState();
-    if (!ws?.address) {
-      setPumpFunSessionMessage("Connect Phantom first.", "error");
-      return;
-    }
     try {
-      state.pumpFunSession = await api.clearPumpfunSession(ws.address);
+      const { publicKey } = await connectSolanaForPumpFun();
+      state.pumpFunSession = await api.clearPumpfunSession(publicKey);
       renderPumpFunSession(state.pumpFunSession);
       setPumpFunSessionMessage("Pump.fun session cleared for this wallet.", "success");
     } catch (error) {

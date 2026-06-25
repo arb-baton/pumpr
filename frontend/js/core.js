@@ -47,6 +47,9 @@ const state = {
   address: "",
   walletLabel: "",
   activeInjectedProvider: null,
+  solanaProvider: null,
+  solanaAddress: "",
+  solanaWalletLabel: "",
   wallets: []
 };
 
@@ -112,6 +115,7 @@ export function getPreferredChainId() {
     const raw = localStorage.getItem(CHAIN_PREFERENCE_KEY);
     const value = Number(raw || 0);
     if (!Number.isFinite(value) || value <= 0) return null;
+    if (Math.floor(value) === 101) return null;
     return Math.floor(value);
   } catch {
     return null;
@@ -155,6 +159,9 @@ async function rebuildWalletProvider() {
 export async function ensureWalletChain(chainId) {
   const target = Number(chainId || 0);
   if (!Number.isFinite(target) || target <= 0) return;
+  if (target === 101) {
+    return;
+  }
   const option = getChainOption(target);
   const injected = state.activeInjectedProvider;
   if (!injected?.request) {
@@ -665,12 +672,87 @@ export async function connectWallet(choice = "", options = {}) {
   return { ...state };
 }
 
+function solanaPublicKeyText(value) {
+  return String(value?.toBase58?.() || value || "").trim();
+}
+
+export function getSolanaProvider() {
+  if (window.phantom?.solana?.isPhantom) return window.phantom.solana;
+  if (window.solana?.isPhantom) return window.solana;
+  return window.phantom?.solana || window.solana || null;
+}
+
+export function solanaWalletState() {
+  return {
+    provider: state.solanaProvider,
+    address: state.solanaAddress,
+    publicKey: state.solanaAddress,
+    walletLabel: state.solanaWalletLabel,
+    chainType: state.solanaAddress ? "solana" : ""
+  };
+}
+
+export async function connectSolanaWallet(options = {}) {
+  const silent = Boolean(options?.silent);
+  const provider = getSolanaProvider();
+  if (!provider?.connect) {
+    if (silent) return null;
+    throw new Error("Install or enable Phantom with a Solana account before using Pump.fun.");
+  }
+
+  let response = null;
+  try {
+    response = await provider.connect(silent ? { onlyIfTrusted: true } : undefined);
+  } catch (error) {
+    if (silent) return null;
+    throw error;
+  }
+
+  const publicKey = solanaPublicKeyText(response?.publicKey || provider.publicKey);
+  if (!publicKey) {
+    if (silent) return null;
+    throw new Error("No Solana wallet selected");
+  }
+
+  state.solanaProvider = provider;
+  state.solanaAddress = publicKey;
+  state.solanaWalletLabel = provider.isPhantom ? "Phantom" : "Solana wallet";
+
+  if (!walletListenersAttached.has(provider)) {
+    provider.on?.("accountChanged", (publicKeyValue) => {
+      state.solanaAddress = solanaPublicKeyText(publicKeyValue || provider.publicKey);
+      window.dispatchEvent(new CustomEvent("etherpump:solanaWalletChanged", { detail: solanaWalletState() }));
+    });
+    provider.on?.("disconnect", () => {
+      state.solanaProvider = null;
+      state.solanaAddress = "";
+      state.solanaWalletLabel = "";
+      window.dispatchEvent(new CustomEvent("etherpump:solanaWalletChanged", { detail: solanaWalletState() }));
+    });
+    walletListenersAttached.add(provider);
+  }
+
+  return solanaWalletState();
+}
+
+export function disconnectSolanaWallet() {
+  try {
+    state.solanaProvider?.disconnect?.();
+  } catch {
+    // optional wallet API
+  }
+  state.solanaProvider = null;
+  state.solanaAddress = "";
+  state.solanaWalletLabel = "";
+}
+
 export function disconnectWallet() {
   state.provider = null;
   state.signer = null;
   state.address = "";
   state.walletLabel = "";
   state.activeInjectedProvider = null;
+  disconnectSolanaWallet();
   saveWalletSession({ connected: false, choice: "", address: "" });
 }
 
@@ -688,7 +770,11 @@ export async function restoreWalletFromSession(choice = "") {
 }
 
 export function walletState() {
-  return { ...state };
+  return {
+    ...state,
+    chainType: state.solanaAddress && !state.signer ? "solana" : state.signer ? "evm" : "",
+    publicKey: state.solanaAddress || state.address
+  };
 }
 
 export function defaultUsername(address) {
