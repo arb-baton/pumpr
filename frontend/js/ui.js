@@ -1,11 +1,13 @@
 import {
   connectWallet,
+  defaultUsername,
   disconnectWallet,
   discoverWallets,
   ethers,
   fetchEthUsdPrice,
   getChainOption,
   getSavedWalletChoice,
+  loadUserProfile,
   restoreWalletFromSession,
   shortAddress,
   walletState,
@@ -484,7 +486,7 @@ function showWalletPickerModal(wallets = []) {
   });
 }
 
-export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelEl, alertEl, onConnected } = {}) {
+export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelEl, alertEl, onConnected, onDisconnected } = {}) {
   if (selectEl) {
     selectEl.style.display = "none";
     selectEl.setAttribute("aria-hidden", "true");
@@ -499,8 +501,9 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
     if (onConnected) await onConnected();
   };
 
-  const notifyDisconnected = () => {
+  const notifyDisconnected = async () => {
     if (disconnectBtn?.style) disconnectBtn.style.display = "none";
+    if (onDisconnected) await onDisconnected();
   };
 
   (async () => {
@@ -536,10 +539,10 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
     }
   };
 
-  const doDisconnect = () => {
+  const doDisconnect = async () => {
     disconnectWallet();
     setWalletLabel(labelEl);
-    notifyDisconnected();
+    await notifyDisconnected();
     setAlert(alertEl, "Wallet disconnected");
   };
 
@@ -550,4 +553,183 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
     connect: doConnect,
     disconnect: doDisconnect
   };
+}
+
+function sharedWalletMarkup() {
+  return `
+    <div class="wallet-hub-wrap">
+      <button id="walletHubBtn" class="wallet-hub-trigger" style="display:none" type="button" aria-expanded="false" aria-controls="walletHubMenu">
+        <span class="wallet-hub-dot" aria-hidden="true"></span>
+        <span id="walletHubBalance">0 SOL</span>
+        <span class="wallet-hub-caret">v</span>
+      </button>
+      <div id="walletHubMenu" class="wallet-hub-menu" role="menu">
+        <p class="wallet-hub-label">Balance</p>
+        <h3 id="walletHubBalanceLarge">0 SOL</h3>
+        <p class="wallet-hub-sub"><span id="walletHubNative">0 SOL</span> available</p>
+        <button id="walletHubAddressBtn" class="wallet-hub-address" type="button">Not connected</button>
+        <div class="wallet-hub-grid">
+          <a id="walletHubTradeLink" class="wallet-hub-card" href="/">
+            <span class="wallet-hub-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h12"></path><path d="M13 4l3 3-3 3"></path><path d="M20 17H8"></path><path d="M11 14l-3 3 3 3"></path></svg></span>
+            <span class="wallet-hub-copy"><strong>Browse</strong><span>Pump-r tokens</span></span>
+          </a>
+          <a id="walletHubHistoryLink" class="wallet-hub-card" href="/profile">
+            <span class="wallet-hub-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l2.5 2.5"></path></svg></span>
+            <span class="wallet-hub-copy"><strong>Profile</strong><span>Wallet activity</span></span>
+          </a>
+        </div>
+      </div>
+    </div>
+    <button id="profileMenuBtn" class="profile-trigger" style="display:none" type="button" aria-expanded="false" aria-controls="profileMenu">
+      <span class="profile-avatar" id="profileAvatar">PR</span>
+      <span class="profile-name" id="profileMenuName">Guest</span>
+      <span class="profile-chevron">v</span>
+    </button>
+    <div id="profileMenu" class="profile-menu">
+      <div class="profile-menu-header">
+        <span class="profile-avatar large" id="profileAvatarLarge">PR</span>
+        <div class="profile-menu-identity">
+          <div class="profile-menu-name-row"><strong id="profileMenuNameLarge">Guest</strong></div>
+          <small id="profileMenuMeta">Connected with Phantom</small>
+        </div>
+      </div>
+      <a class="profile-menu-link profile-menu-item" id="profileNav" href="/profile">
+        <span class="profile-menu-item-left"><span class="profile-menu-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.2" r="3.7"></circle><path d="M4.6 20c1.8-3.9 4.4-5.9 7.4-5.9s5.6 2 7.4 5.9"></path></svg></span><span>View profile</span></span>
+        <span class="profile-menu-item-arrow">></span>
+      </a>
+      <button class="profile-menu-link profile-menu-btn profile-menu-item profile-menu-item-danger" id="menuLogoutBtn" type="button">Log out</button>
+    </div>
+  `;
+}
+
+function setSharedAvatar(node, name = "", imageUri = "") {
+  if (!node) return;
+  const label = String(name || "PR").slice(0, 2).toUpperCase() || "PR";
+  if (imageUri) {
+    node.textContent = "";
+    node.classList.add("with-image");
+    node.style.backgroundImage = `url("${imageUri}")`;
+  } else {
+    node.classList.remove("with-image");
+    node.style.backgroundImage = "";
+    node.textContent = label;
+  }
+}
+
+export function initTopbarWalletProfile({
+  signInBtn,
+  connectBtn,
+  disconnectBtn,
+  walletSelect,
+  walletLabel,
+  alertEl,
+  onChange
+} = {}) {
+  const topActions = signInBtn?.closest(".top-actions") || document.querySelector(".top-actions");
+  if (!topActions) {
+    return initWalletControls({ selectEl: walletSelect, connectBtn, disconnectBtn, labelEl: walletLabel, alertEl, onConnected: onChange });
+  }
+
+  if (!document.getElementById("walletHubBtn")) {
+    signInBtn?.insertAdjacentHTML("afterend", sharedWalletMarkup());
+  }
+
+  const els = {
+    walletHubBtn: document.getElementById("walletHubBtn"),
+    walletHubMenu: document.getElementById("walletHubMenu"),
+    walletHubBalance: document.getElementById("walletHubBalance"),
+    walletHubBalanceLarge: document.getElementById("walletHubBalanceLarge"),
+    walletHubNative: document.getElementById("walletHubNative"),
+    walletHubAddressBtn: document.getElementById("walletHubAddressBtn"),
+    walletHubTradeLink: document.getElementById("walletHubTradeLink"),
+    walletHubHistoryLink: document.getElementById("walletHubHistoryLink"),
+    profileMenuBtn: document.getElementById("profileMenuBtn"),
+    profileMenu: document.getElementById("profileMenu"),
+    profileMenuName: document.getElementById("profileMenuName"),
+    profileMenuNameLarge: document.getElementById("profileMenuNameLarge"),
+    profileMenuMeta: document.getElementById("profileMenuMeta"),
+    profileAvatar: document.getElementById("profileAvatar"),
+    profileAvatarLarge: document.getElementById("profileAvatarLarge"),
+    profileNav: document.getElementById("profileNav"),
+    menuLogoutBtn: document.getElementById("menuLogoutBtn")
+  };
+
+  let walletHub = null;
+  const setProfileOpen = (open) => {
+    if (!els.profileMenu || !els.profileMenuBtn) return;
+    els.profileMenu.classList.toggle("open", Boolean(open));
+    els.profileMenuBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+
+  const update = async () => {
+    const ws = walletState();
+    const connected = Boolean(ws.signer && ws.address);
+    if (signInBtn) signInBtn.style.display = connected ? "none" : "inline-flex";
+    if (els.walletHubBtn) els.walletHubBtn.style.display = connected ? "inline-flex" : "none";
+    if (els.profileMenuBtn) els.profileMenuBtn.style.display = connected ? "inline-flex" : "none";
+    setWalletLabel(walletLabel);
+    if (!connected) {
+      setProfileOpen(false);
+      walletHub?.setOpen(false);
+      if (typeof onChange === "function") await onChange();
+      return;
+    }
+    const profile = loadUserProfile(ws.address);
+    const name = profile?.username || defaultUsername(ws.address) || shortAddress(ws.address);
+    const imageUri = profile?.imageUri || "";
+    if (els.profileMenuName) els.profileMenuName.textContent = name;
+    if (els.profileMenuNameLarge) els.profileMenuNameLarge.textContent = name;
+    if (els.profileMenuMeta) els.profileMenuMeta.textContent = shortAddress(ws.address);
+    if (els.profileNav) els.profileNav.href = `/profile?address=${encodeURIComponent(ws.address)}`;
+    setSharedAvatar(els.profileAvatar, name, imageUri);
+    setSharedAvatar(els.profileAvatarLarge, name, imageUri);
+    walletHub?.refresh();
+    if (typeof onChange === "function") await onChange();
+  };
+
+  const controls = initWalletControls({
+    selectEl: walletSelect,
+    connectBtn,
+    disconnectBtn,
+    labelEl: walletLabel,
+    alertEl,
+    onConnected: update,
+    onDisconnected: update
+  });
+
+  walletHub = initWalletHubMenu({
+    triggerEl: els.walletHubBtn,
+    menuEl: els.walletHubMenu,
+    balanceEl: els.walletHubBalance,
+    balanceLargeEl: els.walletHubBalanceLarge,
+    nativeEl: els.walletHubNative,
+    addressBtnEl: els.walletHubAddressBtn,
+    tradeLinkEl: els.walletHubTradeLink,
+    historyLinkEl: els.walletHubHistoryLink,
+    alertEl,
+    onOpen: () => setProfileOpen(false)
+  });
+
+  signInBtn?.addEventListener("click", async () => {
+    if (walletState().signer) return;
+    await controls.connect();
+    await update();
+  });
+  els.profileMenuBtn?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    walletHub?.setOpen(false);
+    setProfileOpen(!els.profileMenu?.classList.contains("open"));
+  });
+  document.addEventListener("click", (event) => {
+    if (!els.profileMenu || !els.profileMenuBtn) return;
+    if (els.profileMenu.contains(event.target) || els.profileMenuBtn.contains(event.target)) return;
+    setProfileOpen(false);
+  });
+  els.menuLogoutBtn?.addEventListener("click", () => {
+    controls.disconnect();
+    update();
+  });
+
+  update();
+  return { ...controls, refresh: update, walletHub };
 }

@@ -1,6 +1,7 @@
-import { api } from "./api.js";
+﻿import { api } from "./api.js?v=20260617pumpfeedfix";
 import {
   defaultUsername,
+  connectWallet,
   ensureWalletChain,
   ethers,
   getChainOption,
@@ -8,8 +9,9 @@ import {
   parseUiError,
   shortAddress,
   walletState
-} from "./core.js";
-import { initWalletControls, setAlert, setWalletLabel } from "./ui.js";
+} from "./core.js?v=20260616freshphantom";
+import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260616freshphantom";
+import { initSupportWidget } from "./support.js?v=20260611phantomdirect";
 
 const ui = {
   alert: document.getElementById("alert"),
@@ -27,20 +29,37 @@ const ui = {
   deliverablesCard: document.getElementById("goDeliverablesCard"),
   deliverables: document.getElementById("goDeliverables"),
   submitWorkBtn: document.getElementById("goSubmitWorkBtn"),
-  createBountyBtn: document.getElementById("goCreateBountyBtn"),
-  bountyModal: document.getElementById("goBountyModal"),
-  bountyClose: document.getElementById("goBountyClose"),
-  bountyCancelBtns: Array.from(document.querySelectorAll(".goBountyCancel")),
-  bountyForm: document.getElementById("goBountyForm"),
-  bountyTitle: document.getElementById("goBountyTitle"),
-  bountyDescription: document.getElementById("goBountyDescription"),
-  bountyDeliverables: document.getElementById("goBountyDeliverables"),
-  bountyReward: document.getElementById("goBountyReward"),
-  bountyToken: document.getElementById("goBountyToken"),
-  bountyImage: document.getElementById("goBountyImage"),
-  bountyFeature: document.getElementById("goBountyFeature"),
-  bountyDays: document.getElementById("goBountyDays"),
-  bountyTokenAmount: document.getElementById("goBountyTokenAmount"),
+  externalSubmitBtn: document.getElementById("goExternalSubmitBtn"),
+  agentSubmitBox: document.getElementById("goAgentSubmitBox"),
+  agentSelect: document.getElementById("goAgentSelect"),
+  runAgentBtn: document.getElementById("goRunAgentBtn"),
+  agentSubmitStatus: document.getElementById("goAgentSubmitStatus"),
+  pumpFunBridgeBox: document.getElementById("goPumpFunBridgeBox"),
+  pumpFunBridgeBookmarklet: document.getElementById("goPumpFunBridgeBookmarklet"),
+  pumpFunBridgeCopy: document.getElementById("goPumpFunBridgeCopy"),
+  pumpFunBridgeOpen: document.getElementById("goPumpFunBridgeOpen"),
+  pumpFunBridgeId: document.getElementById("goPumpFunBridgeId"),
+  pumpFunSessionBox: document.getElementById("goPumpFunSessionBox"),
+  pumpFunSessionStatus: document.getElementById("goPumpFunSessionStatus"),
+  pumpFunAuthToken: document.getElementById("goPumpFunAuthToken"),
+  pumpFunCookie: document.getElementById("goPumpFunCookie"),
+  pumpFunSessionMsg: document.getElementById("goPumpFunSessionMsg"),
+  savePumpFunSession: document.getElementById("goSavePumpFunSession"),
+  clearPumpFunSession: document.getElementById("goClearPumpFunSession"),
+  createBountyBtn: document.getElementById("goCreateBountyBtn") || document.getElementById("goCreateTaskBtn"),
+  bountyModal: document.getElementById("goBountyModal") || document.getElementById("goTaskModal"),
+  bountyClose: document.getElementById("goBountyClose") || document.getElementById("goTaskClose"),
+  bountyCancelBtns: Array.from(document.querySelectorAll(".goBountyCancel, .goTaskCancel")),
+  bountyForm: document.getElementById("goBountyForm") || document.getElementById("goTaskForm"),
+  bountyTitle: document.getElementById("goBountyTitle") || document.getElementById("goTaskTitle"),
+  bountyDescription: document.getElementById("goBountyDescription") || document.getElementById("goTaskDescription"),
+  bountyDeliverables: document.getElementById("goBountyDeliverables") || document.getElementById("goTaskDeliverables"),
+  bountyReward: document.getElementById("goBountyReward") || document.getElementById("goTaskReward"),
+  bountyToken: document.getElementById("goBountyToken") || document.getElementById("goTaskToken"),
+  bountyImage: document.getElementById("goBountyImage") || document.getElementById("goTaskImage"),
+  bountyFeature: document.getElementById("goBountyFeature") || document.getElementById("goTaskFeature"),
+  bountyDays: document.getElementById("goBountyDays") || document.getElementById("goTaskDays"),
+  bountyTokenAmount: document.getElementById("goBountyTokenAmount") || document.getElementById("goTaskTokenAmount"),
   escrowStatus: document.getElementById("goEscrowStatus"),
   detailsStep: document.getElementById("goDetailsStep"),
   rewardsStep: document.getElementById("goRewardsStep"),
@@ -58,6 +77,10 @@ const ui = {
   submitFile: document.getElementById("goSubmitFile"),
   submitChooseFile: document.getElementById("goSubmitChooseFile"),
   submitFileName: document.getElementById("goSubmitFileName"),
+  agentEvidenceFile: document.getElementById("goAgentEvidenceFile"),
+  agentEvidenceChoose: document.getElementById("goAgentEvidenceChoose"),
+  agentEvidenceName: document.getElementById("goAgentEvidenceName"),
+  agentGenerateImage: document.getElementById("goAgentGenerateImage"),
   submitAgree: document.getElementById("goSubmitAgree"),
   submitIdentity: document.getElementById("goSubmitIdentity"),
   submitBountyName: document.getElementById("goSubmitBountyName"),
@@ -69,6 +92,8 @@ const ui = {
   detailCreator: document.getElementById("goDetailCreator"),
   detailPosted: document.getElementById("goDetailPosted"),
   detailDescription: document.getElementById("goDetailDescription"),
+  detailMediaCard: document.getElementById("goDetailMediaCard"),
+  detailMedia: document.getElementById("goDetailMedia"),
   submissionCount: document.getElementById("goSubmissionCount"),
   submissionList: document.getElementById("goSubmissionList"),
   signInBtn: document.getElementById("signInBtn"),
@@ -91,6 +116,9 @@ const state = {
   goConfig: { payoutChains: [] },
   activeBounty: null,
   activeSubmissions: [],
+  agents: [],
+  preparedPumpFunSubmission: null,
+  pumpFunSession: null,
   walletControls: null
 };
 
@@ -206,6 +234,309 @@ function currentIdentity() {
   const profile = address ? loadUserProfile(address) : null;
   const name = profile?.username || (address ? defaultUsername(address) : "guest");
   return { address, name };
+}
+
+function localAgentOwner() {
+  try {
+    const key = "pumpr.agent.claimOwner.v1";
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const random = crypto?.getRandomValues ? Array.from(crypto.getRandomValues(new Uint8Array(8)), (byte) => byte.toString(16).padStart(2, "0")).join("") : String(Date.now().toString(36));
+    const owner = `agent-claim-${random}`;
+    localStorage.setItem(key, owner);
+    return owner;
+  } catch {
+    return `agent-claim-${Date.now().toString(36)}`;
+  }
+}
+
+function activeAgentOwner() {
+  return String(walletState().address || "").trim() || localAgentOwner();
+}
+
+function setAgentSubmitStatus(message = "", type = "info", action = null) {
+  if (!ui.agentSubmitStatus) return;
+  ui.agentSubmitStatus.textContent = message;
+  if (action?.href) {
+    const link = document.createElement("a");
+    link.href = action.href;
+    link.target = "_blank";
+    link.rel = "noreferrer noopener";
+    link.textContent = action.label || "Open on Pump.fun";
+    link.className = "go-agent-status-link";
+    ui.agentSubmitStatus.append(document.createElement("br"), link);
+  }
+  ui.agentSubmitStatus.classList.toggle("success", type === "success");
+  ui.agentSubmitStatus.classList.toggle("error", type === "error");
+}
+
+function latestSubmissionText() {
+  const latest = (state.activeSubmissions || [])
+    .filter((row) => row && row.bountyId === state.activeBounty?.id)
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))[0];
+  if (!latest) return "";
+  const links = Array.isArray(latest.links) && latest.links.length ? `\n\nProof / links:\n${latest.links.join("\n")}` : "";
+  return `${latest.body || ""}${links}`.trim();
+}
+
+function latestSubmission() {
+  return (state.activeSubmissions || [])
+    .filter((row) => row && row.bountyId === state.activeBounty?.id)
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))[0] || null;
+}
+
+async function copyText(text = "") {
+  const value = String(text || "").trim();
+  if (!value) return false;
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Could not read selected file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadEvidenceAttachment(file) {
+  if (!file) return null;
+  const dataUrl = await readFileAsDataUrl(file);
+  const upload = await api.uploadFile(dataUrl);
+  const url = String(upload?.publicUrl || upload?.url || "").trim();
+  if (!url) throw new Error("Evidence image uploaded, but no URL was returned");
+  return {
+    url,
+    name: String(file.name || "evidence").slice(0, 160),
+    type: String(upload?.mime || file.type || "application/octet-stream").slice(0, 120)
+  };
+}
+
+async function currentSubmitAttachments(generatedAttachment = null) {
+  const attachments = [];
+  const file = ui.agentEvidenceFile?.files?.[0] || ui.submitFile?.files?.[0] || null;
+  if (file) {
+    setAgentSubmitStatus(`Uploading evidence file ${file.name || "attachment"} to Pump.fun...`);
+    attachments.push({
+      filename: String(file.name || "evidence").slice(0, 180),
+      contentType: String(file.type || "application/octet-stream").slice(0, 120),
+      size: Number(file.size || 0),
+      dataUrl: await readFileAsDataUrl(file)
+    });
+  } else if (generatedAttachment?.dataUrl) {
+    const generatedMode = "task-scene image";
+    setAgentSubmitStatus(`Uploading OpenAI generated ${generatedMode} to Pump.fun...`);
+    attachments.push({
+      filename: String(generatedAttachment.filename || "pumpr-task-scene.png").slice(0, 180),
+      contentType: String(generatedAttachment.contentType || "image/png").slice(0, 120),
+      size: Number(generatedAttachment.size || 0),
+      dataUrl: String(generatedAttachment.dataUrl || "")
+    });
+  }
+  const existingMediaUrl = String(ui.submitMedia?.value || "").trim();
+  if (existingMediaUrl) {
+    attachments.push({ url: existingMediaUrl, filename: "Evidence link", contentType: "text/uri-list" });
+  }
+  return attachments.slice(0, 8);
+}
+
+async function loadSolanaWeb3() {
+  if (window.solanaWeb3?.Transaction) return window.solanaWeb3;
+  await new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-solana-web3="true"]');
+    if (existing) {
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", reject, { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "/vendor/solana-web3.iife.min.js";
+    script.async = true;
+    script.dataset.solanaWeb3 = "true";
+    script.onload = resolve;
+    script.onerror = () => reject(new Error("Could not load Solana web3 library"));
+    document.head.appendChild(script);
+  });
+  if (!window.solanaWeb3?.Transaction) throw new Error("Solana web3 library did not initialize");
+  return window.solanaWeb3;
+}
+
+function base64ToBytes(value = "") {
+  const binary = atob(String(value || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function delay(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function setPumpFunSessionMessage(message = "", tone = "") {
+  if (!ui.pumpFunSessionMsg) return;
+  ui.pumpFunSessionMsg.textContent = message;
+  ui.pumpFunSessionMsg.classList.toggle("success", tone === "success");
+  ui.pumpFunSessionMsg.classList.toggle("error", tone === "error");
+}
+
+function renderPumpFunSession(session = state.pumpFunSession) {
+  const configured = Boolean(session?.configured);
+  if (ui.pumpFunSessionStatus) {
+    ui.pumpFunSessionStatus.textContent = configured
+      ? `Ready for ${shortAddress(session.sessionAddress || session.owner || "")}`
+      : "Required before auto-submit";
+  }
+  if (ui.runAgentBtn && state.activeBounty?.source === "Pump.fun") {
+    ui.runAgentBtn.textContent = configured ? "Run agent & auto submit" : "Add Pump.fun session first";
+    ui.runAgentBtn.classList.toggle("is-disabled-soft", !configured);
+  }
+}
+
+async function refreshPumpFunSession(owner = walletState().address || "") {
+  const address = String(owner || "").trim();
+  if (!address) {
+    state.pumpFunSession = { configured: false };
+    renderPumpFunSession();
+    return state.pumpFunSession;
+  }
+  state.pumpFunSession = await api.pumpfunSession(address).catch(() => ({ configured: false }));
+  renderPumpFunSession();
+  return state.pumpFunSession;
+}
+
+async function requirePumpFunSession() {
+  const ws = walletState();
+  if (!ws?.address) throw new Error("Connect Phantom before using Pump.fun auto-submit");
+  const session = await refreshPumpFunSession(ws.address);
+  if (!session?.configured) {
+    throw new Error("Add your Pump.fun session key for this Phantom wallet before auto-submitting work");
+  }
+  return session;
+}
+
+async function waitForPumpFunSubmissionReceipt({ bountyId, submissionId, publicKey, resumeSignature }) {
+  let latest = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (attempt > 0) await delay(1200 + attempt * 450);
+    latest = await api.pumpfunBountyFeeTransaction({ bountyId, submissionId, userPublicKey: publicKey, owner: publicKey });
+    if (latest?.existingReceipt) return latest;
+    setAgentSubmitStatus(`Waiting for Pump.fun fee receipt... ${attempt + 1}/8`);
+  }
+  return latest || { resumeSignature };
+}
+
+async function connectSolanaForPumpFun() {
+  await ensureWalletChain(101);
+  let ws = walletState();
+  if (!ws?.provider || !ws?.address || ws?.chainType !== "solana") {
+    await connectWallet("phantom", { forcePrompt: true });
+    ws = walletState();
+  }
+  if (!ws?.provider || !ws?.address) throw new Error("Connect Phantom before publishing to Pump.fun");
+  if (typeof ws.provider.signTransaction !== "function") {
+    throw new Error("Phantom did not expose transaction signing");
+  }
+  return { provider: ws.provider, publicKey: ws.address };
+}
+
+async function publishPumpFunSubmission(submissionId = "") {
+  const bountyId = state.activeBounty?.id || "";
+  if (!bountyId || !submissionId) throw new Error("Pump.fun publish is missing bounty or submission id");
+  const { provider, publicKey } = await connectSolanaForPumpFun();
+  const solanaWeb3 = await loadSolanaWeb3();
+  setAgentSubmitStatus("Open Phantom to sign the Pump.fun submission fee...");
+  await requirePumpFunSession();
+  const fee = await api.pumpfunBountyFeeTransaction({ bountyId, submissionId, userPublicKey: publicKey, owner: publicKey });
+  if (fee?.existingReceipt && fee?.resumeSignature) {
+    setAgentSubmitStatus("Pump.fun fee receipt already exists. Resuming publish...");
+    return api.pumpfunBountyPublish({ bountyId, submissionId, signature: fee.resumeSignature, owner: publicKey, userPublicKey: publicKey });
+  }
+  const transactionBase64 = String(fee?.transactionBase64 || "");
+  if (!transactionBase64) throw new Error("Pump.fun did not return a submission-fee transaction");
+  const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
+  const signed = await provider.signTransaction(transaction);
+  setAgentSubmitStatus("Broadcasting the signed Pump.fun submission fee...");
+  const sent = await api.solanaSendTransaction({
+    signedTransactionBase64: bytesToBase64(signed.serialize({ requireAllSignatures: false, verifySignatures: false })),
+    rpcUrl: fee.rpcUrl,
+    blockhash: fee.blockhash,
+    lastValidBlockHeight: fee.lastValidBlockHeight
+  });
+  const signature = String(sent?.signature || "");
+  if (!signature) throw new Error("Solana transaction did not return a signature");
+  const receipt = await waitForPumpFunSubmissionReceipt({
+    bountyId,
+    submissionId,
+    publicKey,
+    resumeSignature: fee.resumeSignature
+  });
+  if (!receipt?.existingReceipt) {
+    throw new Error("Pump.fun fee transaction confirmed, but the submission fee receipt is not visible yet. Wait a few seconds and run submit again.");
+  }
+  setAgentSubmitStatus("Publishing the submission on Pump.fun...");
+  try {
+    return await api.pumpfunBountyPublish({ bountyId, submissionId, signature, owner: publicKey, userPublicKey: publicKey });
+  } catch (error) {
+    const message = String(error?.message || "");
+    const resumeSignature = String(receipt?.resumeSignature || fee?.resumeSignature || "");
+    if (resumeSignature && message.includes("SUBMISSION_FEE_RECEIPT_MISSING")) {
+      setAgentSubmitStatus("Pump.fun is still catching up. Retrying publish from existing fee receipt...");
+      await delay(1800);
+      return api.pumpfunBountyPublish({ bountyId, submissionId, signature: resumeSignature, owner: publicKey, userPublicKey: publicKey });
+    }
+    throw error;
+  }
+}
+
+function preparedPumpFunText(prepared = state.preparedPumpFunSubmission) {
+  const body = String(prepared?.body || "").trim();
+  const links = Array.isArray(prepared?.links) ? prepared.links.map((link) => String(link || "").trim()).filter(Boolean) : [];
+  return [body, links.length ? `Links:\n${links.map((link) => `- ${link}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
+}
+
+function renderPumpFunBridge(prepared = null, sourceUrl = "") {
+  state.preparedPumpFunSubmission = prepared || null;
+  if (!ui.pumpFunBridgeBox) return;
+  const hasPrepared = Boolean(prepared?.id);
+  ui.pumpFunBridgeBox.hidden = !hasPrepared;
+  if (!hasPrepared) return;
+  if (ui.pumpFunBridgeBookmarklet) {
+    ui.pumpFunBridgeBookmarklet.href = "#";
+    ui.pumpFunBridgeBookmarklet.title = "Copy the AI-generated Pump.fun submission";
+  }
+  if (ui.pumpFunBridgeId) {
+    ui.pumpFunBridgeId.textContent = prepared?.id
+      ? `Prepared submission ${prepared.id}`
+      : "Copy/open fallback is available if direct submit fails.";
+  }
+  if (ui.pumpFunBridgeOpen) {
+    ui.pumpFunBridgeOpen.dataset.sourceUrl = sourceUrl || prepared.sourceUrl || "";
+  }
+}
+
+function renderAgentSelect() {
+  if (!ui.agentSelect) return;
+  ui.agentSelect.innerHTML = state.agents.length
+    ? state.agents.map((agent) => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name)}</option>`).join("")
+    : `<option value="">Create an agent first</option>`;
+}
+
+async function loadAgentsForSubmit() {
+  const payload = await api.agents().catch(() => ({ agents: [] }));
+  state.agents = Array.isArray(payload.agents) ? payload.agents : [];
+  renderAgentSelect();
 }
 
 function payoutChain(chainId) {
@@ -349,11 +680,12 @@ function requestXAuthorization() {
 function mediaMarkup(url, title = "") {
   const src = String(url || "").trim();
   if (!src) return "";
+  if (!isMediaUrl(src)) return "";
   const isVideo = /\.(mp4|webm|ogg)(\?|#|$)/i.test(src);
   if (isVideo) {
     return `<video class="go-card-media" src="${escapeHtml(src)}" controls playsinline></video>`;
   }
-  return `<img class="go-card-media" src="${escapeHtml(src)}" alt="${escapeHtml(title || "GO media")}" />`;
+  return `<img class="go-card-media" src="${escapeHtml(src)}" alt="${escapeHtml(String(title || "GO media").slice(0, 120))}" loading="lazy" />`;
 }
 
 function linksMarkup(links = []) {
@@ -371,8 +703,94 @@ function linksMarkup(links = []) {
   `;
 }
 
+function isMediaUrl(url = "") {
+  const text = String(url || "").trim();
+  return /\.(png|jpe?g|webp|gif|mp4|webm|mov|ogg)(\?|#|$)/i.test(text) || /\/bounties\/.+\/[^/?#]+$/i.test(text);
+}
+
+function firstMediaUrl(value = {}) {
+  const direct = String(value.mediaUrl || "").trim();
+  if (direct && isMediaUrl(direct)) return direct;
+  const links = Array.isArray(value.links) ? value.links : [];
+  return links.map((row) => String(row || "").trim()).find(isMediaUrl) || "";
+}
+
+function bodyWithoutRawLinks(text = "") {
+  return String(text || "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function compactSubmissionBody(text = "") {
+  return bodyWithoutRawLinks(text)
+    .replace(/\s+/g, " ")
+    .replace(/\s+(Summary:|Work completed:|Proof \/ links:|Deliverables matched:)/g, "\n\n$1")
+    .trim();
+}
+
+function splitSubmissionSections(text = "") {
+  const source = compactSubmissionBody(text);
+  const labels = [
+    "Submission for:",
+    "Summary:",
+    "Work completed:",
+    "Proof / links:",
+    "Deliverables matched:",
+  ];
+  const pattern = new RegExp(`(${labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
+  const pieces = source.split(pattern).filter((part) => part.trim());
+  const sections = [];
+  for (let index = 0; index < pieces.length; index += 1) {
+    const part = pieces[index].trim();
+    if (labels.includes(part)) {
+      sections.push({ label: part.replace(/:$/, ""), value: String(pieces[index + 1] || "").trim() });
+      index += 1;
+    } else if (part) {
+      sections.push({ label: "", value: part });
+    }
+  }
+  return sections.filter((section) => section.value).slice(0, 10);
+}
+
+function formatSubmissionSectionValue(label = "", value = "") {
+  const clean = String(value || "").trim();
+  if (!clean) return "";
+  const listy = /^(Work completed|Deliverables matched|Proof \/ links|AI-generated)/i.test(label);
+  if (listy) {
+    const rows = clean
+      .replace(/\s+-\s+/g, "\n- ")
+      .replace(/\s+(\d+\.)\s+/g, "\n$1 ")
+      .split(/\n+/)
+      .map((row) => row.trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    if (rows.length > 1) {
+      return `<ul>${rows.map((row) => `<li>${escapeHtml(row.replace(/^[-â€¢]\s*/, "").replace(/^\d+\.\s*/, ""))}</li>`).join("")}</ul>`;
+    }
+  }
+  return `<p>${escapeHtml(clean)}</p>`;
+}
+
+function submissionBodyMarkup(body = "") {
+  const sections = splitSubmissionSections(body);
+  if (!sections.length) return `<p>${escapeHtml(compactSubmissionBody(body))}</p>`;
+  return `
+    <div class="go-submission-body">
+      ${sections.map((section) => `
+        <section class="${section.label ? "" : "is-plain"}">
+          ${section.label ? `<h4>${escapeHtml(section.label)}</h4>` : ""}
+          ${formatSubmissionSectionValue(section.label, section.value)}
+        </section>
+      `).join("")}
+    </div>
+  `;
+}
+
 function bountyCard(bounty) {
   const href = `/go/${encodeURIComponent(bounty.id)}`;
+  const creatorLabel = bounty.creatorName || shortAddress(bounty.creatorSolana || bounty.creator);
   return `
     <article class="go-card go-bounty-card" data-bounty-id="${escapeHtml(bounty.id)}">
       ${mediaMarkup(bounty.imageUri, bounty.title)}
@@ -380,10 +798,11 @@ function bountyCard(bounty) {
         <div class="go-card-top">
           <span class="go-status-pill">${escapeHtml(bounty.status || "open")}</span>
           <span class="go-token-pill">$${escapeHtml(bounty.tokenSymbol || "TOKEN")} MC</span>
+          ${bounty.source ? `<span class="go-source-pill">${escapeHtml(bounty.source)}</span>` : ""}
         </div>
         <a class="go-card-title" href="${href}">${escapeHtml(bounty.title)}</a>
         <p>${escapeHtml(bounty.description || "")}</p>
-        <div class="go-card-author"><span class="go-avatar">${avatarText(bounty.creatorName)}</span><b>${escapeHtml(bounty.creatorName || shortAddress(bounty.creator))}</b></div>
+        <div class="go-card-author"><span class="go-avatar">${avatarText(creatorLabel)}</span><b>${escapeHtml(creatorLabel)}</b></div>
         <div class="go-card-bottom">
           <strong>${money(bounty.rewardUsd)}</strong>
           <span>${escapeHtml(String(bounty.tokenAmount || ""))} ${escapeHtml(bounty.tokenUnit || "")}</span>
@@ -397,18 +816,25 @@ function bountyCard(bounty) {
 
 function submissionCard(submission) {
   const bounty = state.bounties.find((row) => row.id === submission.bountyId);
+  const authorLabel = submission.agentName || submission.authorName || shortAddress(submission.author);
+  const visibleLinks = (Array.isArray(submission.links) ? submission.links : []).filter((link) => !isMediaUrl(link));
+  const mediaUrl = firstMediaUrl(submission);
   return `
-    <article class="go-card go-submission-card">
-      ${mediaMarkup(submission.mediaUrl, submission.body)}
+    <article class="go-card go-submission-card go-feed-submission">
       <div class="go-card-body">
-        <div class="go-card-top">
+        <div class="go-submission-head">
+          <span class="go-avatar">${avatarText(authorLabel)}</span>
+          <div>
+            <b>${escapeHtml(authorLabel)}</b>
+            <small>${submission.agentId ? "Agent submission" : "Submission"} Â· ${ago(submission.createdAt)}</small>
+          </div>
           <span class="go-status-pill blue">Submission</span>
-          ${bounty ? `<span class="go-token-pill">to ${escapeHtml(bounty.title.slice(0, 28))}</span>` : ""}
         </div>
-        <p>${escapeHtml(submission.body)}</p>
-        ${linksMarkup(submission.links)}
-        <div class="go-card-author"><span class="go-avatar">${avatarText(submission.authorName)}</span><b>${escapeHtml(submission.authorName || shortAddress(submission.author))}</b></div>
-        <div class="go-card-meta"><span>${ago(submission.createdAt)}</span><span>♡ ${(submission.likes || []).length}</span></div>
+        ${bounty ? `<div class="go-submission-target">TO ${escapeHtml(bounty.title.slice(0, 44))}</div>` : ""}
+        ${submissionBodyMarkup(submission.body)}
+        ${mediaMarkup(mediaUrl, bounty?.title || submission.body)}
+        ${linksMarkup(visibleLinks)}
+        <div class="go-card-meta"><span>${submission.agentId ? escapeHtml(submission.agentId) : shortAddress(submission.author)}</span><span>â™¡ ${(submission.likes || []).length}</span></div>
       </div>
     </article>
   `;
@@ -416,7 +842,17 @@ function submissionCard(submission) {
 
 function filteredBounties() {
   const q = state.query.toLowerCase();
-  return state.bounties.filter((row) => !q || `${row.title} ${row.description} ${row.tokenSymbol}`.toLowerCase().includes(q));
+  return state.bounties.filter((row) => !q || `${row.title} ${row.description} ${row.tokenSymbol} ${row.source || ""} ${row.coinAddress || ""}`.toLowerCase().includes(q));
+}
+
+function richTextMarkup(text = "") {
+  const paragraphs = String(text || "")
+    .split(/\n{2,}/)
+    .map((row) => row.trim())
+    .filter(Boolean)
+    .slice(0, 24);
+  if (!paragraphs.length) return "";
+  return paragraphs.map((row) => `<p>${escapeHtml(row).replace(/\n/g, "<br />")}</p>`).join("");
 }
 
 function filteredSubmissions() {
@@ -459,7 +895,7 @@ function renderHighestOpen(rows = []) {
       <div class="go-top-bounty-label"><span>1</span><b>Top open bounty</b></div>
       <strong>${money(top.rewardUsd)}</strong>
       <h4>${escapeHtml(top.title)}</h4>
-      <p>$${escapeHtml(top.tokenSymbol || "TOKEN")} · ${timeLeft(top.secondsLeft)} · ${Number(top.submissions || 0)} subs</p>
+      <p>$${escapeHtml(top.tokenSymbol || "TOKEN")} Â· ${timeLeft(top.secondsLeft)} Â· ${Number(top.submissions || 0)} subs</p>
     </a>
     ${rest
       .map(
@@ -478,7 +914,13 @@ function renderHighestOpen(rows = []) {
 function renderSide() {
   const stats = state.stats || {};
   ui.rewardTotal.textContent = money(stats.totalRewardUsd || 0);
-  ui.rewardBreakdown.textContent = `${Number(stats.open || 0)} open bounties`;
+  const liveCount = Number(stats.livePumpFun || 0);
+  const liveError = String(stats.livePumpFunError || "");
+  ui.rewardBreakdown.textContent = liveCount
+    ? `${Number(stats.open || 0)} open bounties - ${liveCount} live from Pump.fun`
+    : liveError
+      ? `${Number(stats.open || 0)} open bounties - Pump.fun sync paused`
+      : `${Number(stats.open || 0)} open bounties`;
   const highestOpen = Array.isArray(stats.highestOpen) ? stats.highestOpen : [];
   if (ui.highestList) ui.highestList.innerHTML = renderHighestOpen(highestOpen);
 
@@ -499,9 +941,9 @@ function renderSide() {
 
   const spenders = new Map();
   for (const bounty of state.bounties || []) {
-    const key = String(bounty.creator || bounty.creatorName || "guest").toLowerCase();
+    const key = String(bounty.creator || bounty.creatorSolana || bounty.creatorName || "guest").toLowerCase();
     const current = spenders.get(key) || {
-      name: bounty.creatorName || shortAddress(bounty.creator) || "Guest",
+      name: bounty.creatorName || shortAddress(bounty.creatorSolana || bounty.creator) || "Guest",
       value: 0,
       href: `/go/${encodeURIComponent(bounty.id)}`
     };
@@ -527,14 +969,29 @@ function renderDetail() {
   ui.listView.hidden = true;
   ui.detailView.hidden = false;
   ui.submitWorkBtn.hidden = false;
+  if (ui.externalSubmitBtn) {
+    ui.externalSubmitBtn.hidden = !bounty.sourceUrl;
+    ui.externalSubmitBtn.textContent = String(bounty.source || "").toLowerCase().includes("pump.fun") ? "Copy work & open Pump.fun" : "Open original bounty";
+  }
+  if (ui.agentSubmitBox) ui.agentSubmitBox.hidden = false;
+  renderPumpFunBridge(null);
   ui.deliverablesCard.hidden = false;
   ui.detailCrumb.textContent = bounty.title;
   ui.detailStatus.textContent = bounty.status || "open";
   ui.detailTitle.textContent = bounty.title;
-  ui.detailAvatar.textContent = avatarText(bounty.creatorName);
-  ui.detailCreator.textContent = bounty.creatorName || shortAddress(bounty.creator);
+  const creatorLabel = bounty.creatorName || shortAddress(bounty.creatorSolana || bounty.creator);
+  ui.detailAvatar.textContent = avatarText(creatorLabel);
+  ui.detailCreator.textContent = creatorLabel;
   ui.detailPosted.textContent = `Posted ${ago(bounty.createdAt)}`;
-  ui.detailDescription.textContent = bounty.description || "";
+  if (ui.detailMediaCard && ui.detailMedia) {
+    const hasMedia = Boolean(bounty.imageUri);
+    ui.detailMediaCard.hidden = !hasMedia;
+    if (hasMedia) {
+      ui.detailMedia.src = bounty.imageUri;
+      ui.detailMedia.alt = bounty.title || "Bounty media";
+    }
+  }
+  ui.detailDescription.innerHTML = `${richTextMarkup(bounty.description || "") || "<p>No description provided.</p>"}${bounty.sourceUrl ? `<p><a class="go-external-link" href="${escapeHtml(bounty.sourceUrl)}" target="_blank" rel="noreferrer noopener">Open original ${escapeHtml(bounty.source || "bounty")}</a></p>` : ""}`;
   ui.submissionCount.textContent = String(state.activeSubmissions.length || 0);
   ui.rewardTotal.textContent = money(bounty.rewardUsd);
   ui.rewardBreakdown.textContent = `${bounty.tokenAmount || 0} ${bounty.tokenUnit || ""} - ${payoutLabel(bounty.payoutChainId)} - ${bounty.escrowStatus || "unfunded"}`;
@@ -543,6 +1000,15 @@ function renderDetail() {
     ? state.activeSubmissions.map(submissionCard).join("")
     : `<article class="panel-card go-empty">No submissions yet.</article>`;
   renderReleaseControls();
+  loadAgentsForSubmit().catch(() => {
+    state.agents = [];
+    renderAgentSelect();
+    setAgentSubmitStatus("Could not load agents. Open Agents to create one.", "error");
+  });
+  refreshPumpFunSession(walletState().address || "").catch(() => {
+    state.pumpFunSession = { configured: false };
+    renderPumpFunSession();
+  });
 }
 
 function renderReleaseControls() {
@@ -601,7 +1067,7 @@ async function loadList() {
     state.goConfig = await api.goConfig().catch(() => ({ payoutChains: [] }));
     renderPayoutOptions();
   }
-  const payload = await api.go(state.tab, 80);
+  const payload = await api.go(state.tab, 80, { fresh: state.bounties.length === 0 });
   state.bounties = Array.isArray(payload.bounties) ? payload.bounties : [];
   state.submissions = Array.isArray(payload.submissions) ? payload.submissions : [];
   state.stats = payload.stats || {};
@@ -625,28 +1091,17 @@ function updateProfileLinks() {
   const ws = walletState();
   const connected = Boolean(ws.signer && ws.address);
   if (ui.profileNavSide) ui.profileNavSide.href = connected ? `/profile?address=${ws.address}` : "/profile";
-  if (ui.signInBtn) ui.signInBtn.textContent = connected ? shortAddress(ws.address) : "Sign in";
-  if (ui.walletLabel) setWalletLabel(ui.walletLabel, ws.address);
 }
 
 async function initWallet() {
-  state.walletControls = initWalletControls({
-    selectEl: ui.walletSelect,
+  state.walletControls = initTopbarWalletProfile({
+    signInBtn: ui.signInBtn,
     connectBtn: ui.connectBtn,
     disconnectBtn: ui.disconnectBtn,
-    labelEl: ui.walletLabel,
+    walletSelect: ui.walletSelect,
+    walletLabel: ui.walletLabel,
     alertEl: ui.alert,
-    onConnected: updateProfileLinks,
-    onDisconnected: updateProfileLinks
-  });
-  ui.signInBtn?.addEventListener("click", async () => {
-    if (walletState().signer) return;
-    try {
-      await state.walletControls?.connect();
-      updateProfileLinks();
-    } catch (error) {
-      setAlert(ui.alert, parseUiError(error), true);
-    }
+    onChange: updateProfileLinks
   });
   updateProfileLinks();
 }
@@ -695,30 +1150,88 @@ async function submitBounty(event) {
   }
 }
 
+async function currentManualSubmitAttachments() {
+  const attachments = [];
+  const file = ui.submitFile?.files?.[0] || null;
+  if (file) {
+    setAlert(ui.alert, `Uploading evidence file ${file.name || "attachment"} to Pump.fun...`);
+    attachments.push({
+      filename: String(file.name || "evidence").slice(0, 180),
+      contentType: String(file.type || "application/octet-stream").slice(0, 120),
+      size: Number(file.size || 0),
+      dataUrl: await readFileAsDataUrl(file)
+    });
+  }
+  const existingMediaUrl = String(ui.submitMedia?.value || "").trim();
+  if (existingMediaUrl) {
+    attachments.push({ url: existingMediaUrl, filename: "Evidence link", contentType: "text/uri-list" });
+  }
+  return attachments.slice(0, 8);
+}
+
+async function submitPumpFunManualWork({ bodyMarkdown, links }) {
+  const { publicKey } = await connectSolanaForPumpFun();
+  await requirePumpFunSession();
+  const attachments = await currentManualSubmitAttachments();
+  const draft = await api.pumpfunBountyDraft({
+    bountyId: state.activeBounty.id,
+    bodyMarkdown,
+    links,
+    owner: publicKey,
+    userPublicKey: publicKey,
+    attachments
+  });
+  if (attachments.some((attachment) => attachment.dataUrl) && !Number(draft?.attachmentCount || 0)) {
+    throw new Error("Pump.fun accepted the submission text but did not attach the selected file. Try a PNG/JPG/WebP/GIF under 5 MB or an MP4/WebM/MOV under 200 MB.");
+  }
+  const submissionId = String(draft?.submissionId || draft?.payload?.submissionId || draft?.payload?.submission?.submissionId || draft?.payload?.id || "");
+  if (!submissionId) throw new Error("Pump.fun created a draft but did not return a submission id");
+  const published = await publishPumpFunSubmission(submissionId);
+  const pumpFunLink = String(published?.bounty?.sourceUrl || state.activeBounty?.sourceUrl || "");
+  return {
+    submissionId,
+    attachmentCount: Number(draft?.attachmentCount || 0),
+    pumpFunLink
+  };
+}
+
 async function submitWork(event) {
   event.preventDefault();
   if (!state.activeBounty?.id) return;
   try {
     if (!ui.submitAgree?.checked) throw new Error("Agree to the submission terms before submitting");
-    const identity = currentIdentity();
-    let mediaUrl = String(ui.submitMedia?.value || "").trim();
-    const file = ui.submitFile?.files?.[0] || null;
-    if (file && !mediaUrl) {
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("Could not read selected file"));
-        reader.readAsDataURL(file);
-      });
-      const upload = await api.uploadImage(dataUrl);
-      mediaUrl = upload?.url || upload?.imageUri || "";
-    }
+    const bodyMarkdown = String(ui.submitBody?.value || "").trim();
+    if (bodyMarkdown.length < 10) throw new Error("Add a submission description before submitting");
     const links = String(ui.submitLinks?.value || "")
       .split(/\s+/)
       .map((row) => row.trim())
       .filter(Boolean);
+
+    const isPumpFun = String(state.activeBounty?.source || "").toLowerCase().includes("pump.fun");
+    if (isPumpFun) {
+      ui.submitForm?.querySelector('button[type="submit"]')?.setAttribute("disabled", "disabled");
+      setAlert(ui.alert, "Submitting to Pump.fun through Pump-r...");
+      const result = await submitPumpFunManualWork({ bodyMarkdown, links });
+      closeModal(ui.submitModal);
+      ui.submitForm.reset();
+      if (ui.submitFileName) ui.submitFileName.textContent = "No file selected";
+      await loadDetail(state.activeBounty.id);
+      const attachedText = result.attachmentCount ? ` with ${result.attachmentCount} evidence file${result.attachmentCount === 1 ? "" : "s"}` : "";
+      const linkAction = result.pumpFunLink ? { href: result.pumpFunLink, label: "Open on Pump.fun" } : null;
+      setAgentSubmitStatus(`Manual submission published to Pump.fun${attachedText} (${result.submissionId}).`, "success", linkAction);
+      setAlert(ui.alert, `Manual submission published to Pump.fun${attachedText}.`);
+      return;
+    }
+
+    const identity = currentIdentity();
+    let mediaUrl = String(ui.submitMedia?.value || "").trim();
+    const file = ui.submitFile?.files?.[0] || null;
+    if (file && !mediaUrl) {
+      const upload = await uploadEvidenceAttachment(file);
+      mediaUrl = upload?.url || "";
+    }
     await api.submitGoWork(state.activeBounty.id, {
-      body: ui.submitBody.value,
+      body: bodyMarkdown,
       mediaUrl,
       links,
       author: identity.address,
@@ -731,12 +1244,124 @@ async function submitWork(event) {
     setAlert(ui.alert, "Submission posted");
   } catch (error) {
     setAlert(ui.alert, parseUiError(error), true);
+  } finally {
+    ui.submitForm?.querySelector('button[type="submit"]')?.removeAttribute("disabled");
+  }
+}
+
+async function runAgentSubmit() {
+  if (!state.activeBounty?.id) throw new Error("Open a bounty first");
+  const agentId = String(ui.agentSelect?.value || "");
+  if (!agentId) throw new Error("Create or select an agent first");
+  const agent = state.agents.find((row) => row.id === agentId);
+  if (!agent) throw new Error("Selected agent was not found");
+  ui.runAgentBtn?.setAttribute("disabled", "disabled");
+  setAgentSubmitStatus("Running agent on full bounty brief...");
+  try {
+    const identity = currentIdentity();
+    const result = await api.agentRunBounty(agent.id, {
+      owner: agent.owner || activeAgentOwner(),
+      bountyId: state.activeBounty.id,
+      author: identity.address,
+      authorName: agent.name,
+      generateConceptImage: Boolean(ui.agentGenerateImage?.checked) && !(ui.agentEvidenceFile?.files?.[0] || ui.submitFile?.files?.[0])
+    });
+    await loadDetail(state.activeBounty.id);
+    if (result?.externalSubmitRequired) {
+      const prepared = result.preparedSubmission || null;
+      renderPumpFunBridge(prepared, result.externalSubmitUrl || "");
+      if (!prepared?.id) throw new Error("Agent prepared the work, but no Pump.fun submit id was returned");
+      const requestedGeneratedImage = Boolean(ui.agentGenerateImage?.checked) && !(ui.agentEvidenceFile?.files?.[0] || ui.submitFile?.files?.[0]);
+      if (requestedGeneratedImage && !result?.generatedAttachment?.dataUrl) {
+        throw new Error(result?.note || "OpenAI did not generate an attachable task-scene image. Choose an evidence file or turn off AI image generation.");
+      }
+      setAgentSubmitStatus("Submitting to Pump.fun with the configured server session...");
+      try {
+        const ws = walletState();
+        if (!ws?.address) throw new Error("Connect Phantom before using Pump.fun auto-submit");
+        await requirePumpFunSession();
+          const attachments = await currentSubmitAttachments(result?.generatedAttachment || null);
+          const direct = await api.pumpfunPreparedSubmit(prepared.id, { owner: ws.address, userPublicKey: ws.address, attachments });
+          if (attachments.some((attachment) => attachment.dataUrl) && !Number(direct?.attachmentCount || 0)) {
+            throw new Error("Pump.fun accepted the submission text but did not attach the selected file. Try a PNG/JPG/WebP/GIF under 5 MB or an MP4/WebM/MOV under 200 MB.");
+          }
+        const attachedText = Number(direct?.attachmentCount || 0) ? ` with ${Number(direct.attachmentCount)} evidence file${Number(direct.attachmentCount) === 1 ? "" : "s"}` : "";
+        const suffix = direct?.submissionId ? ` (${direct.submissionId})` : "";
+        const submissionId = String(direct?.submissionId || "");
+        if (!submissionId) throw new Error("Pump.fun created a draft but did not return a submission id");
+        const published = await publishPumpFunSubmission(submissionId);
+        const pumpFunLink = String(published?.bounty?.sourceUrl || state.activeBounty?.sourceUrl || result.externalSubmitUrl || prepared.sourceUrl || "");
+        await loadDetail(state.activeBounty.id);
+        setAgentSubmitStatus(`Published to Pump.fun${attachedText}${suffix}.`, "success", pumpFunLink ? { href: pumpFunLink, label: "Open on Pump.fun" } : null);
+        setAlert(ui.alert, pumpFunLink ? `Agent work published to Pump.fun${attachedText}. Link is shown in the submit panel.` : `Agent work published to Pump.fun${attachedText}.`);
+      } catch (submitError) {
+        const copied = await copyText(preparedPumpFunText(prepared) || result.body || "");
+        const fallback = copied ? "AI work copied as fallback." : "Copy fallback failed; use Copy again below.";
+        const message = `${parseUiError(submitError)}. Drafts are only visible to your Pump.fun session until Phantom signs the publish step. ${fallback}`;
+        setAgentSubmitStatus(message, "error");
+        setAlert(ui.alert, message, true);
+      }
+    } else {
+      setAgentSubmitStatus(`${result?.note || "Agent run complete."} Submitted to bounty.`, "success");
+      setAlert(ui.alert, "Agent work submitted");
+    }
+  } catch (error) {
+    const message = parseUiError(error);
+    setAgentSubmitStatus(message, "error");
+    setAlert(ui.alert, message, true);
+  } finally {
+    ui.runAgentBtn?.removeAttribute("disabled");
+  }
+}
+
+async function openExternalSubmit() {
+  const bounty = state.activeBounty;
+  if (!bounty?.sourceUrl) throw new Error("Original bounty link is not available");
+  if (String(bounty.source || "").toLowerCase().includes("pump.fun")) {
+    await submitDirectToPumpFun();
+    return;
+  }
+  const body = String(ui.submitBody?.value || "").trim() || latestSubmissionText();
+  const links = String(ui.submitLinks?.value || "").trim();
+  const copied = await copyText([body, links].filter(Boolean).join("\n\n"));
+  window.open(bounty.sourceUrl, "_blank", "noopener,noreferrer");
+  setAlert(ui.alert, copied ? "Submission text copied. Paste it into Pump.fun." : "Opened original bounty");
+}
+
+async function submitDirectToPumpFun(options = {}) {
+  const openFallback = options.openFallback !== false;
+  const bounty = state.activeBounty;
+  if (!bounty?.id) throw new Error("Open a Pump.fun bounty first");
+  const latest = latestSubmission();
+  const bodyMarkdown = String(ui.submitBody?.value || "").trim() || latestSubmissionText();
+  if (!bodyMarkdown || bodyMarkdown.length < 10) {
+    throw new Error("Submit work here or run an agent first, then open Pump.fun");
+  }
+  const links = [
+    ...(String(ui.submitLinks?.value || "").split(/\s+/).map((row) => row.trim()).filter(Boolean)),
+    ...(Array.isArray(latest?.links) ? latest.links : [])
+  ].filter(Boolean).slice(0, 8);
+  ui.externalSubmitBtn?.setAttribute("disabled", "disabled");
+  try {
+    const copied = await copyText([bodyMarkdown, ...links].filter(Boolean).join("\n\n"));
+    if (openFallback && bounty.sourceUrl) {
+      window.open(bounty.sourceUrl, "_blank", "noopener,noreferrer");
+    }
+    const message = copied
+      ? "Agent work copied. Paste it into Pump.fun with your logged-in Pump.fun session."
+      : "Open Pump.fun and paste the generated work into the submission form.";
+    setAlert(ui.alert, message);
+    setAgentSubmitStatus(message, "info");
+    return { copied, opened: Boolean(openFallback && bounty.sourceUrl) };
+  } finally {
+    ui.externalSubmitBtn?.removeAttribute("disabled");
   }
 }
 
 async function init() {
   const xReturned = handleXOAuthReturn();
   await initWallet();
+  initSupportWidget({ alertEl: ui.alert });
   ui.tabs.forEach((button) => {
     button.addEventListener("click", async () => {
       state.tab = button.dataset.goTab || "trending";
@@ -770,10 +1395,73 @@ async function init() {
     updateSubmitModalCopy();
     openModal(ui.submitModal);
   });
+  ui.externalSubmitBtn?.addEventListener("click", () => {
+    openExternalSubmit().catch((error) => setAlert(ui.alert, parseUiError(error), true));
+  });
+  ui.savePumpFunSession?.addEventListener("click", async () => {
+    const ws = walletState();
+    if (!ws?.address) {
+      setPumpFunSessionMessage("Connect Phantom first, then save the Pump.fun session for that wallet.", "error");
+      return;
+    }
+    try {
+      const authToken = String(ui.pumpFunAuthToken?.value || "").trim();
+      const cookieInput = String(ui.pumpFunCookie?.value || "").trim();
+      const cookie = cookieInput || (authToken ? `auth_token=${authToken}` : "");
+      const saved = await api.savePumpfunSession({ owner: ws.address, bearer: authToken, cookie });
+      state.pumpFunSession = saved;
+      renderPumpFunSession(saved);
+      if (ui.pumpFunAuthToken) ui.pumpFunAuthToken.value = "";
+      if (ui.pumpFunCookie) ui.pumpFunCookie.value = "";
+      setPumpFunSessionMessage("Pump.fun session saved for this Phantom wallet.", "success");
+    } catch (error) {
+      setPumpFunSessionMessage(parseUiError(error), "error");
+    }
+  });
+  ui.clearPumpFunSession?.addEventListener("click", async () => {
+    const ws = walletState();
+    if (!ws?.address) {
+      setPumpFunSessionMessage("Connect Phantom first.", "error");
+      return;
+    }
+    try {
+      state.pumpFunSession = await api.clearPumpfunSession(ws.address);
+      renderPumpFunSession(state.pumpFunSession);
+      setPumpFunSessionMessage("Pump.fun session cleared for this wallet.", "success");
+    } catch (error) {
+      setPumpFunSessionMessage(parseUiError(error), "error");
+    }
+  });
+  ui.runAgentBtn?.addEventListener("click", runAgentSubmit);
+  ui.pumpFunBridgeCopy?.addEventListener("click", async () => {
+    const copied = await copyText(preparedPumpFunText());
+    setAgentSubmitStatus(copied ? "AI submission copied. Paste it into Pump.fun's Description field." : "Could not copy AI submission.", copied ? "success" : "error");
+  });
+  ui.pumpFunBridgeBookmarklet?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    const copied = await copyText(preparedPumpFunText());
+    setAgentSubmitStatus(
+      copied ? "AI submission copied. Paste it into Pump.fun's Description field." : "Could not copy AI submission.",
+      copied ? "success" : "error"
+    );
+  });
+  ui.pumpFunBridgeOpen?.addEventListener("click", () => {
+    const url = ui.pumpFunBridgeOpen?.dataset.sourceUrl || state.preparedPumpFunSubmission?.sourceUrl || state.activeBounty?.sourceUrl || "";
+    if (!url) {
+      setAgentSubmitStatus("Pump.fun link is not available for this bounty.", "error");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  });
   ui.submitChooseFile?.addEventListener("click", () => ui.submitFile?.click());
   ui.submitFile?.addEventListener("change", () => {
     const file = ui.submitFile?.files?.[0] || null;
     if (ui.submitFileName) ui.submitFileName.textContent = file?.name || "No file selected";
+  });
+  ui.agentEvidenceChoose?.addEventListener("click", () => ui.agentEvidenceFile?.click());
+  ui.agentEvidenceFile?.addEventListener("change", () => {
+    const file = ui.agentEvidenceFile?.files?.[0] || null;
+    if (ui.agentEvidenceName) ui.agentEvidenceName.textContent = file ? `${file.name} (${Math.ceil(file.size / 1024)} KB)` : "No evidence file selected";
   });
   ui.submitAddLink?.addEventListener("click", () => ui.submitLinks?.focus());
   ui.bountyToken?.addEventListener("change", updateEscrowStatus);

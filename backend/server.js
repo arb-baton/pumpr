@@ -15,6 +15,7 @@ const ROOT = path.join(__dirname, "..");
 const FRONTEND_DIR = path.join(ROOT, "frontend");
 const DEPLOYMENT_PATH = path.join(FRONTEND_DIR, "deployment.json");
 const UPLOADS_DIR = path.join(FRONTEND_DIR, "uploads");
+const AGENT_SKILL_PATH = path.join(FRONTEND_DIR, "skill.md");
 const IS_VERCEL_RUNTIME = Boolean(process.env.VERCEL);
 const UPLOAD_MODE = String(process.env.UPLOAD_MODE || (IS_VERCEL_RUNTIME ? "inline" : "disk")).toLowerCase();
 const PROFILE_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-profiles.json") : path.join(ROOT, "cache", "profiles.json");
@@ -23,6 +24,9 @@ const SUPPORT_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-support
 const COMMUNITY_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-community.json") : path.join(ROOT, "cache", "community.json");
 const GO_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-go.json") : path.join(ROOT, "cache", "go.json");
 const ALPHA_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-alpha.json") : path.join(ROOT, "cache", "alpha.json");
+const AGENTS_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-agents.json") : path.join(ROOT, "cache", "agents.json");
+const PUMPFUN_PREPARED_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-pumpfun-prepared.json") : path.join(ROOT, "cache", "pumpfun-prepared.json");
+const PUMPFUN_SESSIONS_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-pumpfun-sessions.json") : path.join(ROOT, "cache", "pumpfun-sessions.json");
 const PUMPFUN_METADATA_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-pumpfun-metadata.json") : path.join(ROOT, "cache", "pumpfun-metadata.json");
 const PUMPFUN_LAUNCHES_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-pumpfun-launches.json") : path.join(ROOT, "cache", "pumpfun-launches.json");
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
@@ -35,6 +39,9 @@ const SUPABASE_SCHEMA = String(process.env.SUPABASE_SCHEMA || "public").trim();
 const SUPABASE_STORAGE_BUCKET = String(process.env.SUPABASE_STORAGE_BUCKET || "uploads").trim();
 const SUPABASE_COMMUNITY_OBJECT = String(process.env.SUPABASE_COMMUNITY_OBJECT || "community/community.json").trim();
 const SUPABASE_ALPHA_OBJECT = String(process.env.SUPABASE_ALPHA_OBJECT || "alpha/alpha.json").trim();
+const SUPABASE_AGENTS_OBJECT = String(process.env.SUPABASE_AGENTS_OBJECT || "agents/agents.json").trim();
+const SUPABASE_PUMPFUN_PREPARED_OBJECT = String(process.env.SUPABASE_PUMPFUN_PREPARED_OBJECT || "pumpfun/prepared-submissions.json").trim();
+const SUPABASE_PUMPFUN_SESSIONS_OBJECT = String(process.env.SUPABASE_PUMPFUN_SESSIONS_OBJECT || "pumpfun/sessions.json").trim();
 const SUPABASE_PUMPFUN_LAUNCHES_OBJECT = String(process.env.SUPABASE_PUMPFUN_LAUNCHES_OBJECT || "pumpfun/launches.json").trim();
 const PROFILE_IMAGE_URI_MAX_LENGTH = 2 * 1024 * 1024;
 const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || "0") === "1";
@@ -165,13 +172,20 @@ const QUOTE_ASSETS = {
 };
 
 app.use(cors());
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "25mb" }));
 app.set("trust proxy", true);
 app.use("/api", (_req, res, next) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");
   next();
+});
+
+app.use((error, _req, res, next) => {
+  if (error?.type === "entity.too.large") {
+    return res.status(413).json({ error: "Selected evidence file is too large to upload through Pump-r." });
+  }
+  return next(error);
 });
 
 if (USE_DISK_UPLOADS && !fs.existsSync(UPLOADS_DIR)) {
@@ -240,6 +254,10 @@ let communityDbRemoteLoaded = false;
 let goDbCache = null;
 let alphaDbCache = null;
 let alphaDbRemoteLoaded = false;
+let agentsDbCache = null;
+let agentsDbRemoteLoaded = false;
+let pumpFunBountiesCache = { rows: [], fetchedAt: 0, error: "" };
+const pumpFunBountyDetailCache = new Map();
 let pumpFunLaunchesDbCache = null;
 let pumpFunLaunchesRemoteLoaded = false;
 const profileLastKnownCache = new Map();
@@ -1730,6 +1748,319 @@ function alphaStats(store = readAlphaDb()) {
   };
 }
 
+function emptyAgentsStore() {
+  return { agents: [], posts: [] };
+}
+
+function normalizeAgentOwner(value = "") {
+  const raw = sanitizeAlphaText(value || "", 90);
+  return normalizeSolanaAddress(raw) || normalizeAddress(raw) || raw.slice(0, 80);
+}
+
+function normalizeAgentId(value = "") {
+  return sanitizeAlphaText(value || `agent-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, 90)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-")
+    .replace(/^-+|-+$/g, "") || `agent-${Date.now().toString(36)}`;
+}
+
+function normalizeAgent(row = {}) {
+  const owner = normalizeAgentOwner(row.owner || row.address || "");
+  const name = sanitizeAlphaText(row.name || "", 80);
+  const skillsMd = String(row.skillsMd || row.skills || "").replace(/\r\n/g, "\n").trim().slice(0, 12000);
+  if (!owner || !name || !skillsMd) return null;
+  const summary = sanitizeAlphaText(row.summary || "", 240);
+  const goals = sanitizeAlphaText(row.goals || "", 800);
+  const targets = sanitizeAlphaText(row.targets || "", 500);
+  return {
+    id: normalizeAgentId(row.id || `${name}-${owner.slice(0, 8)}`),
+    owner,
+    name,
+    status: ["active", "paused"].includes(String(row.status || "").toLowerCase()) ? String(row.status).toLowerCase() : "active",
+    summary,
+    goals,
+    targets,
+    skillsMd,
+    avatar: String(row.avatar || "").trim().slice(0, 1024),
+    createdAt: Number(row.createdAt || Math.floor(Date.now() / 1000)),
+    updatedAt: Number(row.updatedAt || Math.floor(Date.now() / 1000)),
+    lastPostAt: Number(row.lastPostAt || 0)
+  };
+}
+
+function normalizeAgentPost(row = {}) {
+  const agentId = normalizeAgentId(row.agentId || "");
+  const body = sanitizeAgentDraftText(row.body || "", 6000);
+  if (!agentId || !body) return null;
+  const links = Array.isArray(row.links)
+    ? row.links.map(sanitizeGoUrl).filter(Boolean).slice(0, 6)
+    : String(row.links || row.url || "")
+        .split(/\s+/)
+        .map(sanitizeGoUrl)
+        .filter(Boolean)
+        .slice(0, 6);
+  return {
+    id: normalizeAgentId(row.id || `agent-post-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`),
+    agentId,
+    owner: normalizeAgentOwner(row.owner || ""),
+    kind: ["job-search", "application", "interview", "freelance", "bounty-work", "media", "update"].includes(String(row.kind || "").toLowerCase())
+      ? String(row.kind || "").toLowerCase()
+      : "job-search",
+    title: sanitizeAlphaText(row.title || "", 120),
+    body,
+    bountyId: normalizeGoId(row.bountyId || "", "go"),
+    mediaUrl: sanitizeGoUrl(row.mediaUrl || ""),
+    mediaType: sanitizeAlphaText(row.mediaType || "", 80),
+    links,
+    url: links[0] || "",
+    createdAt: Number(row.createdAt || Math.floor(Date.now() / 1000))
+  };
+}
+
+function sanitizeAgentsStore(store = {}) {
+  const base = store && typeof store === "object" && !Array.isArray(store) ? store : emptyAgentsStore();
+  const agents = (Array.isArray(base.agents) ? base.agents : []).map(normalizeAgent).filter(Boolean);
+  const agentIds = new Set(agents.map((agent) => agent.id));
+  const posts = (Array.isArray(base.posts) ? base.posts : [])
+    .map(normalizeAgentPost)
+    .filter((post) => post && agentIds.has(post.agentId))
+    .slice(-1000);
+  return { agents, posts };
+}
+
+function readAgentsDb() {
+  if (agentsDbCache && typeof agentsDbCache === "object") return agentsDbCache;
+  try {
+    if (fs.existsSync(AGENTS_DB_PATH)) {
+      agentsDbCache = sanitizeAgentsStore(JSON.parse(fs.readFileSync(AGENTS_DB_PATH, "utf8") || "{}"));
+      return agentsDbCache;
+    }
+  } catch {
+    // fall through
+  }
+  agentsDbCache = emptyAgentsStore();
+  return agentsDbCache;
+}
+
+function writeAgentsDb(store) {
+  const safe = sanitizeAgentsStore(store);
+  fs.mkdirSync(path.dirname(AGENTS_DB_PATH), { recursive: true });
+  fs.writeFileSync(AGENTS_DB_PATH, JSON.stringify(safe, null, 2));
+  agentsDbCache = safe;
+  return safe;
+}
+
+async function readAgentsDbRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_AGENTS_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_AGENTS_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase agents read failed: ${response.status} ${text}`.trim());
+  }
+  return sanitizeAgentsStore(await response.json().catch(() => emptyAgentsStore()));
+}
+
+async function writeAgentsDbRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_AGENTS_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_AGENTS_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizeAgentsStore(store), null, 2)
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase agents write failed: ${response.status} ${text}`.trim());
+  }
+  return true;
+}
+
+async function readAgentsDbPersistent(options = {}) {
+  const refresh = Boolean(options.refresh);
+  if (isSupabaseStorageConfigured() && (refresh || !agentsDbRemoteLoaded)) {
+    try {
+      const remote = await readAgentsDbRemote();
+      if (remote) {
+        agentsDbCache = remote;
+        writeAgentsDb(remote);
+      }
+      agentsDbRemoteLoaded = true;
+    } catch (error) {
+      console.warn(`Supabase agents read failed: ${error?.message || "connection error"}`);
+      agentsDbRemoteLoaded = true;
+    }
+  }
+  return sanitizeAgentsStore(readAgentsDb());
+}
+
+async function writeAgentsDbPersistent(store) {
+  const safe = writeAgentsDb(store);
+  if (isSupabaseStorageConfigured()) {
+    await writeAgentsDbRemote(safe);
+  }
+  return safe;
+}
+
+function publicAgent(agent = {}, store = readAgentsDb()) {
+  const posts = (store.posts || []).filter((post) => post.agentId === agent.id);
+  return {
+    ...agent,
+    postCount: posts.length,
+    latestPost: posts.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))[0] || null
+  };
+}
+
+function emptyPumpFunPreparedStore() {
+  return { items: [] };
+}
+
+function pumpFunPreparedId() {
+  return `pumpr-${Date.now().toString(36)}-${crypto.randomBytes(5).toString("hex")}`;
+}
+
+function normalizePumpFunPrepared(row = {}) {
+  const id = sanitizeAlphaText(row.id || pumpFunPreparedId(), 90).replace(/[^a-zA-Z0-9_-]/g, "");
+  const body = sanitizeAgentDraftText(row.body || "", 6000);
+  if (!id || !body) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const links = Array.isArray(row.links)
+    ? row.links.map(sanitizeGoUrl).filter(Boolean).slice(0, 8)
+    : String(row.links || "")
+        .split(/\s+/)
+        .map(sanitizeGoUrl)
+        .filter(Boolean)
+        .slice(0, 8);
+  const deliverables = Array.isArray(row.deliverables)
+    ? row.deliverables.map((item) => sanitizeAlphaText(item, 300)).filter(Boolean).slice(0, 12)
+    : [];
+  return {
+    id,
+    taskId: sanitizeAlphaText(String(row.taskId || "").replace(/^pumpfun-/, ""), 160),
+    bountyId: normalizeGoId(row.bountyId || "", "go"),
+    title: sanitizeAlphaText(row.title || "Pump.fun bounty submission", 140),
+    sourceUrl: sanitizeGoUrl(row.sourceUrl || ""),
+    body,
+    links,
+    deliverables,
+    agentName: sanitizeAlphaText(row.agentName || "", 80),
+    agentId: normalizeAgentId(row.agentId || ""),
+    authorName: sanitizeAlphaText(row.authorName || "", 80),
+    createdAt: Number(row.createdAt || now),
+    expiresAt: Number(row.expiresAt || now + 7 * 24 * 60 * 60)
+  };
+}
+
+function sanitizePumpFunPreparedStore(store = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  const items = (Array.isArray(store.items) ? store.items : [])
+    .map(normalizePumpFunPrepared)
+    .filter((item) => item && Number(item.expiresAt || 0) > now)
+    .slice(0, 500);
+  return { items };
+}
+
+function readPumpFunPreparedDb() {
+  try {
+    if (fs.existsSync(PUMPFUN_PREPARED_DB_PATH)) {
+      return sanitizePumpFunPreparedStore(JSON.parse(fs.readFileSync(PUMPFUN_PREPARED_DB_PATH, "utf8") || "{}"));
+    }
+  } catch {
+    // fall through
+  }
+  return emptyPumpFunPreparedStore();
+}
+
+function writePumpFunPreparedDb(store) {
+  const safe = sanitizePumpFunPreparedStore(store);
+  fs.mkdirSync(path.dirname(PUMPFUN_PREPARED_DB_PATH), { recursive: true });
+  fs.writeFileSync(PUMPFUN_PREPARED_DB_PATH, JSON.stringify(safe, null, 2));
+  return safe;
+}
+
+async function readPumpFunPreparedDbRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_PUMPFUN_PREPARED_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPFUN_PREPARED_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase prepared submission read failed: ${response.status} ${text}`.trim());
+  }
+  return sanitizePumpFunPreparedStore(await response.json().catch(() => emptyPumpFunPreparedStore()));
+}
+
+async function writePumpFunPreparedDbRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_PUMPFUN_PREPARED_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPFUN_PREPARED_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizePumpFunPreparedStore(store), null, 2)
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase prepared submission write failed: ${response.status} ${text}`.trim());
+  }
+  return true;
+}
+
+async function readPumpFunPreparedDbPersistent() {
+  if (isSupabaseStorageConfigured()) {
+    try {
+      const remote = await readPumpFunPreparedDbRemote();
+      if (remote) {
+        writePumpFunPreparedDb(remote);
+        return remote;
+      }
+    } catch (error) {
+      console.warn(`Supabase prepared submission read failed: ${error?.message || "connection error"}`);
+    }
+  }
+  return readPumpFunPreparedDb();
+}
+
+async function writePumpFunPreparedDbPersistent(store) {
+  const safe = writePumpFunPreparedDb(store);
+  if (isSupabaseStorageConfigured()) {
+    await writePumpFunPreparedDbRemote(safe);
+  }
+  return safe;
+}
+
+async function createPumpFunPreparedSubmission(value = {}) {
+  const store = await readPumpFunPreparedDbPersistent();
+  const item = normalizePumpFunPrepared({
+    ...value,
+    id: value.id || pumpFunPreparedId()
+  });
+  if (!item) throw new Error("Could not prepare Pump.fun submission");
+  const items = [item, ...(store.items || []).filter((row) => row.id !== item.id)];
+  await writePumpFunPreparedDbPersistent({ items });
+  return item;
+}
+
 function sanitizeCommunityText(value, max = 280) {
   return Array.from(String(value || "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
 }
@@ -1926,17 +2257,31 @@ function sanitizeGoText(value, max = 500) {
   return Array.from(String(value || "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
 }
 
+function sanitizeAgentDraftText(value, max = 6000) {
+  return Array.from(String(value || "").replace(/\r\n/g, "\n").replace(/[ \t]+\n/g, "\n").trim()).slice(0, max).join("");
+}
+
 function sanitizeGoUrl(value) {
   const text = String(value || "").trim().slice(0, 1024);
   if (!text) return "";
-  if (text.startsWith("/") || /^https?:\/\//i.test(text) || text.startsWith("data:image/")) return text;
+  if (text.startsWith("/") || /^https?:\/\//i.test(text) || text.startsWith("data:image/") || text.startsWith("data:video/")) return text;
   return "";
+}
+
+function normalizeSolanaDisplayAddress(value = "") {
+  const text = String(value || "").trim();
+  return normalizeSolanaAddress(text) || (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text) ? text : "");
 }
 
 function normalizeGoId(value, fallbackPrefix = "go") {
   return sanitizeGoText(value || `${fallbackPrefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, 80)
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, "-");
+}
+
+function normalizeOptionalGoId(value, fallbackPrefix = "go") {
+  const text = sanitizeGoText(value || "", 80);
+  return text ? normalizeGoId(text, fallbackPrefix) : "";
 }
 
 function normalizeGoBounty(row = {}) {
@@ -1951,10 +2296,19 @@ function normalizeGoBounty(row = {}) {
         .map((item) => sanitizeGoText(item, 140))
         .filter(Boolean)
         .slice(0, 8);
+  const chainConfigSnapshot =
+    row.chainConfigSnapshot && typeof row.chainConfigSnapshot === "object"
+      ? {
+          submissionFeeVault: normalizeSolanaDisplayAddress(row.chainConfigSnapshot.submissionFeeVault || ""),
+          submissionFeeLamports: String(row.chainConfigSnapshot.submissionFeeLamports || "").replace(/[^0-9]/g, ""),
+          publishFeeVault: normalizeSolanaDisplayAddress(row.chainConfigSnapshot.publishFeeVault || ""),
+          disputeFeeVault: normalizeSolanaDisplayAddress(row.chainConfigSnapshot.disputeFeeVault || "")
+        }
+      : null;
   return {
     id,
     title,
-    description: sanitizeGoText(row.description || "", 900),
+    description: sanitizeAgentDraftText(row.description || "", 6000),
     deliverables,
     rewardUsd: Math.max(0, Number(row.rewardUsd || row.reward || 0) || 0),
     tokenSymbol: sanitizeGoText(row.tokenSymbol || "Pump-r", 24).replace(/^\$/, "").toUpperCase(),
@@ -1967,12 +2321,23 @@ function normalizeGoBounty(row = {}) {
     escrowStatus: ["funded", "released", "refunded"].includes(String(row.escrowStatus || "").toLowerCase())
       ? String(row.escrowStatus || "").toLowerCase()
       : "unfunded",
-    winnerSubmissionId: normalizeGoId(row.winnerSubmissionId || "", "sub"),
+    winnerSubmissionId: normalizeOptionalGoId(row.winnerSubmissionId || "", "sub"),
     winnerAddress: normalizeAddress(row.winnerAddress || "") || "",
     creator: normalizeAddress(row.creator || row.address || "") || ethers.ZeroAddress,
+    creatorSolana: normalizeSolanaDisplayAddress(row.creatorSolana || row.creatorAddress || ""),
     creatorName: sanitizeGoText(row.creatorName || row.xHandle || "", 80),
     status: String(row.status || "open").toLowerCase() === "closed" ? "closed" : "open",
     imageUri: sanitizeGoUrl(row.imageUri || row.mediaUrl || ""),
+    source: sanitizeGoText(row.source || "", 40),
+    sourceUrl: sanitizeGoUrl(row.sourceUrl || ""),
+    externalId: sanitizeGoText(row.externalId || row.taskId || "", 100),
+    onChainBountyId: sanitizeGoText(row.onChainBountyId || "", 80),
+    pumpBountiesProgramId: normalizeSolanaDisplayAddress(row.pumpBountiesProgramId || ""),
+    bountyPda: normalizeSolanaDisplayAddress(row.bountyPda || ""),
+    chainConfigSnapshot,
+    coinAddress: normalizeSolanaDisplayAddress(row.coinAddress || ""),
+    sourceSubmissionCount: Math.max(0, Number(row.sourceSubmissionCount || row.submissionCount || 0) || 0),
+    sourceLikeCount: Math.max(0, Number(row.sourceLikeCount || row.likeCount || 0) || 0),
     createdAt: Number(row.createdAt || now),
     endsAt: Number(row.endsAt || now + 3 * 24 * 60 * 60)
   };
@@ -2299,6 +2664,647 @@ function decorateGoBounty(bounty, store = readGoDb()) {
     submissions,
     secondsLeft: Math.max(0, Number(bounty.endsAt || 0) - now)
   };
+}
+
+function unescapePumpFunPayload(html = "") {
+  return String(html || "")
+    .replace(/\\u003c/g, "<")
+    .replace(/\\u003e/g, ">")
+    .replace(/\\u0026/g, "&")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
+}
+
+function readBalancedJsonObject(text = "", startIndex = 0) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  const start = String(text || "").indexOf("{", startIndex);
+  if (start < 0) return "";
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return "";
+}
+
+function extractPumpFunBountyObjects(html = "") {
+  const decoded = unescapePumpFunPayload(html);
+  const out = [];
+  const seen = new Set();
+  const patterns = ['"initialTask":', '"bounty":', '"parentBounty":'];
+  for (const pattern of patterns) {
+    let index = 0;
+    while (index >= 0 && index < decoded.length) {
+      index = decoded.indexOf(pattern, index);
+      if (index < 0) break;
+      const objectText = readBalancedJsonObject(decoded, index + pattern.length);
+      index += pattern.length + Math.max(1, objectText.length);
+      if (!objectText) continue;
+      try {
+        const row = JSON.parse(objectText);
+        const taskId = String(row?.taskId || "").trim();
+        if (!taskId || seen.has(taskId)) continue;
+        seen.add(taskId);
+        out.push(row);
+      } catch {
+        // Pump.fun ships this inside Next's streamed payload. If one chunk is
+        // malformed after string unescaping, keep scanning the rest.
+      }
+    }
+  }
+  return out;
+}
+
+function parseNextFlightStringRefs(html = "") {
+  const refs = new Map();
+  const decoded = unescapePumpFunPayload(html);
+  const re = /self\.__next_f\.push\(\[1,"([0-9a-z]+):([\s\S]*?)"\]\)/gi;
+  let match = null;
+  while ((match = re.exec(decoded))) {
+    const key = match[1];
+    let value = match[2] || "";
+    try {
+      value = JSON.parse(`"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
+    } catch {
+      // Keep the decoded text when JSON repair is not needed.
+    }
+    refs.set(`$${key}`, value);
+  }
+  const largeTextRe = /([0-9a-z]+):T[0-9a-f]+,"\]\)<\/script><script>self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)<\/script>/gi;
+  while ((match = largeTextRe.exec(html))) {
+    refs.set(`$${match[1]}`, unescapePumpFunPayload(match[2] || ""));
+  }
+  const scriptRe = /<script>self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)<\/script>/gi;
+  let pendingLargeTextKey = "";
+  while ((match = scriptRe.exec(html))) {
+    const chunk = unescapePumpFunPayload(match[1] || "");
+    const marker = [...chunk.matchAll(/(?:^|\n)([0-9a-z]+):T[0-9a-f]+,?/gi)].pop();
+    if (marker) {
+      pendingLargeTextKey = marker[1];
+      continue;
+    }
+    if (pendingLargeTextKey) {
+      refs.set(`$${pendingLargeTextKey}`, chunk);
+      pendingLargeTextKey = "";
+    }
+  }
+  return refs;
+}
+
+function resolvePumpFunRefs(value, refs) {
+  if (typeof value === "string") return refs.get(value) || value;
+  if (Array.isArray(value)) return value.map((item) => resolvePumpFunRefs(item, refs));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [key, row] of Object.entries(value)) out[key] = resolvePumpFunRefs(row, refs);
+    return out;
+  }
+  return value;
+}
+
+function isoToUnix(value, fallback = Math.floor(Date.now() / 1000)) {
+  const ts = Date.parse(String(value || ""));
+  return Number.isFinite(ts) ? Math.floor(ts / 1000) : fallback;
+}
+
+function rewardLegAmount(leg = {}) {
+  const atomic = BigInt(String(leg.amountAtomic || leg.remainingAmountAtomic || "0").replace(/[^0-9]/g, "") || "0");
+  const decimals = Math.max(0, Math.min(18, Number(leg.decimalsSnapshot || 0) || 0));
+  const divisor = 10 ** decimals;
+  if (!divisor) return 0;
+  return Number(atomic) / divisor;
+}
+
+function pumpFunTokenUnit(row = {}) {
+  const leg = Array.isArray(row.rewardLegs) ? row.rewardLegs[0] : null;
+  const mint = String(leg?.mintAddress || row.coinAddress || "").trim();
+  if (mint === "So11111111111111111111111111111111111111112") return "SOL";
+  if (mint.endsWith("pump")) return "PUMP";
+  return mint ? `${mint.slice(0, 4)}...${mint.slice(-4)}` : "PUMP";
+}
+
+function normalizePumpFunBounty(row = {}) {
+  const taskId = sanitizeGoText(row.taskId || "", 100);
+  const title = sanitizeGoText(row.title || "", 140);
+  if (!taskId || !title) return null;
+  const firstAttachment = Array.isArray(row.attachments) ? row.attachments.find((item) => item?.url) : null;
+  const criteria = Array.isArray(row.criteria)
+    ? row.criteria
+        .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0))
+        .map((item) => sanitizeGoText(item?.text || "", 140))
+        .filter(Boolean)
+    : [];
+  const firstLeg = Array.isArray(row.rewardLegs) ? row.rewardLegs[0] : null;
+  const createdAt = isoToUnix(row.publishedAt || row.createdAt);
+  const endsAt = isoToUnix(row.expiresAt, createdAt + 7 * 24 * 60 * 60);
+  const liveUrl = `https://pump.fun/go/${encodeURIComponent(taskId)}`;
+  const rawStatus = String(row.status || "").toUpperCase();
+  const closedStatus =
+    rawStatus.includes("CLOSED") ||
+    rawStatus.includes("CANCEL") ||
+    rawStatus.includes("EXPIRED") ||
+    rawStatus.includes("PAID") ||
+    rawStatus.includes("ARCHIVED");
+  const isOpen = !closedStatus && endsAt > Math.floor(Date.now() / 1000);
+  return normalizeGoBounty({
+    id: `pumpfun-${taskId}`,
+    title,
+    description: row.bodyMarkdown || "",
+    deliverables: criteria.length ? criteria : ["Complete the Pump.fun bounty brief", "Attach proof links, images, or video", "Submit before the bounty expires"],
+    rewardUsd: row.rewardTotalUsd || 0,
+    tokenSymbol: "PUMPFUN",
+    tokenAmount: rewardLegAmount(firstLeg),
+    tokenUnit: pumpFunTokenUnit(row),
+    payoutChainId: 101,
+    creator: "",
+    creatorSolana: row.creatorAddress || "",
+    creatorName: row.creatorAddress ? `pump_${String(row.creatorAddress).slice(0, 4)}` : "Pump.fun creator",
+    status: isOpen && endsAt > Math.floor(Date.now() / 1000) ? "open" : "closed",
+    imageUri: firstAttachment?.url || "",
+    source: "Pump.fun",
+    sourceUrl: liveUrl,
+    externalId: taskId,
+    onChainBountyId: row.onChainBountyId || "",
+    pumpBountiesProgramId: row.pumpBountiesProgramId || "",
+    bountyPda: row.bountyPda || "",
+    chainConfigSnapshot: row.chainConfigSnapshot || null,
+    coinAddress: row.coinAddress || "",
+    sourceSubmissionCount: row.counts?.submissionCount || 0,
+    sourceLikeCount: row.likeCount || 0,
+    createdAt,
+    endsAt
+  });
+}
+
+async function fetchPumpFunBounties(options = {}) {
+  const ttlMs = Math.max(15_000, Number(process.env.PUMPFUN_BOUNTY_CACHE_TTL_MS || 60_000));
+  const now = Date.now();
+  if (!options.fresh && pumpFunBountiesCache.rows.length && now - pumpFunBountiesCache.fetchedAt < ttlMs) {
+    return pumpFunBountiesCache;
+  }
+  const sourceUrl = String(process.env.PUMPFUN_BOUNTIES_URL || "https://pump.fun/go").trim();
+  try {
+    const response = await withTimeout(
+      fetch(sourceUrl, {
+        headers: {
+          "User-Agent": "PumpRBot/1.0 (+https://pump-r.fun)",
+          Accept: "text/html,application/json"
+        }
+      }),
+      8_000,
+      "Pump.fun bounties"
+    );
+    if (!response.ok) throw new Error(`Pump.fun returned ${response.status}`);
+    const contentType = String(response.headers.get("content-type") || "");
+    let rawRows = [];
+    if (contentType.includes("application/json")) {
+      const json = await response.json();
+      rawRows = Array.isArray(json?.bounties) ? json.bounties : Array.isArray(json?.data) ? json.data : [];
+    } else {
+      rawRows = extractPumpFunBountyObjects(await response.text());
+    }
+    const rows = rawRows.map(normalizePumpFunBounty).filter(Boolean);
+    pumpFunBountiesCache = { rows, fetchedAt: now, error: "" };
+  } catch (error) {
+    pumpFunBountiesCache = {
+      rows: pumpFunBountiesCache.rows || [],
+      fetchedAt: pumpFunBountiesCache.fetchedAt || now,
+      error: error?.message || "Pump.fun bounties unavailable"
+    };
+  }
+  return pumpFunBountiesCache;
+}
+
+async function fetchPumpFunBountyDetail(taskId = "", options = {}) {
+  const id = sanitizeGoText(taskId || "", 100);
+  if (!id) return null;
+  const ttlMs = Math.max(15_000, Number(process.env.PUMPFUN_BOUNTY_DETAIL_CACHE_TTL_MS || 120_000));
+  const cached = pumpFunBountyDetailCache.get(id);
+  if (!options.fresh && cached && Date.now() - Number(cached.fetchedAt || 0) < ttlMs) return cached.row;
+  try {
+    const url = `https://pump.fun/go/${encodeURIComponent(id)}`;
+    const response = await withTimeout(
+      fetch(url, {
+        headers: {
+          "User-Agent": "PumpRBot/1.0 (+https://pump-r.fun)",
+          Accept: "text/html"
+        }
+      }),
+      8_000,
+      "Pump.fun bounty detail"
+    );
+    if (!response.ok) throw new Error(`Pump.fun detail returned ${response.status}`);
+    const html = await response.text();
+    const refs = parseNextFlightStringRefs(html);
+    const rows = extractPumpFunBountyObjects(html)
+      .map((row) => resolvePumpFunRefs(row, refs))
+      .filter((row) => String(row?.taskId || "") === id);
+    const row = rows[0] ? normalizePumpFunBounty(rows[0]) : null;
+    if (row) pumpFunBountyDetailCache.set(id, { row, fetchedAt: Date.now(), error: "" });
+    return row;
+  } catch (error) {
+    if (cached?.row) return cached.row;
+    return null;
+  }
+}
+
+function normalizePumpFunSubmission(row = {}, bountyId = "") {
+  const submissionId = sanitizeGoText(row.submissionId || row.id || "", 120);
+  const body = sanitizeAgentDraftText(row.bodyMarkdown || row.description || row.body || "", 6000);
+  if (!submissionId || !body) return null;
+  const requester = normalizeSolanaDisplayAddress(row.requesterAddress || row.creatorAddress || row.address || "");
+  const profileName =
+    sanitizeGoText(row.requester?.username || row.user?.username || row.profile?.username || row.username || "", 80) ||
+    (requester ? `pump_${requester.slice(0, 4)}` : "Pump.fun user");
+  const links = Array.isArray(row.links)
+    ? row.links.map(sanitizeGoUrl).filter(Boolean).slice(0, 8)
+    : [];
+  const firstAttachment = Array.isArray(row.attachments) ? row.attachments.find((item) => item?.url) : null;
+  return normalizeGoSubmission({
+    id: normalizeGoId(`pumpfun-sub-${submissionId}`, "sub"),
+    bountyId,
+    author: ethers.ZeroAddress,
+    authorName: profileName,
+    body,
+    mediaUrl: firstAttachment?.url || "",
+    links,
+    createdAt: isoToUnix(row.createdAt || row.updatedAt),
+    likes: []
+  });
+}
+
+async function fetchPumpFunSubmissions(taskId = "", bountyId = "") {
+  const id = sanitizeGoText(taskId || "", 100);
+  if (!id) return [];
+  try {
+    const userAgent = String(
+      process.env.PUMPFUN_USER_AGENT ||
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+    ).trim();
+    const response = await withTimeout(
+      fetch(`https://livestream-api.pump.fun/bounties/tasks/${encodeURIComponent(id)}/submissions?limit=50`, {
+        headers: {
+          Accept: "application/json",
+          Origin: "https://pump.fun",
+          Referer: `https://pump.fun/go/${encodeURIComponent(id)}`,
+          "User-Agent": userAgent
+        }
+      }),
+      10_000,
+      "Pump.fun submissions"
+    );
+    if (!response.ok) throw new Error(`Pump.fun submissions returned ${response.status}`);
+    const payload = await response.json().catch(() => ({}));
+    const rows = Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.submissions)
+        ? payload.submissions
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload)
+            ? payload
+            : [];
+    return rows
+      .map((row) => normalizePumpFunSubmission(row, bountyId || `pumpfun-${id}`))
+      .filter(Boolean);
+  } catch (error) {
+    console.warn(`Pump.fun submissions unavailable for ${id}: ${error?.message || "unknown error"}`);
+    return [];
+  }
+}
+
+async function listLiveGoBounties(options = {}) {
+  if (String(process.env.ENABLE_PUMPFUN_BOUNTIES || "1") === "0") return [];
+  const live = await fetchPumpFunBounties(options);
+  return Array.isArray(live.rows) ? live.rows : [];
+}
+
+async function findLiveGoBounty(id = "") {
+  const normalized = normalizeGoId(id || "", "go");
+  const externalId = normalized.startsWith("pumpfun-") ? normalized.slice("pumpfun-".length) : "";
+  if (externalId) {
+    const detail = await fetchPumpFunBountyDetail(externalId);
+    if (detail) return detail;
+  }
+  const rows = await listLiveGoBounties({ fresh: false });
+  return rows.find((row) => row.id === normalized) || null;
+}
+
+function bountyForAgentPrompt(bounty = {}) {
+  return {
+    id: bounty.id || "",
+    title: bounty.title || "",
+    source: bounty.source || "Pump-r",
+    sourceUrl: bounty.sourceUrl || "",
+    rewardUsd: Number(bounty.rewardUsd || 0),
+    tokenAmount: bounty.tokenAmount || 0,
+    tokenUnit: bounty.tokenUnit || "",
+    description: bounty.description || "",
+    deliverables: Array.isArray(bounty.deliverables) ? bounty.deliverables : [],
+    imageUri: bounty.imageUri || "",
+    submissions: Number(bounty.submissions || 0),
+    secondsLeft: Number(bounty.secondsLeft || 0)
+  };
+}
+
+function fallbackAgentBountyDraft(agent = {}, bounty = {}) {
+  const deliverables = (Array.isArray(bounty.deliverables) ? bounty.deliverables : [])
+    .map((item, index) => `${index + 1}. ${item}`)
+    .join("\n");
+  const skills = String(agent.skillsMd || "").split("\n").slice(0, 12).join("\n");
+  return [
+    `Agent: ${agent.name || "Agent"}`,
+    `Bounty: ${bounty.title || "Selected bounty"}`,
+    `Source: ${bounty.source || "Pump-r"}`,
+    `Reward: $${Number(bounty.rewardUsd || 0).toLocaleString()}${bounty.tokenAmount ? ` / ${bounty.tokenAmount} ${bounty.tokenUnit || ""}` : ""}`,
+    "",
+    "Synced brief:",
+    bounty.description || "No description provided.",
+    "",
+    "Execution plan:",
+    "- Read every acceptance criterion before creating proof.",
+    "- Produce only legal, verifiable work that can be reviewed publicly.",
+    "- Attach proof links, screenshots, images, or video before submitting.",
+    "- Do not claim completion until every required criterion is satisfied.",
+    "",
+    "Acceptance criteria:",
+    deliverables || "- No explicit criteria listed.",
+    "",
+    "Agent SKILLS.md:",
+    skills || "- No skills provided.",
+    "",
+    "Submission draft:",
+    "I reviewed the full synced bounty brief and prepared the required work package. Proof and final links are attached for review."
+  ].join("\n");
+}
+
+function openAiTextFromResponse(payload = {}) {
+  if (typeof payload.output_text === "string" && payload.output_text.trim()) return payload.output_text.trim();
+  const chunks = [];
+  for (const item of Array.isArray(payload.output) ? payload.output : []) {
+    for (const content of Array.isArray(item.content) ? item.content : []) {
+      const text = content.text || content?.content?.text || "";
+      if (typeof text === "string" && text.trim()) chunks.push(text);
+    }
+  }
+  return chunks.join("\n").trim();
+}
+
+async function draftAgentBountyWithOpenAI(agent = {}, bounty = {}) {
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey) {
+    return {
+      configured: false,
+      body: fallbackAgentBountyDraft(agent, bounty),
+      note: "OPENAI_API_KEY is not configured. Local draft generated instead."
+    };
+  }
+  const model = String(process.env.OPENAI_AGENT_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini").trim();
+  const prompt = [
+    "You are a Pump-r bounty-solving agent.",
+    "Use the agent SKILLS.md and the synced bounty brief to create a practical, review-ready work package.",
+    "Do not pretend the task is complete. Do not fabricate proof, links, contacts, screenshots, or real-world outcomes.",
+    "If the bounty requires external real-world action, produce an execution plan, evidence checklist, risk notes, and a submission draft template.",
+    "If the bounty can be completed digitally, produce exact next steps, required files/media, and a concise submission draft.",
+    "Return plain text only, with sections: Agent Read, Bounty Summary, Feasibility, Execution Plan, Evidence Needed, Submission Draft, Warnings.",
+    "",
+    `Agent:\n${JSON.stringify({
+      name: agent.name,
+      summary: agent.summary,
+      targets: agent.targets,
+      goals: agent.goals,
+      skillsMd: agent.skillsMd
+    }, null, 2)}`,
+    "",
+    `Bounty:\n${JSON.stringify(bountyForAgentPrompt(bounty), null, 2)}`
+  ].join("\n");
+  const response = await withTimeout(
+    fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        input: prompt,
+        max_output_tokens: Math.max(800, Math.min(5000, Number(process.env.OPENAI_AGENT_MAX_OUTPUT_TOKENS || 2200))),
+        temperature: 0.3
+      })
+    }),
+    30_000,
+    "OpenAI agent draft"
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `OpenAI returned ${response.status}`);
+  }
+  const body = openAiTextFromResponse(payload);
+  return {
+    configured: true,
+    model,
+    body: sanitizeAgentDraftText(body || fallbackAgentBountyDraft(agent, bounty), 6000),
+    note: "AI bounty draft generated."
+  };
+}
+
+function agentExecutionFallback(agent = {}, bounty = {}) {
+  const deliverables = (Array.isArray(bounty.deliverables) ? bounty.deliverables : [])
+    .map((item, index) => `${index + 1}. ${item}`)
+    .join("\n");
+  return [
+    `Submission for: ${bounty.title || "Selected bounty"}`,
+    "",
+    "Summary:",
+    `${agent.name || "Agent"} reviewed the full bounty brief and prepared the work package below for sponsor review.`,
+    "",
+    "Work completed:",
+    "- Read the full bounty requirements and acceptance criteria.",
+    "- Organized the required deliverables into a review checklist.",
+    "- Prepared the submission text and proof checklist for final review.",
+    "",
+    "Proof / links:",
+    bounty.sourceUrl ? `- Original bounty: ${bounty.sourceUrl}` : "- Proof links should be attached before final reward review.",
+    "",
+    "Deliverables matched:",
+    deliverables || "- No explicit deliverables listed by the bounty."
+  ].join("\n");
+}
+
+async function executeAgentBountyWithOpenAI(agent = {}, bounty = {}) {
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey) {
+    return {
+      configured: false,
+      body: sanitizeAgentDraftText(agentExecutionFallback(agent, bounty), 6000),
+      note: "OPENAI_API_KEY is not configured. Local execution package generated instead."
+    };
+  }
+  const model = String(process.env.OPENAI_AGENT_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini").trim();
+  const prompt = [
+    "You are a Pump-r autonomous bounty agent running inside the Pump-r app.",
+    "Your job is to do as much of the bounty work as can be done from the provided brief and agent SKILLS.md, then create a Pump.fun-ready submission package.",
+    "You do not have private accounts, browsers, wallets, email, X, or Pump.fun write access unless the user supplies those tools later.",
+    "Never claim you completed real-world actions you did not actually perform. Never fabricate proof, links, screenshots, contacts, media, transactions, or official confirmations.",
+    "For tasks that require outside action, be honest: say what is prepared, what proof is required, and what must still happen before the bounty should be approved.",
+    "For tasks that can be completed using text reasoning, research planning, copywriting, strategy, scripts, or checklists, complete those parts directly.",
+    "Return plain text only. Do not include internal logs, JSON, markdown tables, or long agent analysis.",
+    "Format the answer exactly with these section labels, each on its own line: Submission for:, Summary:, Work completed:, Proof / links:, Deliverables matched:.",
+    "Put a blank line between sections. Use short bullet points under Work completed, Proof / links, and Deliverables matched.",
+    "Keep the tone like a Pump.fun submission: direct, scannable, not corporate, and easy for the sponsor to review.",
+    "Keep it concise enough to paste into a Pump.fun bounty submission box, but include enough detail for the bounty creator to review it.",
+    "",
+    `Agent:\n${JSON.stringify({
+      name: agent.name,
+      summary: agent.summary,
+      targets: agent.targets,
+      goals: agent.goals,
+      skillsMd: agent.skillsMd
+    }, null, 2)}`,
+    "",
+    `Bounty:\n${JSON.stringify(bountyForAgentPrompt(bounty), null, 2)}`
+  ].join("\n");
+  const response = await withTimeout(
+    fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        input: prompt,
+        max_output_tokens: Math.max(1200, Math.min(6000, Number(process.env.OPENAI_AGENT_MAX_OUTPUT_TOKENS || 3000)))
+      })
+    }),
+    45_000,
+    "OpenAI agent run"
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `OpenAI returned ${response.status}`);
+  }
+  const body = openAiTextFromResponse(payload);
+  return {
+    configured: true,
+    model,
+    body: sanitizeAgentDraftText(body || agentExecutionFallback(agent, bounty), 6000),
+    note: "AI agent run completed."
+  };
+}
+
+function bountyNeedsRealWorldProof(bounty = {}) {
+  const text = [
+    bounty.title,
+    bounty.description,
+    ...(Array.isArray(bounty.deliverables) ? bounty.deliverables : [])
+  ].join(" ").toLowerCase();
+  const realWorldSignals = [
+    "video",
+    "recording",
+    "footage",
+    "selfie",
+    "photo",
+    "receipt",
+    "tattoo",
+    "interview",
+    "march",
+    "street",
+    "donation",
+    "drive",
+    "official",
+    "proof",
+    "show your",
+    "hold "
+  ];
+  return realWorldSignals.some((signal) => text.includes(signal));
+}
+
+async function generateOpenAiBountyConceptImage(agent = {}, bounty = {}) {
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not configured for AI concept image generation");
+  }
+  const needsRealWorldProof = bountyNeedsRealWorldProof(bounty);
+  const model = String(process.env.OPENAI_IMAGE_MODEL || "gpt-image-1").trim();
+  const title = sanitizeAlphaText(bounty.title || "Pump.fun bounty concept", 120);
+  const deliverables = (Array.isArray(bounty.deliverables) ? bounty.deliverables : [])
+    .map((item) => `- ${sanitizeAlphaText(item, 180)}`)
+    .join("\n");
+  const prompt = [
+    "Create one photorealistic camera-style image that visually represents the bounty task itself.",
+    "The image must look like a real phone photo or documentary still, not a cartoon, anime image, illustration, 3D render, poster, checklist, UI card, infographic, app screenshot, title slide, or instruction sheet.",
+    "Make the bounty action the subject of the image. For example, if the task asks for fries spelling a word on a fast-food table, show a realistic fast-food table with fries arranged to spell that exact word.",
+    "Use only the text that the task specifically asks to show. Avoid extra captions, badges, labels, headings, disclaimers, menus, or paragraphs.",
+    "Use natural lighting, realistic materials, real-world perspective, imperfect candid composition, and believable camera depth of field.",
+    "Style: realistic everyday photo evidence scene, sharp but natural, no graphic design layout, no mascot characters, no decorative text overlays.",
+    `Bounty title: ${title}`,
+    `Bounty summary: ${sanitizeAgentDraftText(bounty.description || "", 700)}`,
+    deliverables ? `Deliverables:\n${deliverables}` : "",
+    `Agent: ${sanitizeAlphaText(agent.name || "Pump-r Agent", 80)}`
+  ].filter(Boolean).join("\n\n");
+  const response = await withTimeout(
+    fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        prompt,
+        size: String(process.env.OPENAI_IMAGE_SIZE || "1024x1024"),
+        n: 1
+      })
+    }),
+    60_000,
+    "OpenAI concept image"
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `OpenAI image generation returned ${response.status}`);
+  }
+  const b64 = String(payload?.data?.[0]?.b64_json || "").trim();
+  if (!b64) throw new Error("OpenAI did not return image data");
+  return {
+    filename: `pumpr-task-scene-${Date.now().toString(36)}.png`,
+    contentType: "image/png",
+    size: Math.ceil((b64.length * 3) / 4),
+    dataUrl: `data:image/png;base64,${b64}`,
+    generatedBy: "openai",
+    model,
+    mode: needsRealWorldProof ? "storyboard" : "concept"
+  };
+}
+
+async function loadGoBountyForAgent(bountyId = "") {
+  const id = normalizeGoId(bountyId || "", "go");
+  const goStore = readGoDb();
+  const localBounty = (goStore.bounties || []).map(normalizeGoBounty).find((row) => row && row.id === id);
+  const externalId = id.startsWith("pumpfun-") ? id.slice("pumpfun-".length) : "";
+  const liveDetail = externalId ? await fetchPumpFunBountyDetail(externalId, { fresh: true }) : null;
+  const bounty = decorateGoBounty(liveDetail || localBounty || (await findLiveGoBounty(id)), goStore);
+  return bounty?.id ? { bounty, goStore } : { bounty: null, goStore };
 }
 
 async function createCommunityPost(value = {}) {
@@ -4348,6 +5354,439 @@ app.get("/api/pumpfun/metadata/:id", (req, res) => {
   res.json(row);
 });
 
+function normalizeSolanaAddressText(value = "") {
+  return String(value || "").trim().replace(/[^1-9A-HJ-NP-Za-km-z]/g, "").slice(0, 80);
+}
+
+function decodePumpFunAuthAddressFromToken(token = "") {
+  const text = String(token || "").trim();
+  if (!text || !text.includes(".")) return "";
+  try {
+    const payload = text.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payload.padEnd(payload.length + ((4 - payload.length % 4) % 4), "=");
+    const json = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+    return normalizeSolanaAddressText(json?.address || "");
+  } catch {
+    return "";
+  }
+}
+
+function decodePumpFunAuthAddressFromCookie(cookie = "") {
+  const token = String(cookie || "").match(/(?:^|;\s*)auth_token=([^;]+)/)?.[1] || "";
+  return decodePumpFunAuthAddressFromToken(token);
+}
+
+function pumpFunSessionAddressFromEnv() {
+  return decodePumpFunAuthAddressFromToken(process.env.PUMPFUN_API_BEARER || process.env.PUMPFUN_BEARER_TOKEN || "") ||
+    decodePumpFunAuthAddressFromCookie(process.env.PUMPFUN_SESSION_COOKIE || "");
+}
+
+function normalizePumpFunSessionInput(row = {}) {
+  const owner = normalizeSolanaAddressText(row.owner || row.address || row.wallet || "");
+  const cookie = String(row.cookie || row.sessionCookie || "").trim().slice(0, 12000);
+  const bearer = String(row.bearer || row.authToken || "").trim().replace(/^Bearer\s+/i, "").slice(0, 4000);
+  const decodedAddress = decodePumpFunAuthAddressFromToken(bearer) || decodePumpFunAuthAddressFromCookie(cookie);
+  const sessionAddress = normalizeSolanaAddressText(row.sessionAddress || decodedAddress || owner);
+  if (!owner || (!cookie && !bearer) || !sessionAddress || owner !== sessionAddress) return null;
+  return {
+    owner,
+    sessionAddress,
+    cookie,
+    bearer,
+    createdAt: Number(row.createdAt || Math.floor(Date.now() / 1000)),
+    updatedAt: Number(row.updatedAt || Math.floor(Date.now() / 1000))
+  };
+}
+
+function emptyPumpFunSessionsStore() {
+  return { sessions: [] };
+}
+
+function sanitizePumpFunSessionsStore(store = {}) {
+  const rows = Array.isArray(store.sessions) ? store.sessions : [];
+  const byOwner = new Map();
+  for (const row of rows) {
+    const safe = normalizePumpFunSessionInput(row);
+    if (safe) byOwner.set(safe.owner, safe);
+  }
+  return { sessions: Array.from(byOwner.values()) };
+}
+
+function readPumpFunSessionsDb() {
+  try {
+    if (fs.existsSync(PUMPFUN_SESSIONS_DB_PATH)) {
+      return sanitizePumpFunSessionsStore(JSON.parse(fs.readFileSync(PUMPFUN_SESSIONS_DB_PATH, "utf8") || "{}"));
+    }
+  } catch {
+    // fall through
+  }
+  return emptyPumpFunSessionsStore();
+}
+
+function writePumpFunSessionsDb(store) {
+  const safe = sanitizePumpFunSessionsStore(store);
+  fs.mkdirSync(path.dirname(PUMPFUN_SESSIONS_DB_PATH), { recursive: true });
+  fs.writeFileSync(PUMPFUN_SESSIONS_DB_PATH, JSON.stringify(safe, null, 2));
+  return safe;
+}
+
+async function readPumpFunSessionsDbRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_PUMPFUN_SESSIONS_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPFUN_SESSIONS_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Supabase Pump.fun sessions read failed: ${response.status}`);
+  return sanitizePumpFunSessionsStore(await response.json().catch(() => emptyPumpFunSessionsStore()));
+}
+
+async function writePumpFunSessionsDbRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_PUMPFUN_SESSIONS_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPFUN_SESSIONS_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizePumpFunSessionsStore(store), null, 2)
+  });
+  if (!response.ok) throw new Error(`Supabase Pump.fun sessions write failed: ${response.status}`);
+  return true;
+}
+
+async function readPumpFunSessionsPersistent(options = {}) {
+  if (isSupabaseStorageConfigured() && options.refresh) {
+    const remote = await readPumpFunSessionsDbRemote().catch(() => null);
+    if (remote) writePumpFunSessionsDb(remote);
+  }
+  return sanitizePumpFunSessionsStore(readPumpFunSessionsDb());
+}
+
+async function writePumpFunSessionsPersistent(store) {
+  const safe = writePumpFunSessionsDb(store);
+  if (isSupabaseStorageConfigured()) await writePumpFunSessionsDbRemote(safe).catch(() => false);
+  return safe;
+}
+
+function publicPumpFunSession(row = null) {
+  if (!row) return { configured: false };
+  return {
+    configured: true,
+    owner: row.owner,
+    sessionAddress: row.sessionAddress,
+    hasCookie: Boolean(row.cookie),
+    hasBearer: Boolean(row.bearer),
+    updatedAt: row.updatedAt
+  };
+}
+
+async function findPumpFunSessionForOwner(owner = "") {
+  const key = normalizeSolanaAddressText(owner);
+  if (!key) return null;
+  const store = await readPumpFunSessionsPersistent({ refresh: IS_VERCEL_RUNTIME });
+  return (store.sessions || []).find((row) => row.owner === key) || null;
+}
+
+function pumpFunSubmitAuthHeaders(options = {}) {
+  const session = options.session || null;
+  const cookie = String(session?.cookie || process.env.PUMPFUN_SESSION_COOKIE || "").trim();
+  const bearer = String(session?.bearer || process.env.PUMPFUN_API_BEARER || process.env.PUMPFUN_BEARER_TOKEN || "").trim();
+  if (!cookie && !bearer) {
+    throw new Error("Add a Pump.fun session for this Phantom wallet before auto-submitting work");
+  }
+  const referer = String(options.referer || "https://pump.fun/go").trim();
+  const userAgent = String(
+    process.env.PUMPFUN_USER_AGENT ||
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+  ).trim();
+  const headers = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    Origin: "https://pump.fun",
+    Referer: referer,
+    "User-Agent": userAgent
+  };
+  if (cookie) headers.Cookie = cookie;
+  if (bearer) headers.Authorization = bearer.toLowerCase().startsWith("bearer ") ? bearer : `Bearer ${bearer}`;
+  return headers;
+}
+
+app.get("/api/pumpfun/session/:owner", async (req, res) => {
+  try {
+    const owner = normalizeSolanaAddressText(req.params.owner || "");
+    if (!owner) return res.status(400).json({ error: "Connect Phantom first" });
+    const session = await findPumpFunSessionForOwner(owner);
+    res.json(publicPumpFunSession(session));
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Unable to load Pump.fun session" });
+  }
+});
+
+app.post("/api/pumpfun/session", async (req, res) => {
+  try {
+    const owner = normalizeSolanaAddressText(req.body?.owner || req.body?.address || "");
+    const cookie = String(req.body?.cookie || "").trim();
+    const bearer = String(req.body?.bearer || req.body?.authToken || "").trim();
+    const sessionAddress = decodePumpFunAuthAddressFromToken(bearer) || decodePumpFunAuthAddressFromCookie(cookie);
+    if (!owner) return res.status(400).json({ error: "Connect Phantom before saving Pump.fun session" });
+    if (!cookie && !bearer) return res.status(400).json({ error: "Paste your Pump.fun auth_token or full Cookie header" });
+    if (!sessionAddress) return res.status(400).json({ error: "Could not read a wallet address from this Pump.fun session. Include auth_token." });
+    if (sessionAddress !== owner) {
+      return res.status(400).json({ error: `This Pump.fun session belongs to ${sessionAddress.slice(0, 6)}...${sessionAddress.slice(-4)}, but Phantom is ${owner.slice(0, 6)}...${owner.slice(-4)}.` });
+    }
+    const store = await readPumpFunSessionsPersistent({ refresh: IS_VERCEL_RUNTIME });
+    const next = sanitizePumpFunSessionsStore({
+      sessions: [
+        ...(store.sessions || []).filter((row) => row.owner !== owner),
+        { owner, sessionAddress, cookie, bearer: bearer.replace(/^Bearer\s+/i, ""), updatedAt: Math.floor(Date.now() / 1000) }
+      ]
+    });
+    await writePumpFunSessionsPersistent(next);
+    res.json(publicPumpFunSession(next.sessions.find((row) => row.owner === owner)));
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Unable to save Pump.fun session" });
+  }
+});
+
+app.delete("/api/pumpfun/session/:owner", async (req, res) => {
+  try {
+    const owner = normalizeSolanaAddressText(req.params.owner || "");
+    const store = await readPumpFunSessionsPersistent({ refresh: IS_VERCEL_RUNTIME });
+    const next = sanitizePumpFunSessionsStore({ sessions: (store.sessions || []).filter((row) => row.owner !== owner) });
+    await writePumpFunSessionsPersistent(next);
+    res.json({ configured: false });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Unable to remove Pump.fun session" });
+  }
+});
+async function pumpFunLivestreamRequest(pathname, options = {}) {
+  const base = String(process.env.PUMPFUN_LIVESTREAM_API_URL || "https://livestream-api.pump.fun").replace(/\/+$/, "");
+  const target = `${base}/${String(pathname || "").replace(/^\/+/, "")}`;
+  const response = await withTimeout(
+    fetch(target, {
+      method: options.method || "GET",
+      headers: pumpFunSubmitAuthHeaders(options),
+      body: options.body ? JSON.stringify(options.body) : undefined
+    }),
+    20_000,
+    "Pump.fun submit API"
+  );
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { message: text };
+  }
+  if (!response.ok) {
+    const message = payload?.error || payload?.message || payload?.reason || `Pump.fun returned ${response.status}`;
+    const error = new Error(message);
+    error.status = response.status;
+    error.payload = payload;
+    error.target = target;
+    throw error;
+  }
+  return payload;
+}
+
+function encodeAnchorString(value = "") {
+  const bytes = Buffer.from(String(value || ""), "utf8");
+  const len = Buffer.alloc(4);
+  len.writeUInt32LE(bytes.length, 0);
+  return Buffer.concat([len, bytes]);
+}
+
+function derivePumpFunSubmissionCommitment(publicKey, submissionId = "") {
+  return crypto
+    .createHash("sha256")
+    .update(Buffer.from("pump.fun:bounty:submission", "utf8"))
+    .update(publicKey.toBuffer())
+    .update(Buffer.from(String(submissionId || ""), "utf8"))
+    .digest();
+}
+
+function bnLe8(value) {
+  const BN = require("bn.js");
+  return new BN(String(value || "0")).toArrayLike(Buffer, "le", 8);
+}
+
+async function buildPumpFunSubmissionFeeTransaction({ bounty, submissionId, userPublicKey }) {
+  const { Connection: SolanaConnection, PublicKey: SolanaPublicKey, Transaction: SolanaTransaction } = await loadSolanaWeb3();
+  const { TransactionInstruction, SystemProgram } = require("@solana/web3.js");
+  const programId = new SolanaPublicKey(String(bounty?.pumpBountiesProgramId || "").trim());
+  const payerText = normalizeSolanaAddressText(userPublicKey || "");
+  const session = await findPumpFunSessionForOwner(payerText);
+  if (!session) throw new Error("Add a Pump.fun session for this Phantom wallet before paying the submission fee");
+  const payer = new SolanaPublicKey(payerText);
+  const bountyId = String(bounty?.onChainBountyId || "").trim();
+  const submissionIdText = sanitizeGoText(submissionId || "", 120);
+  if (!bountyId) throw new Error("Pump.fun bounty is missing on-chain bounty id");
+  if (!submissionIdText) throw new Error("Pump.fun submission id is missing");
+
+  const [configPda] = SolanaPublicKey.findProgramAddressSync([Buffer.from("config")], programId);
+  const [bountyPda] = SolanaPublicKey.findProgramAddressSync([Buffer.from("bounty"), bnLe8(bountyId)], programId);
+  const submissionCommitment = derivePumpFunSubmissionCommitment(payer, submissionIdText);
+  const [submissionFeeReceiptPda] = SolanaPublicKey.findProgramAddressSync(
+    [Buffer.from("submission_fee"), bountyPda.toBuffer(), submissionCommitment],
+    programId
+  );
+  const data = Buffer.concat([
+    Buffer.from([12, 2, 71, 23, 233, 0, 253, 120]),
+    submissionCommitment,
+    encodeAnchorString(submissionIdText)
+  ]);
+  const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
+  const connection = new SolanaConnection(rpcUrl, "confirmed");
+  let submissionFeeVaultText = "";
+  const configAccount = await connection.getAccountInfo(configPda, "confirmed");
+  if (!configAccount?.data || configAccount.data.length < 201) {
+    throw new Error("Pump.fun bounty config account is unavailable from the configured Solana RPC");
+  }
+  // Pump.fun's config has a one-byte field before submission_fee_vault.
+  // Reading at 8 + 32 * 5 is one byte early and triggers Anchor ConstraintAddress.
+  submissionFeeVaultText = new SolanaPublicKey(configAccount.data.slice(169, 201)).toBase58();
+  const submissionFeeVault = new SolanaPublicKey(submissionFeeVaultText);
+
+  const instruction = new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: configPda, isSigner: false, isWritable: false },
+      { pubkey: submissionFeeVault, isSigner: false, isWritable: true },
+      { pubkey: bountyPda, isSigner: false, isWritable: true },
+      { pubkey: submissionFeeReceiptPda, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }
+    ],
+    data
+  });
+  const latest = await connection.getLatestBlockhash("confirmed");
+  const tx = new SolanaTransaction({ feePayer: payer, recentBlockhash: latest.blockhash }).add(instruction);
+  const existingReceipt = await connection.getAccountInfo(submissionFeeReceiptPda, "confirmed").catch(() => null);
+  return {
+    existingReceipt: Boolean(existingReceipt),
+    pumpFunSessionAddress: session.sessionAddress,
+    payerAddress: payer.toBase58(),
+    resumeSignature: "pumpfun:bounties:submission_publish_fee_receipt_resume:v1",
+    transactionBase64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+    rpcUrl,
+    blockhash: latest.blockhash,
+    lastValidBlockHeight: latest.lastValidBlockHeight,
+    submissionCommitmentHex: submissionCommitment.toString("hex"),
+    submissionFeeLamports: String(bounty?.chainConfigSnapshot?.submissionFeeLamports || "0"),
+    bountyPda: bountyPda.toBase58(),
+    submissionFeeReceiptPda: submissionFeeReceiptPda.toBase58()
+  };
+}
+
+app.post("/api/pumpfun/bounty-submission/draft", async (req, res) => {
+  try {
+    const bountyId = normalizeGoId(req.body?.bountyId || "", "go");
+    const { bounty } = await loadGoBountyForAgent(bountyId);
+    if (!bounty?.id || !String(bounty.source || "").toLowerCase().includes("pump.fun")) {
+      throw new Error("Open a synced Pump.fun bounty first");
+    }
+    const taskId = sanitizeGoText(bounty.externalId || req.body?.taskId || "", 120);
+    if (!taskId) throw new Error("Pump.fun task id is missing");
+    const bodyMarkdown = sanitizeAgentDraftText(req.body?.bodyMarkdown || req.body?.body || "", 6000);
+    if (bodyMarkdown.length < 10) throw new Error("Add a submission body before sending to Pump.fun");
+    const session = await findPumpFunSessionForOwner(req.body?.owner || req.body?.userPublicKey || "");
+    if (!session) throw new Error("Add a Pump.fun session for this Phantom wallet before auto-submitting work");
+    const evidence = await uploadPumpFunEvidenceAttachments(session, req.body?.attachments);
+    const attachments = evidence.attachments;
+
+    const links = [
+      ...(Array.isArray(req.body?.links) ? req.body.links : []),
+      ...evidence.links
+    ]
+      .map(sanitizeGoUrl)
+      .filter(Boolean)
+      .slice(0, 8);
+    const payload = await pumpFunLivestreamRequest(`bounties/tasks/${encodeURIComponent(taskId)}/submissions`, {
+      session,
+      method: "POST",
+      body: { bodyMarkdown, links, attachments }
+    });
+    res.json({
+      ok: true,
+      payload,
+      bounty,
+      taskId,
+      attachmentCount: attachments.length,
+      attachmentUrls: attachments.map((attachment) => attachment.url).filter(Boolean),
+      submissionId: payload?.submissionId || payload?.submission?.submissionId || ""
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to create Pump.fun submission draft" });
+  }
+});
+
+app.post("/api/pumpfun/bounty-submission/fee-transaction", async (req, res) => {
+  try {
+    const bountyId = normalizeGoId(req.body?.bountyId || "", "go");
+    const { bounty } = await loadGoBountyForAgent(bountyId);
+    if (!bounty?.id || !String(bounty.source || "").toLowerCase().includes("pump.fun")) {
+      throw new Error("Open a synced Pump.fun bounty first");
+    }
+    if (!bounty.onChainBountyId || !bounty.pumpBountiesProgramId) {
+      throw new Error("Pump.fun has not exposed on-chain metadata for this bounty yet");
+    }
+    const built = await buildPumpFunSubmissionFeeTransaction({
+      bounty,
+      submissionId: req.body?.submissionId,
+      userPublicKey: req.body?.userPublicKey
+    });
+    res.json({ ok: true, ...built });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to build Pump.fun submission fee transaction" });
+  }
+});
+
+app.post("/api/pumpfun/bounty-submission/publish", async (req, res) => {
+  try {
+    const bountyId = normalizeGoId(req.body?.bountyId || "", "go");
+    const { bounty } = await loadGoBountyForAgent(bountyId);
+    if (!bounty?.id || !String(bounty.source || "").toLowerCase().includes("pump.fun")) {
+      throw new Error("Open a synced Pump.fun bounty first");
+    }
+    const taskId = sanitizeGoText(bounty.externalId || req.body?.taskId || "", 120);
+    const submissionId = sanitizeGoText(req.body?.submissionId || "", 120);
+    const signature = sanitizeGoText(req.body?.signature || "", 140);
+    if (!taskId) throw new Error("Pump.fun task id is missing");
+    if (!submissionId) throw new Error("Pump.fun submission id is missing");
+    if (!signature) throw new Error("Pump.fun publish needs the signed submission-fee transaction signature");
+    const session = await findPumpFunSessionForOwner(req.body?.owner || req.body?.userPublicKey || "");
+    if (!session) throw new Error("Add a Pump.fun session for this Phantom wallet before publishing work");
+    const payload = await pumpFunLivestreamRequest(
+      `bounties/tasks/${encodeURIComponent(taskId)}/submissions/${encodeURIComponent(submissionId)}/publish`,
+      {
+        session,
+        method: "POST",
+        referer: bounty.sourceUrl || `https://pump.fun/go/${encodeURIComponent(taskId)}`,
+        body: { signature }
+      }
+    );
+    res.json({ ok: true, payload, bounty, taskId, submissionId, signature });
+  } catch (error) {
+    console.warn("Pump.fun publish failed", {
+      status: error.status || 0,
+      message: error.message || "publish failed",
+      upstream: error.payload || null
+    });
+    res.status(Number(error.status || 400)).json({
+      error: error.message || "Failed to publish Pump.fun submission",
+      upstreamStatus: error.status || 0,
+      upstream: error.payload || null
+    });
+  }
+});
+
 app.post("/api/pumpfun/launch", async (req, res) => {
   try {
     const {
@@ -4530,6 +5969,34 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message || "Pump.fun transaction finalization failed" });
+  }
+});
+
+app.post("/api/solana/send-transaction", async (req, res) => {
+  try {
+    const { Connection: SolanaConnection, Transaction: SolanaTransaction } = await loadSolanaWeb3();
+    const signedTransactionBase64 = String(req.body?.signedTransactionBase64 || req.body?.transactionBase64 || "").trim();
+    if (!signedTransactionBase64) return res.status(400).json({ error: "Signed transaction is required" });
+    const tx = SolanaTransaction.from(Buffer.from(signedTransactionBase64, "base64"));
+    const rpcUrl = String(req.body?.rpcUrl || process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
+    const connection = new SolanaConnection(rpcUrl, "confirmed");
+    await simulateSolanaTransaction(connection, tx, "Signed Solana transaction");
+    const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
+    if (req.body?.blockhash && Number(req.body?.lastValidBlockHeight || 0) > 0) {
+      await connection.confirmTransaction(
+        {
+          signature,
+          blockhash: String(req.body.blockhash),
+          lastValidBlockHeight: Number(req.body.lastValidBlockHeight)
+        },
+        "confirmed"
+      );
+    } else {
+      await connection.confirmTransaction(signature, "confirmed");
+    }
+    res.json({ ok: true, signature, rpcUrl });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Unable to broadcast Solana transaction" });
   }
 });
 
@@ -5221,23 +6688,375 @@ app.post("/api/community/:token/posts/:postId/like", async (req, res) => {
   }
 });
 
+app.get("/api/agents/skill", (_req, res) => {
+  try {
+    res.type("text/markdown").send(fs.readFileSync(AGENT_SKILL_PATH, "utf8"));
+  } catch {
+    res.status(404).json({ error: "skill.md not found" });
+  }
+});
+
+app.get("/api/pumpfun/prepared/:id", async (req, res) => {
+  try {
+    const id = sanitizeAlphaText(req.params.id || "", 90).replace(/[^a-zA-Z0-9_-]/g, "");
+    const store = await readPumpFunPreparedDbPersistent();
+    const item = (store.items || []).find((row) => row.id === id);
+    if (!item) return res.status(404).json({ error: "Prepared submission not found or expired" });
+    res.json({ submission: item });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load prepared submission" });
+  }
+});
+
+function parseEvidenceDataUrl(dataUrl = "") {
+  const match = String(dataUrl || "").match(/^data:([a-zA-Z0-9.+/-]+);base64,(.+)$/);
+  if (!match) return null;
+  return { mime: match[1].toLowerCase(), base64: match[2], binary: Buffer.from(match[2], "base64") };
+}
+
+function pumpFunAttachmentKind(contentType = "") {
+  const type = String(contentType || "").toLowerCase();
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  return null;
+}
+
+async function uploadPumpFunEvidenceAttachment(session, raw = {}) {
+  const existingUrl = sanitizeGoUrl(raw?.url || "");
+  if (existingUrl) {
+    if (!isPublicHostedUrl(existingUrl)) {
+      throw new Error("Evidence links must be public https URLs before Pump.fun can show them.");
+    }
+    return {
+      attachment: null,
+      link: existingUrl
+    };
+  }
+
+  const parsed = parseEvidenceDataUrl(raw?.dataUrl || "");
+  if (!parsed) throw new Error("Evidence file is missing file data");
+  const contentType = sanitizeAlphaText(raw?.contentType || parsed.mime || "application/octet-stream", 120);
+  const kind = pumpFunAttachmentKind(contentType);
+  if (!kind) throw new Error("Pump.fun bounty attachments support images and videos only");
+  const filename = sanitizeAlphaText(raw?.filename || raw?.name || `evidence-${Date.now()}`, 180) || `evidence-${Date.now()}`;
+  const maxSize = kind === "image" ? 5 * 1024 * 1024 : 200 * 1024 * 1024;
+  if (parsed.binary.length <= 0 || parsed.binary.length > maxSize) {
+    throw new Error(kind === "image" ? "Evidence image must be 5 MB or smaller" : "Evidence video must be 200 MB or smaller");
+  }
+
+  if (kind === "image") {
+    const uploaded = await pumpFunLivestreamRequest("bounties/attachments/image", {
+      session,
+      method: "POST",
+      body: { filename, contentType, data: parsed.base64 }
+    });
+    const attachment = uploaded?.attachment || uploaded;
+    if (!attachment?.url || !attachment?.key) throw new Error("Pump.fun did not return an image attachment");
+    return { attachment, link: attachment.url };
+  }
+
+  const presigned = await pumpFunLivestreamRequest("bounties/attachments/presigned-url", {
+    session,
+    method: "POST",
+    body: { filename, contentType, contentLength: parsed.binary.length }
+  });
+  const uploadUrl = String(presigned?.uploadUrl || "");
+  const attachment = presigned?.attachment || null;
+  if (!uploadUrl || !attachment?.url || !attachment?.key) throw new Error("Pump.fun did not return a video upload URL");
+  const uploadResponse = await withTimeout(fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": contentType },
+    body: parsed.binary
+  }), 60_000, "Pump.fun attachment upload");
+  if (!uploadResponse.ok) {
+    const text = await uploadResponse.text().catch(() => "");
+    throw new Error(`Pump.fun attachment upload failed: ${uploadResponse.status} ${text}`.trim());
+  }
+  return { attachment, link: attachment.url };
+}
+
+async function uploadPumpFunEvidenceAttachments(session, rawAttachments = []) {
+  const uploaded = [];
+  const links = [];
+  for (const raw of (Array.isArray(rawAttachments) ? rawAttachments : []).slice(0, 8)) {
+    const result = await uploadPumpFunEvidenceAttachment(session, raw);
+    if (result.attachment) uploaded.push(result.attachment);
+    if (result.link) links.push(result.link);
+  }
+  return { attachments: uploaded, links };
+}
+
+
+app.post("/api/pumpfun/prepared/:id/submit", async (req, res) => {
+  try {
+    const id = sanitizeAlphaText(req.params.id || "", 90).replace(/[^a-zA-Z0-9_-]/g, "");
+    const store = await readPumpFunPreparedDbPersistent();
+    const item = (store.items || []).find((row) => row.id === id);
+    if (!item) return res.status(404).json({ error: "Prepared submission not found or expired" });
+    const taskId = sanitizeAlphaText(String(item.taskId || item.bountyId || "").replace(/^pumpfun-/, ""), 180);
+    if (!taskId) throw new Error("Prepared submission is missing the Pump.fun task id");
+    const session = await findPumpFunSessionForOwner(req.body?.owner || req.body?.userPublicKey || "");
+    if (!session) throw new Error("Add a Pump.fun session for this Phantom wallet before auto-submitting work");
+    const evidence = await uploadPumpFunEvidenceAttachments(session, req.body?.attachments);
+    const attachments = evidence.attachments;
+    const bodyMarkdown = sanitizeAgentDraftText(req.body?.bodyMarkdown || item.body || "", 6000);
+    if (bodyMarkdown.length < 10) throw new Error("Prepared submission body is empty");
+    const links = [
+      ...(Array.isArray(item.links) ? item.links : []),
+      ...(Array.isArray(req.body?.links) ? req.body.links : []),
+      ...evidence.links
+    ]
+      .map(sanitizeGoUrl)
+      .filter(Boolean)
+      .slice(0, 8);
+    const payload = await pumpFunLivestreamRequest(`bounties/tasks/${encodeURIComponent(taskId)}/submissions`, {
+      session,
+      method: "POST",
+      referer: item.sourceUrl || `https://pump.fun/go/${encodeURIComponent(taskId)}`,
+      body: { bodyMarkdown, links, attachments }
+    });
+    res.json({
+      ok: true,
+      taskId,
+      preparedId: item.id,
+      draft: true,
+      needsPublish: true,
+      attachmentCount: attachments.length,
+      attachmentUrls: attachments.map((attachment) => attachment.url).filter(Boolean),
+      submissionId: payload?.submissionId || payload?.submission?.submissionId || payload?.id || "",
+      payload
+    });
+  } catch (error) {
+    const text = String(error?.message || "Failed to submit prepared Pump.fun work");
+    const status = /cookie|bearer|auth|unauthorized|forbidden/i.test(text) ? 401 : 400;
+    res.status(status).json({ error: text });
+  }
+});
+
+app.get("/api/agents", async (req, res) => {
+  try {
+    const store = await readAgentsDbPersistent({ refresh: req.query.fresh === "1" });
+    const owner = normalizeAgentOwner(req.query.owner || "");
+    const agents = (store.agents || [])
+      .filter((agent) => !owner || String(agent.owner || "").toLowerCase() === owner.toLowerCase())
+      .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+      .map((agent) => publicAgent(agent, store));
+    const posts = (store.posts || []).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)).slice(0, 80);
+    res.json({ agents, posts });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load agents" });
+  }
+});
+
+app.post("/api/agents", async (req, res) => {
+  try {
+    const store = await readAgentsDbPersistent();
+    const incoming = normalizeAgent({
+      ...req.body,
+      owner: req.body?.owner || req.body?.address
+    });
+    if (!incoming) throw new Error("Agent name, wallet, and SKILLS.md are required");
+    const existingIndex = (store.agents || []).findIndex((agent) => agent.id === incoming.id || (agent.owner === incoming.owner && agent.name.toLowerCase() === incoming.name.toLowerCase()));
+    const current = existingIndex >= 0 ? store.agents[existingIndex] : {};
+    const agent = normalizeAgent({
+      ...current,
+      ...incoming,
+      id: current.id || incoming.id,
+      createdAt: current.createdAt || incoming.createdAt,
+      updatedAt: Math.floor(Date.now() / 1000)
+    });
+    if (existingIndex >= 0) store.agents[existingIndex] = agent;
+    else store.agents.unshift(agent);
+    const safe = await writeAgentsDbPersistent(store);
+    res.json({ agent: publicAgent(agent, safe), agents: safe.agents.map((row) => publicAgent(row, safe)) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to save agent" });
+  }
+});
+
+app.post("/api/agents/:id/posts", async (req, res) => {
+  try {
+    const store = await readAgentsDbPersistent();
+    const id = normalizeAgentId(req.params.id || "");
+    const index = (store.agents || []).findIndex((agent) => agent.id === id);
+    if (index < 0) throw new Error("Agent not found");
+    const agent = store.agents[index];
+    const owner = normalizeAgentOwner(req.body?.owner || "");
+    if (owner && owner.toLowerCase() !== String(agent.owner || "").toLowerCase()) {
+      throw new Error("Only the agent owner can post as this agent");
+    }
+    const post = normalizeAgentPost({
+      ...req.body,
+      agentId: agent.id,
+      owner: agent.owner
+    });
+    if (!post) throw new Error("Post body is required");
+    store.posts.unshift(post);
+    store.agents[index] = { ...agent, lastPostAt: post.createdAt, updatedAt: post.createdAt };
+    const safe = await writeAgentsDbPersistent(store);
+    res.json({ post, agent: publicAgent(store.agents[index], safe) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to post agent update" });
+  }
+});
+
+app.post("/api/agents/:id/draft-bounty", async (req, res) => {
+  try {
+    const store = await readAgentsDbPersistent();
+    const id = normalizeAgentId(req.params.id || "");
+    const agent = (store.agents || []).find((row) => row.id === id);
+    if (!agent) throw new Error("Agent not found");
+    const owner = normalizeAgentOwner(req.body?.owner || "");
+    if (owner && owner.toLowerCase() !== String(agent.owner || "").toLowerCase()) {
+      throw new Error("Only the agent owner can generate work as this agent");
+    }
+    const bountyId = normalizeGoId(req.body?.bountyId || "", "go");
+    const { bounty } = await loadGoBountyForAgent(bountyId);
+    if (!bounty?.id) throw new Error("Bounty not found");
+    const draft = await draftAgentBountyWithOpenAI(agent, bounty);
+    res.json({
+      ...draft,
+      bounty,
+      links: bounty.sourceUrl ? [bounty.sourceUrl] : []
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to draft bounty work" });
+  }
+});
+
+app.post("/api/agents/:id/run-bounty", async (req, res) => {
+  try {
+    const agentStore = await readAgentsDbPersistent();
+    const id = normalizeAgentId(req.params.id || "");
+    const agentIndex = (agentStore.agents || []).findIndex((row) => row.id === id);
+    if (agentIndex < 0) throw new Error("Agent not found");
+    const agent = agentStore.agents[agentIndex];
+    const owner = normalizeAgentOwner(req.body?.owner || "");
+    if (owner && owner.toLowerCase() !== String(agent.owner || "").toLowerCase()) {
+      throw new Error("Only the agent owner can run this agent");
+    }
+    const bountyId = normalizeGoId(req.body?.bountyId || "", "go");
+    const { bounty, goStore } = await loadGoBountyForAgent(bountyId);
+    if (!bounty?.id) throw new Error("Bounty not found");
+
+    const execution = await executeAgentBountyWithOpenAI(agent, bounty);
+    let generatedAttachment = null;
+    let generatedAttachmentNote = "";
+    if (req.body?.generateConceptImage) {
+      try {
+        generatedAttachment = await generateOpenAiBountyConceptImage(agent, bounty);
+        generatedAttachmentNote = generatedAttachment.mode === "storyboard"
+          ? " OpenAI generated a task-scene planning image."
+          : " OpenAI generated a task-scene image.";
+      } catch (imageError) {
+        generatedAttachmentNote = ` AI concept image skipped: ${imageError?.message || "OpenAI image generation failed"}.`;
+      }
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const links = [
+      ...(Array.isArray(req.body?.links) ? req.body.links : []),
+      bounty.sourceUrl || ""
+    ].map(sanitizeGoUrl).filter(Boolean).slice(0, 6);
+    const mediaUrl = sanitizeGoUrl(req.body?.mediaUrl || "");
+    const mediaType = sanitizeAlphaText(req.body?.mediaType || "", 80);
+    const title = sanitizeAlphaText(req.body?.title || `${agent.name} completed ${bounty.title}`, 120);
+    const post = normalizeAgentPost({
+      agentId: agent.id,
+      owner: agent.owner,
+      kind: "bounty-work",
+      title,
+      body: execution.body,
+      bountyId: bounty.id,
+      mediaUrl,
+      mediaType,
+      links,
+      createdAt: now
+    });
+    if (!post) throw new Error("Agent run did not produce a work package");
+    agentStore.posts.unshift(post);
+    agentStore.agents[agentIndex] = { ...agent, lastPostAt: now, updatedAt: now };
+    const safeAgents = await writeAgentsDbPersistent(agentStore);
+
+    const submission = normalizeGoSubmission({
+      bountyId: bounty.id,
+      author: req.body?.author || agent.owner,
+      authorName: req.body?.authorName || agent.name,
+      body: execution.body,
+      mediaUrl,
+      links,
+      agentId: agent.id,
+      agentName: agent.name,
+      createdAt: now,
+      likes: []
+    });
+    if (!submission) throw new Error("Agent run did not produce a bounty submission");
+    goStore.submissions = [submission, ...(Array.isArray(goStore.submissions) ? goStore.submissions : [])].slice(0, 4000);
+    writeGoDb(goStore);
+
+    const externalSubmitRequired = String(bounty.source || "").toLowerCase().includes("pump.fun");
+    const externalTaskId = String(bounty.externalId || bounty.id || "").replace(/^pumpfun-/, "");
+    const preparedSubmission = externalSubmitRequired
+      ? await createPumpFunPreparedSubmission({
+          taskId: externalTaskId,
+          bountyId: bounty.id,
+          title: bounty.title,
+          sourceUrl: bounty.sourceUrl || "",
+          body: execution.body,
+          links,
+          deliverables: bounty.deliverables || [],
+          agentName: agent.name,
+          agentId: agent.id,
+          authorName: req.body?.authorName || agent.name,
+          createdAt: now
+        })
+      : null;
+    res.json({
+      configured: execution.configured,
+      model: execution.model || "",
+      note: externalSubmitRequired
+        ? `${execution.note}${generatedAttachmentNote} Prepared for Pump.fun. Open the original bounty and run the Pump-r page assistant.`
+        : `${execution.note}${generatedAttachmentNote} Submitted to the bounty.`,
+      body: execution.body,
+      generatedAttachment,
+      bounty: decorateGoBounty(bounty, goStore),
+      post,
+      agent: publicAgent(agentStore.agents[agentIndex], safeAgents),
+      submission,
+      links,
+      externalSubmitRequired,
+      externalSubmitUrl: externalSubmitRequired ? bounty.sourceUrl || "" : "",
+      preparedSubmission
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to run agent" });
+  }
+});
+
 app.get("/api/go", async (req, res) => {
   try {
     const limit = Math.max(1, Math.min(120, Number(req.query.limit || 80)));
     const tab = String(req.query.tab || "trending").toLowerCase();
+    const fresh = String(req.query.fresh || "") === "1";
     const store = readGoDb();
-    const bounties = (store.bounties || []).map((row) => decorateGoBounty(row, store));
+    const localBounties = (store.bounties || []).map((row) => decorateGoBounty(row, store));
+    const liveBounties = await listLiveGoBounties({ fresh });
+    const byId = new Map();
+    for (const bounty of [...liveBounties, ...localBounties]) {
+      if (!bounty?.id || byId.has(bounty.id)) continue;
+      byId.set(bounty.id, decorateGoBounty(bounty, store));
+    }
+    const bounties = Array.from(byId.values());
+    const openBounties = bounties.filter((row) => row.status === "open");
     const submissions = (store.submissions || [])
       .map(normalizeGoSubmission)
       .filter(Boolean)
       .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
-    const rankedBounties = [...bounties].sort((a, b) => {
+    const rankedBounties = [...openBounties].sort((a, b) => {
       if (tab === "bounties") return Number(b.rewardUsd || 0) - Number(a.rewardUsd || 0);
       const bScore = Number(b.rewardUsd || 0) + Number(b.submissions || 0) * 75 + Number(b.createdAt || 0) / 1_000_000;
       const aScore = Number(a.rewardUsd || 0) + Number(a.submissions || 0) * 75 + Number(a.createdAt || 0) / 1_000_000;
       return bScore - aScore;
     });
-    const openBounties = bounties.filter((row) => row.status === "open");
     res.json({
       bounties: rankedBounties.slice(0, limit),
       submissions: submissions.slice(0, limit),
@@ -5246,6 +7065,8 @@ app.get("/api/go", async (req, res) => {
         open: openBounties.length,
         submissions: submissions.length,
         totalRewardUsd: openBounties.reduce((sum, row) => sum + Number(row.rewardUsd || 0), 0),
+        livePumpFun: liveBounties.length,
+        livePumpFunError: pumpFunBountiesCache.error || "",
         highestOpen: [...openBounties].sort((a, b) => Number(b.rewardUsd || 0) - Number(a.rewardUsd || 0)).slice(0, 3),
         recentSubmissions: submissions.slice(0, 12)
       }
@@ -5263,12 +7084,19 @@ app.get("/api/go/bounties/:id", async (req, res) => {
   try {
     const id = normalizeGoId(req.params.id || "", "go");
     const store = readGoDb();
-    const bounty = (store.bounties || []).map(normalizeGoBounty).find((row) => row && row.id === id);
+    const bounty = (store.bounties || []).map(normalizeGoBounty).find((row) => row && row.id === id) || await findLiveGoBounty(id);
     if (!bounty) return res.status(404).json({ error: "bounty not found" });
-    const submissions = (store.submissions || [])
+    const localSubmissions = (store.submissions || [])
       .map(normalizeGoSubmission)
       .filter((row) => row && row.bountyId === id)
       .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+    const externalId = id.startsWith("pumpfun-") ? id.slice("pumpfun-".length) : "";
+    const liveSubmissions = externalId ? await fetchPumpFunSubmissions(externalId, id) : [];
+    const seenBodies = new Set(liveSubmissions.map((row) => sanitizeAgentDraftText(row.body || "", 400).toLowerCase()));
+    const submissions = [
+      ...liveSubmissions,
+      ...localSubmissions.filter((row) => !seenBodies.has(sanitizeAgentDraftText(row.body || "", 400).toLowerCase()))
+    ].sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
     res.json({ bounty: decorateGoBounty(bounty, store), submissions });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to load bounty" });
@@ -6154,6 +7982,10 @@ app.get(["/alpha", "/alpha/:alphaId"], (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "alpha.html"));
 });
 
+app.get(["/agents", "/agents/:agentId"], (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "agents.html"));
+});
+
 app.get("/onboard", (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "onboard.html"));
 });
@@ -6164,6 +7996,10 @@ app.get("/airdrop", (_req, res) => {
 
 app.get("/profile", (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "profile.html"));
+});
+
+app.get("/skill.md", (_req, res) => {
+  res.type("text/markdown").sendFile(AGENT_SKILL_PATH);
 });
 
 app.get("/vendor/solana-web3.iife.min.js", (_req, res) => {

@@ -28,12 +28,35 @@ export async function apiGet(path) {
 export async function apiPost(path, body) {
   const target = withPreferredChain(path);
   const ctrl = new AbortController();
-  const timeoutMs = path.startsWith("/api/pumpfun/launch") || path.startsWith("/api/pumpfun/finalize") ? 60000 : 15000;
+  const timeoutMs = path.startsWith("/api/pumpfun/") || path.startsWith("/api/agents/") ? 60000 : 15000;
   const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
   const res = await fetch(target, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body || {}),
+    signal: ctrl.signal
+  }).finally(() => clearTimeout(timeout));
+
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const payload = await res.json();
+      message = payload.error || message;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+
+  return res.json();
+}
+
+export async function apiDelete(path) {
+  const target = withPreferredChain(path);
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 15000);
+  const res = await fetch(target, {
+    method: "DELETE",
     signal: ctrl.signal
   }).finally(() => clearTimeout(timeout));
 
@@ -115,13 +138,24 @@ export const api = {
       address,
       liked: Boolean(liked)
     }),
-  go: (tab = "trending", limit = 80) =>
-    apiGet(`/api/go?tab=${encodeURIComponent(String(tab || "trending"))}&limit=${encodeURIComponent(String(limit || 80))}`),
+  go: (tab = "trending", limit = 80, options = {}) => {
+    const params = new URLSearchParams({
+      tab: String(tab || "trending"),
+      limit: String(limit || 80)
+    });
+    if (options.fresh) params.set("fresh", "1");
+    return apiGet(`/api/go?${params.toString()}`);
+  },
   goConfig: () => apiGet("/api/go/config"),
   goBounty: (id) => apiGet(`/api/go/bounties/${encodeURIComponent(String(id || ""))}`),
   createGoBounty: (body = {}) => apiPost("/api/go/bounties", body),
   submitGoWork: (id, body = {}) => apiPost(`/api/go/bounties/${encodeURIComponent(String(id || ""))}/submissions`, body),
   releaseGoBounty: (id, body = {}) => apiPost(`/api/go/bounties/${encodeURIComponent(String(id || ""))}/release`, body),
+  agents: (owner = "") => apiGet(`/api/agents${owner ? `?owner=${encodeURIComponent(String(owner))}` : ""}`),
+  saveAgent: (body = {}) => apiPost("/api/agents", body),
+  agentPost: (id, body = {}) => apiPost(`/api/agents/${encodeURIComponent(String(id || ""))}/posts`, body),
+  agentDraftBounty: (id, body = {}) => apiPost(`/api/agents/${encodeURIComponent(String(id || ""))}/draft-bounty`, body),
+  agentRunBounty: (id, body = {}) => apiPost(`/api/agents/${encodeURIComponent(String(id || ""))}/run-bounty`, body),
   alpha: (limit = 80) => apiGet(`/api/alpha?limit=${encodeURIComponent(String(limit || 80))}`),
   alphaTip: (id, viewer = "") => {
     const params = new URLSearchParams();
@@ -137,8 +171,19 @@ export const api = {
   supportMessages: (address) => apiGet(`/api/support/messages?address=${encodeURIComponent(String(address || ""))}`),
   supportInbox: (address) => apiGet(`/api/support/inbox?address=${encodeURIComponent(String(address || ""))}`),
   sendSupportMessage: (body = {}) => apiPost("/api/support/message", body),
+  pumpfunCoin: (mint) => apiGet(`/api/pumpfun/coin/${encodeURIComponent(String(mint || ""))}`),
   pumpfunLaunch: (body = {}) => apiPost("/api/pumpfun/launch", body),
   pumpfunFinalize: (body = {}) => apiPost("/api/pumpfun/finalize", body),
+  pumpfunKolBuy: (body = {}) => apiPost("/api/pumpfun/kol-buy", body),
+  pumpfunKolTransfer: (body = {}) => apiPost("/api/pumpfun/kol-transfer", body),
+  pumpfunSession: (owner) => apiGet(`/api/pumpfun/session/${encodeURIComponent(String(owner || ""))}`),
+  savePumpfunSession: (body = {}) => apiPost("/api/pumpfun/session", body),
+  clearPumpfunSession: (owner) => apiDelete(`/api/pumpfun/session/${encodeURIComponent(String(owner || ""))}`),
+  pumpfunBountyDraft: (body = {}) => apiPost("/api/pumpfun/bounty-submission/draft", body),
+  pumpfunBountyFeeTransaction: (body = {}) => apiPost("/api/pumpfun/bounty-submission/fee-transaction", body),
+  pumpfunBountyPublish: (body = {}) => apiPost("/api/pumpfun/bounty-submission/publish", body),
+  pumpfunPreparedSubmit: (id, body = {}) => apiPost(`/api/pumpfun/prepared/${encodeURIComponent(String(id || ""))}/submit`, body),
+  solanaSendTransaction: (body = {}) => apiPost("/api/solana/send-transaction", body),
   officialAirdrop: () => apiGet("/api/airdrop/official"),
   holderEligibility: (options = {}) => {
     const params = new URLSearchParams();
