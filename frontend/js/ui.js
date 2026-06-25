@@ -1,4 +1,5 @@
 import {
+  connectSolanaWallet,
   connectWallet,
   defaultUsername,
   disconnectWallet,
@@ -7,9 +8,12 @@ import {
   fetchEthUsdPrice,
   getChainOption,
   getSavedWalletChoice,
+  getSolanaProvider,
   loadUserProfile,
   restoreWalletFromSession,
+  saveWalletChoice,
   shortAddress,
+  solanaWalletState,
   walletState,
   parseUiError
 } from "./core.js";
@@ -55,6 +59,8 @@ export function setWalletLabel(el) {
   const ws = walletState();
   if (ws.signer && ws.address) {
     el.textContent = `${ws.walletLabel}: ${shortAddress(ws.address)}`;
+  } else if (ws.solanaAddress) {
+    el.textContent = `${ws.solanaWalletLabel || "Phantom"}: ${shortAddress(ws.solanaAddress)}`;
   } else {
     el.textContent = "Not connected";
   }
@@ -341,13 +347,18 @@ export function initWalletHubMenu({
 
 function showWalletPickerModal(wallets = []) {
   return new Promise((resolve, reject) => {
-    if (!Array.isArray(wallets) || !wallets.length) {
+    const rows = Array.isArray(wallets) ? [...wallets] : [];
+    if (getSolanaProvider() && !rows.some((wallet) => wallet.key === "phantom")) {
+      rows.push({ id: "phantom", key: "phantom", label: "Phantom" });
+    }
+
+    if (!rows.length) {
       reject(new Error("No wallet extension detected"));
       return;
     }
 
     const preferredOrder = ["metamask", "rabby", "coinbase", "phantom", "injected", "unknown"];
-    const orderedWallets = [...wallets].sort((a, b) => {
+    const orderedWallets = rows.sort((a, b) => {
       const ai = preferredOrder.indexOf(a.key);
       const bi = preferredOrder.indexOf(b.key);
       return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
@@ -494,7 +505,7 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
   }
   setWalletLabel(labelEl);
 
-  disconnectBtn?.style && (disconnectBtn.style.display = walletState().signer ? "inline-block" : "none");
+  disconnectBtn?.style && (disconnectBtn.style.display = (walletState().signer || walletState().solanaAddress) ? "inline-block" : "none");
 
   const notifyConnected = async () => {
     if (disconnectBtn?.style) disconnectBtn.style.display = "inline-block";
@@ -521,10 +532,16 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
     try {
       const wallets = discoverWallets();
       if (!wallets.length) {
-        throw new Error("No wallet extension detected. Install MetaMask/Rabby and refresh.");
+        if (!getSolanaProvider()) throw new Error("No wallet extension detected. Install MetaMask, Rabby, Coinbase, or Phantom and refresh.");
       }
       const choice = await showWalletPickerModal(wallets);
-      await connectWallet(choice);
+      const walletKey = String(choice || "").split(":")[0];
+      if (walletKey === "phantom") {
+        await connectSolanaWallet({ forcePrompt: true });
+        saveWalletChoice("phantom");
+      } else {
+        await connectWallet(choice);
+      }
       setWalletLabel(labelEl);
       await notifyConnected();
       setAlert(alertEl, "Wallet connected");
@@ -663,13 +680,28 @@ export function initTopbarWalletProfile({
 
   const update = async () => {
     const ws = walletState();
-    const connected = Boolean(ws.signer && ws.address);
+    const solana = solanaWalletState();
+    const evmConnected = Boolean(ws.signer && ws.address);
+    const solanaConnected = Boolean(solana.address);
+    const connected = evmConnected || solanaConnected;
     if (signInBtn) signInBtn.style.display = connected ? "none" : "inline-flex";
-    if (els.walletHubBtn) els.walletHubBtn.style.display = connected ? "inline-flex" : "none";
+    if (els.walletHubBtn) els.walletHubBtn.style.display = evmConnected ? "inline-flex" : "none";
     if (els.profileMenuBtn) els.profileMenuBtn.style.display = connected ? "inline-flex" : "none";
     setWalletLabel(walletLabel);
     if (!connected) {
       setProfileOpen(false);
+      walletHub?.setOpen(false);
+      if (typeof onChange === "function") await onChange();
+      return;
+    }
+    if (solanaConnected && !evmConnected) {
+      const name = `sol_${solana.address.slice(0, 6)}`;
+      if (els.profileMenuName) els.profileMenuName.textContent = name;
+      if (els.profileMenuNameLarge) els.profileMenuNameLarge.textContent = name;
+      if (els.profileMenuMeta) els.profileMenuMeta.textContent = "Solana wallet connected";
+      if (els.profileNav) els.profileNav.href = "/profile";
+      setSharedAvatar(els.profileAvatar, "SOL", "");
+      setSharedAvatar(els.profileAvatarLarge, "SOL", "");
       walletHub?.setOpen(false);
       if (typeof onChange === "function") await onChange();
       return;
