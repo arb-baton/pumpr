@@ -56,6 +56,30 @@
     }
   }
 
+  if (sideNav && !sideNav.querySelector('a[href="/agents"]')) {
+    const alphaLink = sideNav.querySelector('a[href="/alpha"]');
+    const agentsLink = document.createElement("a");
+    agentsLink.className = `side-link${location.pathname.startsWith("/agents") ? " active" : ""}`;
+    agentsLink.href = "/agents";
+    agentsLink.innerHTML = `
+      <span class="side-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3.5v4"></path>
+          <path d="M7 7.5h10a3 3 0 0 1 3 3v5.5a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-5.5a3 3 0 0 1 3-3z"></path>
+          <path d="M9 13h.01"></path>
+          <path d="M15 13h.01"></path>
+          <path d="M9.5 16c1.4.8 3.6.8 5 0"></path>
+        </svg>
+      </span>
+      <span class="side-link-label">Agents</span>
+    `;
+    if (alphaLink) {
+      alphaLink.insertAdjacentElement("afterend", agentsLink);
+    } else {
+      sideNav.appendChild(agentsLink);
+    }
+  }
+
   const createBtn = sidebar.querySelector(".side-create-btn");
   const rewardsCard = document.createElement("a");
   rewardsCard.className = "side-rewards-card";
