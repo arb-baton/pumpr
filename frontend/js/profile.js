@@ -30,6 +30,7 @@ const CLAIM_MIN_USD = 8;
 
 async function ensurePumpRHolderPaymentAccess(address) {
   const eligibility = await api.holderEligibility({ address });
+  if (eligibility?.required === false) return eligibility;
   if (!eligibility?.configured) {
     throw new Error("Official Pump-r token is not configured yet. Set PUMPR_TOKEN_ADDRESS and PUMPR_TOKEN_CHAIN_ID before enabling creator payments.");
   }

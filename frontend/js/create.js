@@ -242,6 +242,7 @@ function formatHolderAccessMessage(eligibility = {}, action = "launch tokens") {
 
 async function ensurePumpRHolderAccess({ address = "", solanaAddress = "", action = "launch tokens" } = {}) {
   const eligibility = await api.holderEligibility({ address, solanaAddress });
+  if (eligibility?.required === false) return eligibility;
   if (!eligibility?.configured) {
     throw new Error("Official Pump-r token is not configured yet. Set PUMPR_TOKEN_ADDRESS and PUMPR_TOKEN_CHAIN_ID before enabling launches.");
   }
