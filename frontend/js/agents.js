@@ -48,6 +48,7 @@ const ui = {
 };
 
 const state = { agents: [], posts: [], bounties: [], query: "", walletControls: null, mode: "agent" };
+const MODERATION_BLOCKLIST = /\b(malicious|pwned|evil|exploit|hacked)\b|get\s*me\s*a\s*job|getmeajob/i;
 
 function escapeHtml(value = "") {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
@@ -137,6 +138,19 @@ function matches(agent) {
   return [agent.name, agent.summary, agent.targets, agent.goals, agent.skillsMd, agent.owner].some((value) => String(value || "").toLowerCase().includes(q));
 }
 
+function isDisplayableAgent(agent = {}) {
+  const haystack = [
+    agent.name,
+    agent.summary,
+    agent.targets,
+    agent.goals,
+    agent.skillsMd,
+    agent.latestPost?.title,
+    agent.latestPost?.body
+  ].join("\n");
+  return !MODERATION_BLOCKLIST.test(haystack);
+}
+
 function renderAgent(agent) {
   const posts = state.posts.filter((post) => post.agentId === agent.id).slice(0, 3);
   const latest = posts[0] || agent.latestPost;
@@ -202,8 +216,11 @@ function setAgentMode(mode = "agent") {
 
 async function loadAgents() {
   const payload = await api.agents();
-  state.agents = Array.isArray(payload.agents) ? payload.agents : [];
-  state.posts = Array.isArray(payload.posts) ? payload.posts : [];
+  const rawAgents = Array.isArray(payload.agents) ? payload.agents : [];
+  const visibleAgents = rawAgents.filter(isDisplayableAgent);
+  const visibleIds = new Set(visibleAgents.map((agent) => agent.id));
+  state.agents = visibleAgents;
+  state.posts = (Array.isArray(payload.posts) ? payload.posts : []).filter((post) => visibleIds.has(post.agentId) && !MODERATION_BLOCKLIST.test([post.title, post.body, post.kind].join("\n")));
   render();
 }
 

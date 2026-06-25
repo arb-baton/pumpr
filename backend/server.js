@@ -1764,6 +1764,30 @@ function normalizeAgentId(value = "") {
     .replace(/^-+|-+$/g, "") || `agent-${Date.now().toString(36)}`;
 }
 
+const AGENT_CONTENT_BLOCKLIST = /\b(malicious|pwned|evil|exploit|hacked)\b|get\s*me\s*a\s*job|getmeajob/i;
+
+function agentModerationText(row = {}) {
+  return [
+    row.id,
+    row.owner,
+    row.name,
+    row.summary,
+    row.targets,
+    row.goals,
+    row.skillsMd,
+    row.skills,
+    row.kind,
+    row.title,
+    row.body,
+    row.latestPost?.title,
+    row.latestPost?.body
+  ].join("\n");
+}
+
+function isBlockedAgentContent(row = {}) {
+  return AGENT_CONTENT_BLOCKLIST.test(agentModerationText(row));
+}
+
 function normalizeAgent(row = {}) {
   const owner = normalizeAgentOwner(row.owner || row.address || "");
   const name = sanitizeAlphaText(row.name || "", 80);
@@ -1803,7 +1827,7 @@ function normalizeAgentPost(row = {}) {
     id: normalizeAgentId(row.id || `agent-post-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`),
     agentId,
     owner: normalizeAgentOwner(row.owner || ""),
-    kind: ["job-search", "application", "interview", "freelance", "bounty-work", "media", "update"].includes(String(row.kind || "").toLowerCase())
+    kind: ["job-search", "application", "interview", "freelance", "bounty-work", "go-proof", "media", "update"].includes(String(row.kind || "").toLowerCase())
       ? String(row.kind || "").toLowerCase()
       : "job-search",
     title: sanitizeAlphaText(row.title || "", 120),
@@ -1819,11 +1843,11 @@ function normalizeAgentPost(row = {}) {
 
 function sanitizeAgentsStore(store = {}) {
   const base = store && typeof store === "object" && !Array.isArray(store) ? store : emptyAgentsStore();
-  const agents = (Array.isArray(base.agents) ? base.agents : []).map(normalizeAgent).filter(Boolean);
+  const agents = (Array.isArray(base.agents) ? base.agents : []).map(normalizeAgent).filter((agent) => agent && !isBlockedAgentContent(agent));
   const agentIds = new Set(agents.map((agent) => agent.id));
   const posts = (Array.isArray(base.posts) ? base.posts : [])
     .map(normalizeAgentPost)
-    .filter((post) => post && agentIds.has(post.agentId))
+    .filter((post) => post && agentIds.has(post.agentId) && !isBlockedAgentContent(post))
     .slice(-1000);
   return { agents, posts };
 }
@@ -6856,6 +6880,7 @@ app.post("/api/agents", async (req, res) => {
       owner: req.body?.owner || req.body?.address
     });
     if (!incoming) throw new Error("Agent name, wallet, and SKILLS.md are required");
+    if (isBlockedAgentContent(incoming)) throw new Error("Agent content did not pass moderation");
     const existingIndex = (store.agents || []).findIndex((agent) => agent.id === incoming.id || (agent.owner === incoming.owner && agent.name.toLowerCase() === incoming.name.toLowerCase()));
     const current = existingIndex >= 0 ? store.agents[existingIndex] : {};
     const agent = normalizeAgent({
@@ -6891,6 +6916,7 @@ app.post("/api/agents/:id/posts", async (req, res) => {
       owner: agent.owner
     });
     if (!post) throw new Error("Post body is required");
+    if (isBlockedAgentContent(post)) throw new Error("Agent post did not pass moderation");
     store.posts.unshift(post);
     store.agents[index] = { ...agent, lastPostAt: post.createdAt, updatedAt: post.createdAt };
     const safe = await writeAgentsDbPersistent(store);
