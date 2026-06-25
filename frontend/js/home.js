@@ -2,6 +2,7 @@ import { api } from "./api.js";
 import {
   CHAIN_OPTIONS,
   defaultUsername,
+  disconnectWallet,
   fetchEthUsdPrice,
   formatCompactUsd,
   hydrateFollowerCount,
@@ -1229,18 +1230,16 @@ function setupProfileMenu() {
 
   ui.menuLogoutBtn?.addEventListener("click", () => {
     const ws = walletState();
-    if (ws.signer || ws.address || ws.solanaAddress) {
-      ui.disconnectBtn?.click();
+    if (!ws.signer && !ws.address && !ws.solanaAddress) {
+      setAlert(ui.alert, "Wallet already disconnected");
       setProfileMenuOpen(false);
-      updateProfileIdentity();
-      walletHub?.refresh();
       return;
     }
-    if (walletControls?.connect) {
-      walletControls.connect();
-      return;
-    }
-    ui.connectBtn?.click();
+    disconnectWallet();
+    setProfileMenuOpen(false);
+    updateProfileIdentity();
+    walletHub?.refresh();
+    setAlert(ui.alert, "Wallet disconnected");
   });
 
   ui.editProfileBtn?.addEventListener("click", () => {

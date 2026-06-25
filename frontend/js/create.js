@@ -706,12 +706,8 @@ function setupProfileMenu() {
       return;
     }
     const ws = walletState();
-    if (!ws.signer || !ws.address) {
-      if (walletControls?.connect) {
-        walletControls.connect();
-      } else {
-        ui.connectBtn?.click();
-      }
+    if (!ws.signer && !ws.address && !ws.solanaAddress) {
+      setAlert(ui.alert, "Wallet already disconnected");
       setProfileMenuOpen(false);
       return;
     }

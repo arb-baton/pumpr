@@ -1067,11 +1067,7 @@ function setupProfileMenu() {
   ui.menuLogoutBtn?.addEventListener("click", () => {
     const ws = walletState();
     if (!ws.signer && !ws.address && !ws.solanaAddress) {
-      if (walletControls?.connect) {
-        walletControls.connect();
-      } else {
-        ui.connectBtn?.click();
-      }
+      setAlert(ui.alert, "Wallet already disconnected");
       setProfileMenuOpen(false);
       return;
     }
