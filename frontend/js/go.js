@@ -11,8 +11,8 @@ import {
   solanaWalletState,
   walletState
 } from "./core.js";
-import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260616freshphantom";
-import { initSupportWidget } from "./support.js?v=20260611phantomdirect";
+import { initTopbarWalletProfile, setAlert } from "./ui.js";
+import { initSupportWidget } from "./support.js";
 
 const ui = {
   alert: document.getElementById("alert"),

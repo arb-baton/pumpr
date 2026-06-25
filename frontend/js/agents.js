@@ -1,7 +1,7 @@
 ﻿import { api } from "./api.js";
-import { defaultUsername, parseUiError, shortAddress, walletState } from "./core.js?v=20260616freshphantom";
-import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260616freshphantom";
-import { initSupportWidget } from "./support.js?v=20260611phantomdirect";
+import { defaultUsername, parseUiError, shortAddress, walletState } from "./core.js";
+import { initTopbarWalletProfile, setAlert } from "./ui.js";
+import { initSupportWidget } from "./support.js";
 
 const ui = {
   alert: document.getElementById("alert"),

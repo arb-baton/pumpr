@@ -237,23 +237,30 @@ function loadWalletSession() {
   try {
     const raw = localStorage.getItem(WALLET_SESSION_KEY);
     const parsed = JSON.parse(raw || "{}");
-    if (!parsed || typeof parsed !== "object") return { connected: false, choice: "", address: "" };
+    if (!parsed || typeof parsed !== "object") return { connected: false, choice: "", address: "", type: "evm" };
     const choice = typeof parsed.choice === "string" ? parsed.choice : "";
-    const address = normalizeProfileAddress(parsed.address || "");
-    return { connected: Boolean(parsed.connected), choice, address };
+    const type = parsed.type === "solana" || choice === "phantom" ? "solana" : "evm";
+    const address = type === "solana"
+      ? String(parsed.address || "").trim()
+      : normalizeProfileAddress(parsed.address || "");
+    return { connected: Boolean(parsed.connected), choice, address, type };
   } catch {
-    return { connected: false, choice: "", address: "" };
+    return { connected: false, choice: "", address: "", type: "evm" };
   }
 }
 
 function saveWalletSession(partial = {}) {
   const prev = loadWalletSession();
+  const type = partial.type === "solana" || (partial.choice === "phantom" && partial.address) ? "solana" : partial.type === "evm" ? "evm" : prev.type || "evm";
   const next = {
     connected: typeof partial.connected === "boolean" ? partial.connected : prev.connected,
     choice: typeof partial.choice === "string" ? partial.choice : prev.choice || "",
+    type,
     address:
       typeof partial.address === "string"
-        ? normalizeProfileAddress(partial.address)
+        ? type === "solana"
+          ? partial.address.trim()
+          : normalizeProfileAddress(partial.address)
         : prev.address || ""
   };
   try {
@@ -667,7 +674,9 @@ export async function connectWallet(choice = "", options = {}) {
   }
 
   // Persist stable wallet key across page reloads; provider IDs may vary by session.
-  saveWalletSession({ connected: true, choice: wallet.key, address: state.address });
+  if (!silent) {
+    saveWalletSession({ connected: true, choice: wallet.key, type: "evm", address: state.address });
+  }
 
   return { ...state };
 }
@@ -694,6 +703,7 @@ export function solanaWalletState() {
 
 export async function connectSolanaWallet(options = {}) {
   const silent = Boolean(options?.silent);
+  const requirePrompt = Boolean(options?.requirePrompt || options?.forcePrompt);
   const provider = getSolanaProvider();
   if (!provider?.connect) {
     if (silent) return null;
@@ -702,6 +712,16 @@ export async function connectSolanaWallet(options = {}) {
 
   let response = null;
   try {
+    if (!silent && requirePrompt) {
+      try {
+        await provider.disconnect?.();
+      } catch {
+        // optional wallet API
+      }
+      state.solanaProvider = null;
+      state.solanaAddress = "";
+      state.solanaWalletLabel = "";
+    }
     response = await provider.connect(silent ? { onlyIfTrusted: true } : undefined);
   } catch (error) {
     if (silent) return null;
@@ -717,6 +737,9 @@ export async function connectSolanaWallet(options = {}) {
   state.solanaProvider = provider;
   state.solanaAddress = publicKey;
   state.solanaWalletLabel = provider.isPhantom ? "Phantom" : "Solana wallet";
+  if (!silent) {
+    saveWalletSession({ connected: true, choice: "phantom", type: "solana", address: publicKey });
+  }
 
   if (!walletListenersAttached.has(provider)) {
     provider.on?.("accountChanged", (publicKeyValue) => {
@@ -761,6 +784,14 @@ export async function restoreWalletFromSession(choice = "") {
   if (!session.connected) return null;
 
   const target = choice || session.choice || "metamask";
+  if (session.type === "solana" || target === "phantom") {
+    const restored = await connectSolanaWallet({ silent: true });
+    if (!restored?.provider || !restored?.address) {
+      disconnectWallet();
+      return null;
+    }
+    return { ...walletState(), ...restored, chainType: "solana" };
+  }
   const restored = await connectWallet(target, { silent: true });
   if (!restored?.signer || !restored?.address) {
     disconnectWallet();

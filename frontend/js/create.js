@@ -2,6 +2,7 @@ import { api } from "./api.js";
 import {
   FACTORY_ABI,
   TOKEN_ABI,
+  connectSolanaWallet as connectSharedSolanaWallet,
   defaultUsername,
   disconnectWallet,
   ensureWalletChain,
@@ -20,6 +21,7 @@ import {
   sendTxWithFallback,
   setPreferredChainId,
   shortAddress,
+  solanaWalletState,
   walletState
 } from "./core.js";
 import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js";
@@ -550,8 +552,13 @@ function setProfileMenuOpen(open) {
 }
 
 function updateProfileIdentity() {
-  if (isPumpFunMode() && state.solanaWallet?.publicKey) {
-    const publicKey = state.solanaWallet.publicKey;
+  const sharedSolana = solanaWalletState();
+  const activeSolanaPublicKey = state.solanaWallet?.publicKey || sharedSolana.address || "";
+  if (isPumpFunMode() && activeSolanaPublicKey) {
+    const publicKey = activeSolanaPublicKey;
+    if (!state.solanaWallet && sharedSolana.provider) {
+      state.solanaWallet = { provider: sharedSolana.provider, publicKey };
+    }
     const username = `sol_${publicKey.slice(0, 6)}`;
     if (ui.profileMenuName) ui.profileMenuName.textContent = username;
     if (ui.profileMenuNameLarge) ui.profileMenuNameLarge.textContent = username;
@@ -1396,25 +1403,16 @@ async function loadSolanaWeb3() {
   return window.solanaWeb3;
 }
 
-function getSolanaProvider() {
-  if (window.phantom?.solana?.isPhantom) return window.phantom.solana;
-  if (window.solflare) return window.solflare;
-  if (window.solana?.isPhantom) return window.solana;
-  return window.phantom?.solana || window.solana || null;
-}
-
 async function connectSolanaWallet() {
-  const provider = getSolanaProvider();
-  if (!provider) {
-    throw new Error("Install or enable a Solana wallet like Phantom or Solflare to launch on Pump.fun.");
-  }
-  const response = await provider.connect();
-  const publicKey = response?.publicKey || provider.publicKey;
-  const text = publicKey?.toBase58?.() || String(publicKey || "");
-  if (!text) throw new Error("Solana wallet did not return a public key");
-  state.solanaWallet = { provider, publicKey: text };
+  const existing = solanaWalletState();
+  const wallet = existing?.provider && existing?.address
+    ? existing
+    : await connectSharedSolanaWallet({ requirePrompt: true });
+  const text = wallet?.address || wallet?.publicKey || "";
+  if (!wallet?.provider || !text) throw new Error("Solana wallet did not return a public key");
+  state.solanaWallet = { provider: wallet.provider, publicKey: text };
   updateProfileIdentity();
-  return { provider, publicKey: text };
+  return { provider: wallet.provider, publicKey: text };
 }
 
 function base64ToBytes(value = "") {

@@ -11,7 +11,6 @@ import {
   getSolanaProvider,
   loadUserProfile,
   restoreWalletFromSession,
-  saveWalletChoice,
   shortAddress,
   solanaWalletState,
   walletState,
@@ -520,13 +519,56 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
   (async () => {
     try {
       const restored = await restoreWalletFromSession("");
-      if (!restored?.signer) return;
+      const ws = walletState();
+      if (!restored || (!ws.signer && !ws.solanaAddress)) return;
       setWalletLabel(labelEl);
       await notifyConnected();
     } catch {
       // keep page usable even if silent reconnect fails
     }
   })();
+
+  const syncFromSharedSession = async ({ clearOnMissing = false } = {}) => {
+    try {
+      const restored = await restoreWalletFromSession("");
+      const ws = walletState();
+      setWalletLabel(labelEl);
+      if (restored && (ws.signer || ws.solanaAddress)) {
+        await notifyConnected();
+      } else {
+        if (clearOnMissing) {
+          disconnectWallet();
+          setWalletLabel(labelEl);
+        }
+        await notifyDisconnected();
+      }
+    } catch {
+      if (clearOnMissing) {
+        disconnectWallet();
+        setWalletLabel(labelEl);
+      }
+      await notifyDisconnected();
+    }
+  };
+
+  window.addEventListener("storage", (event) => {
+    if (event.key !== "etherpump.wallet.session.v1") return;
+    let connected = false;
+    try {
+      connected = Boolean(JSON.parse(event.newValue || "{}")?.connected);
+    } catch {
+      connected = false;
+    }
+    syncFromSharedSession({ clearOnMissing: !connected });
+  });
+  window.addEventListener("etherpump:solanaWalletChanged", () => {
+    setWalletLabel(labelEl);
+    if (walletState().solanaAddress) {
+      notifyConnected();
+    } else {
+      notifyDisconnected();
+    }
+  });
 
   const doConnect = async () => {
     try {
@@ -537,8 +579,7 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
       const choice = await showWalletPickerModal(wallets);
       const walletKey = String(choice || "").split(":")[0];
       if (walletKey === "phantom") {
-        await connectSolanaWallet({ forcePrompt: true });
-        saveWalletChoice("phantom");
+        await connectSolanaWallet({ requirePrompt: true });
       } else {
         await connectWallet(choice);
       }
