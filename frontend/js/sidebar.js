@@ -11,88 +11,78 @@
   if (!sidebar || !toggle) return;
 
   const sideNav = sidebar.querySelector(".side-nav");
-  sideNav?.querySelectorAll('a[href="/go"] .side-link-label').forEach((label) => {
-    label.textContent = "GO";
-  });
+  const sideIcons = {
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"></path><path d="M5.5 9.8V21h13V9.8"></path></svg>',
+    onboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l7.5 4.25v8.5L12 20.5l-7.5-4.25v-8.5L12 3.5z"></path><path d="M8.7 12h6.6"></path><path d="M12 8.7v6.6"></path></svg>',
+    go: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l7 4v8l-7 4-7-4v-8l7-4z"></path><path d="M9 12.2l2 2 4-4"></path></svg>',
+    alpha: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8l3 6-7 10-7-10 3-6z"></path><path d="M8 10h8"></path><path d="M12 4v16"></path></svg>',
+    agents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v4"></path><path d="M7 7.5h10a3 3 0 0 1 3 3v5.5a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-5.5a3 3 0 0 1 3-3z"></path><path d="M9 13h.01"></path><path d="M15 13h.01"></path><path d="M9.5 16c1.4.8 3.6.8 5 0"></path></svg>',
+    airdrop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"></path><path d="M7 8l5-5 5 5"></path><path d="M4 17.5h16"></path><path d="M6.5 21h13"></path></svg>',
+    profile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.7"></circle><path d="M4.6 20c1.8-3.9 4.4-5.9 7.4-5.9s5.6 2 7.4 5.9"></path></svg>',
+    communities: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11.5a4 4 0 1 1 8 0"></path><path d="M4.5 20c1.2-3 3.7-4.5 6.5-4.5s5.3 1.5 6.5 4.5"></path><path d="M17 8.2a3 3 0 0 1 3 3"></path><path d="M18.5 15.2c1.2.6 2 1.7 2.5 3.1"></path></svg>',
+    support: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13a8 8 0 0 1 16 0"></path><path d="M5 13v3a2 2 0 0 0 2 2h1v-7H7a2 2 0 0 0-2 2z"></path><path d="M19 13v3a2 2 0 0 1-2 2h-1v-7h1a2 2 0 0 1 2 2z"></path><path d="M15 19a3 3 0 0 1-3 2"></path></svg>',
+    terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"></path><path d="M7 7v10"></path><path d="M17 7v10"></path><path d="M4 17h16"></path></svg>'
+  };
+  const navItems = [
+    { key: "home", href: "/", label: "Home", match: (path) => path === "/" || path === "/home" },
+    { key: "onboard", href: "/onboard", label: "Onboard" },
+    { key: "go", href: "/go", label: "GO" },
+    { key: "alpha", href: "/alpha", label: "Job Tips" },
+    { key: "agents", href: "/agents", label: "Agents" },
+    { key: "airdrop", href: "/airdrop", label: "Airdrop" },
+    { key: "profile", href: "/profile", label: "Profile", id: "profileNavSide" },
+    { key: "communities", href: "/communities", label: "Communities" },
+    { key: "support", href: "#", label: "Support", id: "supportSideLink", className: "side-link-support", findByLabel: true },
+    { key: "terminal", href: "https://trade.padre.gg/", label: "Terminal", external: true }
+  ];
 
-  if (sideNav && !sideNav.querySelector('a[href="/onboard"]')) {
-    const homeLink = sideNav.querySelector('a[href="/"]');
-    const onboardLink = document.createElement("a");
-    onboardLink.className = `side-link${location.pathname.startsWith("/onboard") ? " active" : ""}`;
-    onboardLink.href = "/onboard";
-    onboardLink.innerHTML = `
-      <span class="side-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3.5l7.5 4.25v8.5L12 20.5l-7.5-4.25v-8.5L12 3.5z"></path>
-          <path d="M8.7 12h6.6"></path>
-          <path d="M12 8.7v6.6"></path>
-        </svg>
-      </span>
-      <span class="side-link-label">Onboard</span>
-    `;
-    if (homeLink) {
-      homeLink.insertAdjacentElement("afterend", onboardLink);
-    } else {
-      sideNav.prepend(onboardLink);
-    }
+  function linkLabel(link) {
+    return link?.querySelector(".side-link-label")?.textContent?.trim() || link?.textContent?.trim() || "";
   }
 
-  if (sideNav && !sideNav.querySelector('a[href="/airdrop"]')) {
-    const alphaLink = sideNav.querySelector('a[href="/alpha"]');
-    const airdropLink = document.createElement("a");
-    airdropLink.className = `side-link${location.pathname.startsWith("/airdrop") ? " active" : ""}`;
-    airdropLink.href = "/airdrop";
-    airdropLink.innerHTML = `
-      <span class="side-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3v14"></path>
-          <path d="M7 8l5-5 5 5"></path>
-          <path d="M4 17.5h16"></path>
-          <path d="M6.5 21h13"></path>
-        </svg>
-      </span>
-      <span class="side-link-label">Airdrop</span>
-    `;
-    if (alphaLink) {
-      alphaLink.insertAdjacentElement("afterend", airdropLink);
-    } else {
-      sideNav.appendChild(airdropLink);
+  function findSideLink(item) {
+    if (!sideNav) return null;
+    if (item.findByLabel) {
+      return [...sideNav.querySelectorAll("a.side-link")].find((link) => linkLabel(link).toLowerCase() === item.label.toLowerCase()) || null;
     }
+    return sideNav.querySelector(`a[href="${item.href}"]`);
   }
 
-  if (sideNav && !sideNav.querySelector('a[href="/agents"]')) {
-    const alphaLink = sideNav.querySelector('a[href="/alpha"]');
-    const agentsLink = document.createElement("a");
-    agentsLink.className = `side-link${location.pathname.startsWith("/agents") ? " active" : ""}`;
-    agentsLink.href = "/agents";
-    agentsLink.innerHTML = `
-      <span class="side-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3.5v4"></path>
-          <path d="M7 7.5h10a3 3 0 0 1 3 3v5.5a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-5.5a3 3 0 0 1 3-3z"></path>
-          <path d="M9 13h.01"></path>
-          <path d="M15 13h.01"></path>
-          <path d="M9.5 16c1.4.8 3.6.8 5 0"></path>
-        </svg>
-      </span>
-      <span class="side-link-label">Agents</span>
-    `;
-    if (alphaLink) {
-      alphaLink.insertAdjacentElement("afterend", agentsLink);
-    } else {
-      sideNav.appendChild(agentsLink);
+  function createSideLink(item) {
+    const link = document.createElement("a");
+    link.className = "side-link";
+    link.href = item.href;
+    if (item.id) link.id = item.id;
+    if (item.external) {
+      link.target = "_blank";
+      link.rel = "noreferrer noopener";
     }
+    link.innerHTML = `<span class="side-icon" aria-hidden="true">${sideIcons[item.key]}</span><span class="side-link-label">${item.label}</span>`;
+    return link;
   }
 
   if (sideNav) {
-    const alphaLink = sideNav.querySelector('a[href="/alpha"]');
-    const agentsLink = sideNav.querySelector('a[href="/agents"]');
-    const airdropLink = sideNav.querySelector('a[href="/airdrop"]');
-    if (alphaLink && agentsLink) {
-      alphaLink.insertAdjacentElement("afterend", agentsLink);
-    }
-    if (agentsLink && airdropLink) {
-      agentsLink.insertAdjacentElement("afterend", airdropLink);
+    for (const item of navItems) {
+      const link = findSideLink(item) || createSideLink(item);
+      const label = link.querySelector(".side-link-label");
+      const icon = link.querySelector(".side-icon");
+      link.classList.add("side-link");
+      if (item.className) link.classList.add(item.className);
+      link.href = item.href;
+      if (item.id && !link.id) link.id = item.id;
+      if (item.external) {
+        link.target = "_blank";
+        link.rel = "noreferrer noopener";
+      } else {
+        link.removeAttribute("target");
+        link.removeAttribute("rel");
+      }
+      if (label) label.textContent = item.label;
+      if (icon && sideIcons[item.key]) icon.innerHTML = sideIcons[item.key];
+      const pathname = location.pathname || "/";
+      const isActive = item.match ? item.match(pathname) : pathname === item.href || pathname.startsWith(`${item.href}/`);
+      link.classList.toggle("active", Boolean(isActive));
+      sideNav.appendChild(link);
     }
   }
 
