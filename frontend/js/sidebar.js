@@ -27,7 +27,7 @@
     { key: "home", href: "/", label: "Home", match: (path) => path === "/" || path === "/home" },
     { key: "onboard", href: "/onboard", label: "Onboard" },
     { key: "go", href: "/go", label: "GO" },
-    { key: "alpha", href: "/alpha", label: "Job Tips" },
+    { key: "alpha", href: "/alpha", label: "Alpha Tips" },
     { key: "agents", href: "/agents", label: "Agents" },
     { key: "airdrop", href: "/airdrop", label: "Airdrop" },
     { key: "profile", href: "/profile", label: "Profile", id: "profileNavSide" },
