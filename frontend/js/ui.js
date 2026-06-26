@@ -1,12 +1,15 @@
 import {
   connectSolanaWallet,
+  connectSocialWallet,
   connectWallet,
   defaultUsername,
   disconnectWallet,
   discoverWallets,
   ethers,
+  exportGeneratedWalletPrivateKey,
   fetchEthUsdPrice,
   getChainOption,
+  getGeneratedWalletInfo,
   getSavedWalletChoice,
   getSolanaProvider,
   loadUserProfile,
@@ -149,6 +152,7 @@ export function initWalletHubMenu({
   nativeEl,
   addressBtnEl,
   historyLinkEl,
+  exportKeyBtnEl,
   depositBtnEl,
   tradeLinkEl,
   buyLinkEl,
@@ -162,6 +166,22 @@ export function initWalletHubMenu({
 } = {}) {
   let open = false;
   let ethUsd = 3000;
+  if (!exportKeyBtnEl && menuEl) {
+    const grid = menuEl.querySelector(".wallet-hub-grid");
+    if (grid) {
+      const button = document.createElement("button");
+      button.id = "walletHubExportKeyBtn";
+      button.className = "wallet-hub-card";
+      button.type = "button";
+      button.hidden = true;
+      button.innerHTML = `
+        <span class="wallet-hub-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v10"></path><path d="M8.5 9.5L12 13l3.5-3.5"></path><path d="M5 21h14"></path><path d="M7 17h10"></path></svg></span>
+        <span class="wallet-hub-copy"><strong>Export key</strong><span>Generated wallet</span></span>
+      `;
+      grid.appendChild(button);
+      exportKeyBtnEl = button;
+    }
+  }
 
   const setOpen = (nextOpen) => {
     if (!menuEl || !triggerEl) return;
@@ -185,12 +205,13 @@ export function initWalletHubMenu({
 
   const connectedAddress = () => {
     const ws = walletState();
-    return ws?.signer && ws?.address ? ws.address : "";
+    return ws?.generatedWallet?.address || (ws?.signer && ws?.address ? ws.address : "");
   };
 
   const refresh = async () => {
     const ws = walletState();
-    const connected = Boolean(ws.signer && ws.address);
+    const generated = getGeneratedWalletInfo();
+    const connected = Boolean((ws.signer && ws.address) || generated?.address);
 
     if (!connected) {
       if (balanceEl) balanceEl.textContent = "$0.00";
@@ -201,6 +222,7 @@ export function initWalletHubMenu({
         addressBtnEl.disabled = true;
       }
       if (historyLinkEl) historyLinkEl.href = "/profile";
+      if (exportKeyBtnEl) exportKeyBtnEl.hidden = true;
       if (depositAddressEl) depositAddressEl.textContent = "Not connected";
       if (depositQrEl) {
         depositQrEl.removeAttribute("src");
@@ -211,7 +233,7 @@ export function initWalletHubMenu({
     }
 
     triggerEl?.classList.add("connected");
-    const address = ws.address;
+    const address = generated?.address || ws.address;
     if (addressBtnEl) {
       addressBtnEl.textContent = shortAddress(address);
       addressBtnEl.disabled = false;
@@ -219,6 +241,7 @@ export function initWalletHubMenu({
     if (historyLinkEl) {
       historyLinkEl.href = `/profile?address=${address}`;
     }
+    if (exportKeyBtnEl) exportKeyBtnEl.hidden = !generated;
     if (tradeLinkEl) tradeLinkEl.href = "/";
     if (buyLinkEl && !buyLinkEl.href) {
       buyLinkEl.href = "https://www.moonpay.com/buy/eth";
@@ -235,7 +258,7 @@ export function initWalletHubMenu({
     try {
       const meta = await readWalletChainMeta(ws);
       nativeSymbol = meta.symbol || "ETH";
-      nativeBalance = await readNativeBalance(ws, address);
+      nativeBalance = generated ? 0 : await readNativeBalance(ws, address);
     } catch {
       nativeBalance = null;
     }
@@ -255,9 +278,11 @@ export function initWalletHubMenu({
       return;
     }
 
-    const nativeLabel = formatNativeBalance(nativeBalance, nativeSymbol, 6);
+    const nativeLabel = formatNativeBalance(nativeBalance, generated ? "SOL" : nativeSymbol, 6);
     const summaryLabel =
-      nativeSymbol === "ETH"
+      generated
+        ? formatNativeBalance(nativeBalance, "SOL", 3)
+        : nativeSymbol === "ETH"
         ? formatUsdBalance(Number(nativeBalance) * Number(ethUsd || 3000))
         : formatNativeBalance(nativeBalance, nativeSymbol, 3);
 
@@ -334,6 +359,19 @@ export function initWalletHubMenu({
     }
   });
 
+  exportKeyBtnEl?.addEventListener("click", async () => {
+    try {
+      const ok = window.confirm("Export this generated wallet private key? Anyone with this key can move the wallet's funds. Store it somewhere private.");
+      if (!ok) return;
+      const privateKey = exportGeneratedWalletPrivateKey();
+      await navigator.clipboard.writeText(privateKey);
+      showCopyToast("Private key copied");
+      setAlert(alertEl, "Private key copied. Keep it secret.");
+    } catch (error) {
+      setAlert(alertEl, parseUiError(error), true);
+    }
+  });
+
   refresh().catch(() => {
     // non-blocking on first paint
   });
@@ -349,11 +387,6 @@ function showWalletPickerModal(wallets = []) {
     const rows = Array.isArray(wallets) ? [...wallets] : [];
     if (getSolanaProvider() && !rows.some((wallet) => wallet.key === "phantom")) {
       rows.push({ id: "phantom", key: "phantom", label: "Phantom" });
-    }
-
-    if (!rows.length) {
-      reject(new Error("No wallet extension detected"));
-      return;
     }
 
     const preferredOrder = ["phantom", "metamask", "rabby", "coinbase", "injected", "unknown"];
@@ -611,9 +644,6 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
   const doConnect = async () => {
     try {
       const wallets = discoverWallets();
-      if (!wallets.length) {
-        if (!getSolanaProvider()) throw new Error("No wallet extension detected. Install MetaMask, Rabby, Coinbase, or Phantom and refresh.");
-      }
       const choice = await showWalletPickerModal(wallets);
       const walletKey = String(choice || "").split(":")[0];
       if (walletKey === "x-auth") {
@@ -623,17 +653,12 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
       }
       if (walletKey === "email") {
         const email = String(choice || "").slice("email:".length).trim().toLowerCase();
-        try {
-          localStorage.setItem(
-            "pumpr.social.session.v1",
-            JSON.stringify({ type: "email", email, name: email.split("@")[0], createdAt: Date.now() })
-          );
-        } catch {
-          // ignore storage failures
-        }
-        window.dispatchEvent(new CustomEvent("pumpr:socialAuth", { detail: { type: "email", email } }));
+        const connected = await connectSocialWallet({ type: "email", email, name: email.split("@")[0] });
+        setWalletLabel(labelEl);
+        window.dispatchEvent(new CustomEvent("pumpr:socialAuth", { detail: { type: "email", email, address: connected?.address } }));
         await notifyConnected();
-        setAlert(alertEl, `Signed in as ${email}`);
+        const generatedAddress = connected?.generatedWallet?.address || connected?.publicKey || "";
+        setAlert(alertEl, `Signed in as ${email}. Generated Solana wallet: ${shortAddress(generatedAddress)}`);
         return;
       }
       if (walletKey === "phantom") {
@@ -693,6 +718,10 @@ function sharedWalletMarkup() {
             <span class="wallet-hub-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l2.5 2.5"></path></svg></span>
             <span class="wallet-hub-copy"><strong>Profile</strong><span>Wallet activity</span></span>
           </a>
+          <button id="walletHubExportKeyBtn" class="wallet-hub-card" type="button" hidden>
+            <span class="wallet-hub-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v10"></path><path d="M8.5 9.5L12 13l3.5-3.5"></path><path d="M5 21h14"></path><path d="M7 17h10"></path></svg></span>
+            <span class="wallet-hub-copy"><strong>Export key</strong><span>Generated wallet</span></span>
+          </button>
         </div>
       </div>
     </div>
@@ -757,6 +786,7 @@ export function initTopbarWalletProfile({
     walletHubBalanceLarge: document.getElementById("walletHubBalanceLarge"),
     walletHubNative: document.getElementById("walletHubNative"),
     walletHubAddressBtn: document.getElementById("walletHubAddressBtn"),
+    walletHubExportKeyBtn: document.getElementById("walletHubExportKeyBtn"),
     walletHubTradeLink: document.getElementById("walletHubTradeLink"),
     walletHubHistoryLink: document.getElementById("walletHubHistoryLink"),
     profileMenuBtn: document.getElementById("profileMenuBtn"),
@@ -781,10 +811,11 @@ export function initTopbarWalletProfile({
     const ws = walletState();
     const solana = solanaWalletState();
     const evmConnected = Boolean(ws.signer && ws.address);
+    const generatedConnected = Boolean(ws.generatedWallet?.address);
     const solanaConnected = Boolean(solana.address);
     const connected = evmConnected || solanaConnected;
     if (signInBtn) signInBtn.style.display = connected ? "none" : "inline-flex";
-    if (els.walletHubBtn) els.walletHubBtn.style.display = evmConnected ? "inline-flex" : "none";
+    if (els.walletHubBtn) els.walletHubBtn.style.display = evmConnected || generatedConnected ? "inline-flex" : "none";
     if (els.profileMenuBtn) els.profileMenuBtn.style.display = connected ? "inline-flex" : "none";
     setWalletLabel(walletLabel);
     if (!connected) {
@@ -835,6 +866,7 @@ export function initTopbarWalletProfile({
     balanceLargeEl: els.walletHubBalanceLarge,
     nativeEl: els.walletHubNative,
     addressBtnEl: els.walletHubAddressBtn,
+    exportKeyBtnEl: els.walletHubExportKeyBtn,
     tradeLinkEl: els.walletHubTradeLink,
     historyLinkEl: els.walletHubHistoryLink,
     alertEl,

@@ -60,6 +60,8 @@ let eip6963Requested = false;
 const providerIds = new WeakMap();
 let providerIdCounter = 0;
 const WALLET_SESSION_KEY = "etherpump.wallet.session.v1";
+const SOCIAL_AUTH_SESSION_KEY = "pumpr.social.session.v1";
+const SOCIAL_WALLET_STORE_KEY = "pumpr.social.wallets.v1";
 const PROFILE_STORAGE_KEY = "etherpump.profile.v1";
 const PROFILE_REMOTE_FRESH_KEY = "etherpump.profile.remotefresh.v1";
 const PROFILE_FOLLOWERS_STORAGE_KEY = "etherpump.profile.followers.v1";
@@ -239,8 +241,8 @@ function loadWalletSession() {
     const parsed = JSON.parse(raw || "{}");
     if (!parsed || typeof parsed !== "object") return { connected: false, choice: "", address: "", type: "evm" };
     const choice = typeof parsed.choice === "string" ? parsed.choice : "";
-    const type = parsed.type === "solana" || choice === "phantom" ? "solana" : "evm";
-    const address = type === "solana"
+    const type = parsed.type === "solana" || choice === "phantom" ? "solana" : parsed.type === "social" || choice === "social" ? "social" : "evm";
+    const address = type === "solana" || type === "social"
       ? String(parsed.address || "").trim()
       : normalizeProfileAddress(parsed.address || "");
     return { connected: Boolean(parsed.connected), choice, address, type };
@@ -251,14 +253,21 @@ function loadWalletSession() {
 
 function saveWalletSession(partial = {}) {
   const prev = loadWalletSession();
-  const type = partial.type === "solana" || (partial.choice === "phantom" && partial.address) ? "solana" : partial.type === "evm" ? "evm" : prev.type || "evm";
+  const type =
+    partial.type === "solana" || (partial.choice === "phantom" && partial.address)
+      ? "solana"
+      : partial.type === "social" || partial.choice === "social"
+        ? "social"
+        : partial.type === "evm"
+          ? "evm"
+          : prev.type || "evm";
   const next = {
     connected: typeof partial.connected === "boolean" ? partial.connected : prev.connected,
     choice: typeof partial.choice === "string" ? partial.choice : prev.choice || "",
     type,
     address:
       typeof partial.address === "string"
-        ? type === "solana"
+        ? type === "solana" || type === "social"
           ? partial.address.trim()
           : normalizeProfileAddress(partial.address)
         : prev.address || ""
@@ -268,6 +277,228 @@ function saveWalletSession(partial = {}) {
   } catch {
     // ignore storage write failures
   }
+}
+
+function readSocialAuthSession() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SOCIAL_AUTH_SESSION_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object") return null;
+    return normalizeSocialIdentity(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function saveSocialAuthSession(value = {}) {
+  const identity = normalizeSocialIdentity(value);
+  if (!identity) return null;
+  const next = { ...identity, createdAt: Date.now() };
+  try {
+    localStorage.setItem(SOCIAL_AUTH_SESSION_KEY, JSON.stringify(next));
+  } catch {
+    // ignore storage write failures
+  }
+  return next;
+}
+
+function clearSocialAuthSession() {
+  try {
+    localStorage.removeItem(SOCIAL_AUTH_SESSION_KEY);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function normalizeSocialIdentity(value = {}) {
+  const type = String(value.type || "").toLowerCase();
+  if (type === "email") {
+    const email = String(value.email || "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+    return {
+      type: "email",
+      id: email,
+      email,
+      name: String(value.name || email.split("@")[0] || "Email user").trim().slice(0, 80),
+      image: "",
+      socialKey: `email:${email}`
+    };
+  }
+  if (type === "x") {
+    const username = String(value.username || "").trim().replace(/^@+/, "");
+    const id = String(value.id || username || "").trim();
+    if (!id && !username) return null;
+    const key = id || username.toLowerCase();
+    return {
+      type: "x",
+      id,
+      username,
+      name: String(value.name || (username ? `@${username}` : "X user")).trim().slice(0, 80),
+      image: String(value.image || "").trim().slice(0, 1024),
+      followers: Math.max(0, Number(value.followers || 0) || 0),
+      socialKey: `x:${key.toLowerCase()}`
+    };
+  }
+  return null;
+}
+
+function readSocialWalletStore() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SOCIAL_WALLET_STORE_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSocialWalletStore(store = {}) {
+  try {
+    localStorage.setItem(SOCIAL_WALLET_STORE_KEY, JSON.stringify(store));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function socialWalletLabel(identity = {}) {
+  return identity.type === "x" ? "X Wallet" : identity.type === "email" ? "Email Wallet" : "App Wallet";
+}
+
+async function loadSolanaWeb3ForGeneratedWallet() {
+  if (window.solanaWeb3?.Keypair) return window.solanaWeb3;
+  await new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-solana-web3="true"]');
+    if (existing) {
+      if (window.solanaWeb3?.Keypair) {
+        resolve();
+        return;
+      }
+      existing.remove();
+    }
+    const script = document.createElement("script");
+    script.src = "/vendor/solana-web3.iife.min.js";
+    script.async = true;
+    script.dataset.solanaWeb3 = "true";
+    script.onload = resolve;
+    script.onerror = () => reject(new Error("Could not load Solana wallet library"));
+    document.head.appendChild(script);
+  });
+  if (!window.solanaWeb3?.Keypair) throw new Error("Solana wallet library did not initialize");
+  return window.solanaWeb3;
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(Number(byte || 0));
+  return btoa(binary);
+}
+
+function base64ToBytes(value = "") {
+  const binary = atob(String(value || ""));
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+function base58Encode(bytes = new Uint8Array()) {
+  const digits = [0];
+  for (const byte of bytes) {
+    let carry = Number(byte || 0);
+    for (let i = 0; i < digits.length; i += 1) {
+      carry += digits[i] << 8;
+      digits[i] = carry % 58;
+      carry = Math.floor(carry / 58);
+    }
+    while (carry > 0) {
+      digits.push(carry % 58);
+      carry = Math.floor(carry / 58);
+    }
+  }
+  let out = "";
+  for (const byte of bytes) {
+    if (byte !== 0) break;
+    out += BASE58_ALPHABET[0];
+  }
+  for (let i = digits.length - 1; i >= 0; i -= 1) out += BASE58_ALPHABET[digits[i]];
+  return out || BASE58_ALPHABET[0];
+}
+
+async function activateGeneratedWallet(row = {}) {
+  if (!row?.secretKeyBase64) return null;
+  const solanaWeb3 = await loadSolanaWeb3ForGeneratedWallet();
+  const keypair = solanaWeb3.Keypair.fromSecretKey(base64ToBytes(row.secretKeyBase64));
+  const publicKey = keypair.publicKey.toBase58();
+  state.provider = null;
+  state.signer = null;
+  state.address = "";
+  state.walletLabel = socialWalletLabel(row.identity || {});
+  state.activeInjectedProvider = null;
+  state.solanaProvider = {
+    isGeneratedPumprWallet: true,
+    publicKey: keypair.publicKey,
+    keypair
+  };
+  state.solanaAddress = publicKey;
+  state.solanaWalletLabel = state.walletLabel;
+  saveWalletSession({ connected: true, choice: "social", type: "social", address: publicKey });
+  window.dispatchEvent(new CustomEvent("etherpump:walletChanged", { detail: walletState() }));
+  return { ...walletState(), socialWallet: publicSocialWalletInfo(row) };
+}
+
+function publicSocialWalletInfo(row = {}) {
+  const identity = normalizeSocialIdentity(row.identity || {}) || row.identity || {};
+  return {
+    address: String(row.address || "").trim(),
+    label: socialWalletLabel(identity),
+    chainType: "solana",
+    type: identity.type || "social",
+    name: identity.name || "",
+    email: identity.email || "",
+    username: identity.username || "",
+    image: identity.image || "",
+    createdAt: Number(row.createdAt || 0) || 0
+  };
+}
+
+export async function connectSocialWallet(identityInput = {}) {
+  const identity = saveSocialAuthSession(identityInput);
+  if (!identity?.socialKey) throw new Error("Social login did not return a usable identity");
+  const store = readSocialWalletStore();
+  let row = store[identity.socialKey];
+  if (!row?.secretKeyBase64) {
+    const solanaWeb3 = await loadSolanaWeb3ForGeneratedWallet();
+    const keypair = solanaWeb3.Keypair.generate();
+    row = {
+      address: keypair.publicKey.toBase58(),
+      secretKeyBase64: bytesToBase64(keypair.secretKey),
+      identity,
+      createdAt: Date.now()
+    };
+  } else {
+    row = { ...row, identity, address: String(row.address || "").trim() };
+  }
+  store[identity.socialKey] = row;
+  writeSocialWalletStore(store);
+  return await activateGeneratedWallet(row);
+}
+
+export function getGeneratedWalletInfo() {
+  const session = readSocialAuthSession();
+  if (!session?.socialKey) return null;
+  const row = readSocialWalletStore()[session.socialKey];
+  if (!row?.secretKeyBase64) return null;
+  const info = publicSocialWalletInfo(row);
+  return info.address && info.address === String(state.solanaAddress || "") ? info : null;
+}
+
+export function exportGeneratedWalletPrivateKey() {
+  const session = readSocialAuthSession();
+  if (!session?.socialKey) throw new Error("No generated X/email wallet is connected");
+  const row = readSocialWalletStore()[session.socialKey];
+  if (!row?.secretKeyBase64) throw new Error("No generated Solana wallet private key was found for this login");
+  const address = String(row.address || "").trim();
+  if (!state.solanaAddress || address !== state.solanaAddress) {
+    throw new Error("Connect the generated X/email wallet before exporting its private key");
+  }
+  return base58Encode(base64ToBytes(row.secretKeyBase64));
 }
 
 export function getSavedWalletChoice() {
@@ -807,7 +1038,9 @@ export function disconnectWallet() {
   state.walletLabel = "";
   state.activeInjectedProvider = null;
   disconnectSolanaWallet();
+  clearSocialAuthSession();
   saveWalletSession({ connected: false, choice: "", type: "evm", address: "" });
+  window.dispatchEvent(new CustomEvent("etherpump:walletChanged", { detail: walletState() }));
 }
 
 export async function restoreWalletFromSession(choice = "") {
@@ -815,6 +1048,19 @@ export async function restoreWalletFromSession(choice = "") {
   if (!session.connected) return null;
 
   const target = choice || session.choice || "metamask";
+  if (session.type === "social" || target === "social") {
+    const social = readSocialAuthSession();
+    if (!social?.socialKey) {
+      disconnectWallet();
+      return null;
+    }
+    const row = readSocialWalletStore()[social.socialKey];
+    if (!row?.privateKey) {
+      disconnectWallet();
+      return null;
+    }
+    return await activateGeneratedWallet(row);
+  }
   if (session.type === "solana" || target === "phantom") {
     const restored = await connectSolanaWallet({ silent: true });
     if (!restored?.provider || !restored?.address) {
@@ -832,8 +1078,10 @@ export async function restoreWalletFromSession(choice = "") {
 }
 
 export function walletState() {
+  const generatedWallet = getGeneratedWalletInfo();
   return {
     ...state,
+    generatedWallet,
     chainType: state.solanaAddress && !state.signer ? "solana" : state.signer ? "evm" : "",
     publicKey: state.solanaAddress || state.address
   };

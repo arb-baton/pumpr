@@ -1156,6 +1156,7 @@ function setActiveFilterButton() {
 function updateProfileIdentity() {
   const ws = walletState();
   const evmConnected = Boolean(ws.signer && ws.address);
+  const generatedConnected = Boolean(ws.generatedWallet?.address);
   const solanaConnected = Boolean(ws.solanaAddress);
   const connected = evmConnected || solanaConnected;
   const profile = evmConnected ? loadUserProfile(ws.address) : { username: "Guest", imageUri: "", bio: "" };
@@ -1174,15 +1175,15 @@ function updateProfileIdentity() {
       const cachedFollowers = loadCachedFollowerCount(ws.address);
       ui.profileMenuMeta.textContent = followerMetaText(cachedFollowers ?? 0);
     } else if (solanaConnected) {
-      ui.profileMenuMeta.textContent = "Solana wallet connected";
+      ui.profileMenuMeta.textContent = generatedConnected ? "Generated Solana wallet" : "Solana wallet connected";
     } else {
       ui.profileMenuMeta.textContent = "Not connected";
     }
   }
   if (ui.signInBtn) ui.signInBtn.style.display = connected ? "none" : "inline-flex";
-  if (ui.walletHubBtn) ui.walletHubBtn.style.display = evmConnected ? "inline-flex" : "none";
+  if (ui.walletHubBtn) ui.walletHubBtn.style.display = evmConnected || generatedConnected ? "inline-flex" : "none";
   if (ui.profileMenuBtn) ui.profileMenuBtn.style.display = connected ? "inline-flex" : "none";
-  if (!evmConnected) {
+  if (!evmConnected && !generatedConnected) {
     walletHub?.setOpen(false);
   }
   if (!connected) {
@@ -1192,7 +1193,7 @@ function updateProfileIdentity() {
   setAvatar(ui.profileAvatar, avatarText, imageUri);
   setAvatar(ui.profileAvatarLarge, avatarText, imageUri);
 
-  const profileUrl = evmConnected ? `/profile?address=${ws.address}` : "/profile";
+  const profileUrl = evmConnected ? `/profile?address=${ws.address}` : solanaConnected ? `/profile?address=${encodeURIComponent(ws.solanaAddress)}` : "/profile";
   if (ui.profileNav) {
     ui.profileNav.href = profileUrl;
     ui.profileNav.style.display = connected ? "block" : "none";

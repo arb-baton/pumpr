@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import {
   defaultUsername,
+  connectSocialWallet,
   disconnectWallet,
   fetchEthUsdPrice,
   ethers,
@@ -318,6 +319,7 @@ function displayNameForAddress(address) {
 function updateProfileIdentity() {
   const ws = walletState();
   const evmConnected = Boolean(ws.signer && ws.address);
+  const generatedConnected = Boolean(ws.generatedWallet?.address);
   const solanaConnected = Boolean(ws.solanaAddress);
   const social = readSocialAuthSession();
   const socialConnected = Boolean(!evmConnected && !solanaConnected && social);
@@ -343,7 +345,7 @@ function updateProfileIdentity() {
       const cachedFollowers = loadCachedFollowerCount(ws.address);
       ui.profileMenuMeta.textContent = followerMetaText(cachedFollowers ?? 0);
     } else if (solanaConnected) {
-      ui.profileMenuMeta.textContent = "Solana wallet connected";
+      ui.profileMenuMeta.textContent = generatedConnected ? "Generated Solana wallet" : "Solana wallet connected";
     } else if (socialConnected) {
       ui.profileMenuMeta.textContent = social.type === "x" ? `@${social.username}` : "Email connected";
     } else {
@@ -351,9 +353,9 @@ function updateProfileIdentity() {
     }
   }
   if (ui.signInBtn) ui.signInBtn.style.display = connected ? "none" : "inline-flex";
-  if (ui.walletHubBtn) ui.walletHubBtn.style.display = evmConnected ? "inline-flex" : "none";
+  if (ui.walletHubBtn) ui.walletHubBtn.style.display = evmConnected || generatedConnected ? "inline-flex" : "none";
   if (ui.profileMenuBtn) ui.profileMenuBtn.style.display = connected ? "inline-flex" : "none";
-  if (!evmConnected) {
+  if (!evmConnected && !generatedConnected) {
     walletHub?.setOpen(false);
   }
   if (!connected) {
@@ -1167,22 +1169,24 @@ function setupCreatorRewardsActions() {
   });
 }
 
-function handleSocialAuthReturn() {
+async function handleSocialAuthReturn() {
   const params = new URLSearchParams(window.location.search);
   const status = params.get("x");
   if (!status) return;
 
   if (status === "authorized") {
     const xUser = decodeBase64UrlJson(params.get("x_user")) || {};
-    saveSocialAuthSession({
+    const social = {
       type: "x",
       id: String(xUser.id || ""),
       username: String(xUser.username || ""),
       name: String(xUser.name || xUser.username || "X user"),
       image: String(xUser.image || ""),
       followers: Math.max(0, Number(xUser.followers || 0) || 0)
-    });
-    setAlert(ui.alert, "X connected");
+    };
+    saveSocialAuthSession(social);
+    const connected = await connectSocialWallet(social);
+    setAlert(ui.alert, `X connected. Generated Solana wallet: ${shortAddress(connected?.generatedWallet?.address || connected?.publicKey || "")}`);
   } else if (status === "failed" || status === "expired" || status === "cancelled") {
     setAlert(ui.alert, params.get("reason") || "X authorization failed", true);
   }
@@ -1542,7 +1546,7 @@ async function init() {
   }
 
   await loadConfig();
-  handleSocialAuthReturn();
+  await handleSocialAuthReturn();
 
   walletHub = initWalletHubMenu({
     triggerEl: ui.walletHubBtn,

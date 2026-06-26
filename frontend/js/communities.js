@@ -1,5 +1,6 @@
 import { api } from "./api.js";
 import {
+  connectSocialWallet,
   defaultUsername,
   hydrateUserProfiles,
   loadUserProfile,
@@ -764,6 +765,16 @@ async function init() {
   if (params.get("x") === "authorized") {
     const xUser = decodeBase64UrlJson(params.get("x_user"));
     saveXAuth(xUser || { authorized: true });
+    if (xUser?.username || xUser?.id) {
+      await connectSocialWallet({
+        type: "x",
+        id: String(xUser.id || ""),
+        username: String(xUser.username || ""),
+        name: String(xUser.name || xUser.username || "X user"),
+        image: String(xUser.image || ""),
+        followers: Math.max(0, Number(xUser.followers || 0) || 0)
+      });
+    }
     params.delete("x");
     params.delete("x_user");
     const qs = params.toString();

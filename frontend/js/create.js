@@ -613,6 +613,7 @@ function updateProfileIdentity() {
   }
   const ws = walletState();
   const connected = Boolean(ws.signer && ws.address);
+  const generatedConnected = Boolean(ws.generatedWallet?.address);
   const profile = connected ? loadUserProfile(ws.address) : { username: "Guest", bio: "", imageUri: "" };
   const username = profile.username || (connected ? defaultUsername(ws.address) : "Guest");
   const avatarText = connected ? username.slice(0, 2).toUpperCase() : "EP";
@@ -629,9 +630,9 @@ function updateProfileIdentity() {
       ui.profileMenuMeta.textContent = "Not connected";
     }
   }
-  if (ui.signInBtn) ui.signInBtn.style.display = connected ? "none" : "inline-flex";
-  if (ui.walletHubBtn) ui.walletHubBtn.style.display = connected ? "inline-flex" : "none";
-  if (ui.profileMenuBtn) ui.profileMenuBtn.style.display = connected ? "inline-flex" : "none";
+  if (ui.signInBtn) ui.signInBtn.style.display = connected || generatedConnected ? "none" : "inline-flex";
+  if (ui.walletHubBtn) ui.walletHubBtn.style.display = connected || generatedConnected ? "inline-flex" : "none";
+  if (ui.profileMenuBtn) ui.profileMenuBtn.style.display = connected || generatedConnected ? "inline-flex" : "none";
   if (!connected) {
     walletHub?.setOpen(false);
     setProfileMenuOpen(false);

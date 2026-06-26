@@ -1,5 +1,6 @@
 ﻿import { api } from "./api.js?v=20260626bountyfeed";
 import {
+  connectSocialWallet,
   defaultUsername,
   connectSolanaWallet,
   ensureWalletChain,
@@ -167,10 +168,21 @@ function hasXAuth() {
   return Boolean(auth?.authorized || auth?.username);
 }
 
-function handleXOAuthReturn() {
+async function handleXOAuthReturn() {
   const params = new URLSearchParams(window.location.search);
   if (params.get("x") === "authorized") {
-    saveXAuth(decodeBase64UrlJson(params.get("x_user")) || { authorized: true });
+    const xUser = decodeBase64UrlJson(params.get("x_user")) || { authorized: true };
+    saveXAuth(xUser);
+    if (xUser?.username || xUser?.id) {
+      await connectSocialWallet({
+        type: "x",
+        id: String(xUser.id || ""),
+        username: String(xUser.username || ""),
+        name: String(xUser.name || xUser.username || "X user"),
+        image: String(xUser.image || ""),
+        followers: Math.max(0, Number(xUser.followers || 0) || 0)
+      });
+    }
     params.delete("x");
     params.delete("x_user");
     const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}${window.location.hash || ""}`;
@@ -1418,7 +1430,7 @@ function startGoLiveRefresh() {
 }
 
 async function init() {
-  const xReturned = handleXOAuthReturn();
+  const xReturned = await handleXOAuthReturn();
   await initWallet();
   initSupportWidget({ alertEl: ui.alert });
   ui.tabs.forEach((button) => {
