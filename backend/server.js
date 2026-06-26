@@ -109,6 +109,7 @@ const GECKO_NETWORK_BY_CHAIN = {
 const DEXSCREENER_CHAIN_BY_ID = {
   1: "ethereum",
   143: "monad",
+  101: "solana",
   8453: "base",
   11155111: "sepolia"
 };
@@ -4489,10 +4490,11 @@ function toNumberSafe(value, fallback = 0) {
 }
 
 async function readDexScreenerTokenSnapshot(chainId, tokenAddress, pairHint = "") {
-  const token = normalizeAddress(tokenAddress || "");
+  const numericChainId = Number(chainId || 0);
+  const token = numericChainId === 101 ? normalizeSolanaAddress(tokenAddress || "") : normalizeAddress(tokenAddress || "");
   if (!token) return null;
 
-  const chainSlug = dexscreenerChainForChain(chainId);
+  const chainSlug = dexscreenerChainForChain(numericChainId);
   const key = `${chainSlug}:${token.toLowerCase()}:${String(pairHint || "").toLowerCase()}`;
   const cached = getCachedValue(dexTokenCache, key);
   if (cached !== null) return cached;
@@ -4512,7 +4514,7 @@ async function readDexScreenerTokenSnapshot(chainId, tokenAddress, pairHint = ""
 
     const payload = await response.json();
     const rows = Array.isArray(payload?.pairs) ? payload.pairs : [];
-    const targetPair = normalizeAddress(pairHint || "");
+    const targetPair = numericChainId === 101 ? normalizeSolanaAddress(pairHint || "") : normalizeAddress(pairHint || "");
     const filtered = rows.filter((row) => String(row?.chainId || "").toLowerCase() === chainSlug.toLowerCase());
     const candidates = filtered.length ? filtered : rows;
     if (!candidates.length) {
@@ -4524,7 +4526,10 @@ async function readDexScreenerTokenSnapshot(chainId, tokenAddress, pairHint = ""
     if (targetPair) {
       best =
         candidates.find(
-          (row) => normalizeAddress(row?.pairAddress || "")?.toLowerCase() === String(targetPair).toLowerCase()
+          (row) => {
+            const pair = numericChainId === 101 ? normalizeSolanaAddress(row?.pairAddress || "") : normalizeAddress(row?.pairAddress || "");
+            return pair.toLowerCase() === String(targetPair).toLowerCase();
+          }
         ) || null;
     }
 
@@ -4542,7 +4547,7 @@ async function readDexScreenerTokenSnapshot(chainId, tokenAddress, pairHint = ""
     const value = {
       chainId: String(best?.chainId || chainSlug),
       dexId: String(best?.dexId || ""),
-      pairAddress: normalizeAddress(best?.pairAddress || "") || "",
+      pairAddress: (numericChainId === 101 ? normalizeSolanaAddress(best?.pairAddress || "") : normalizeAddress(best?.pairAddress || "")) || "",
       pairUrl: String(best?.url || ""),
       baseSymbol: String(best?.baseToken?.symbol || ""),
       quoteSymbol: String(best?.quoteToken?.symbol || ""),
@@ -5343,6 +5348,7 @@ function normalizePumpFunLaunch(row = {}) {
     fdvUsd,
     priceUsd,
     pumpfunComplete: Boolean(row.pumpfunComplete || row.complete),
+    dexSnapshot: row.dexSnapshot && typeof row.dexSnapshot === "object" ? row.dexSnapshot : null,
     createdAt: Number(row.createdAt || Math.floor(Date.now() / 1000))
   };
 }
@@ -5354,29 +5360,36 @@ function pumpFunFrontendApiUrl(mint = "") {
 async function readPumpFunCoinSnapshot(mint = "") {
   const safeMint = String(mint || "").trim();
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(safeMint)) return null;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 3000);
-  try {
-    const response = await fetch(pumpFunFrontendApiUrl(safeMint), {
-      headers: { Accept: "application/json" },
-      signal: controller.signal
-    });
-    if (!response.ok) return null;
-    const row = await response.json().catch(() => null);
-    if (!row || typeof row !== "object") return null;
-    return {
-      marketCapUsd: toNumberSafe(row.usd_market_cap || row.market_cap_usd || row.marketCapUsd, 0),
-      marketCapSol: toNumberSafe(row.market_cap || row.marketCapSol || row.market_cap_sol, 0),
-      fdvUsd: toNumberSafe(row.fdv_usd || row.fdvUsd || row.usd_market_cap, 0),
-      priceUsd: toNumberSafe(row.price_usd || row.priceUsd, 0),
-      pumpfunComplete: Boolean(row.complete),
-      pumpfunUrl: pickPumpFunUrl(row, safeMint)
-    };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
+  const [pumpFunRes, dexRes] = await Promise.allSettled([
+    (async () => {
+      const response = await fetch(pumpFunFrontendApiUrl(safeMint), {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(3500)
+      });
+      if (!response.ok) return null;
+      const row = await response.json().catch(() => null);
+      if (!row || typeof row !== "object") return null;
+      return row;
+    })(),
+    readDexScreenerTokenSnapshot(101, safeMint)
+  ]);
+  const row = pumpFunRes.status === "fulfilled" ? pumpFunRes.value : null;
+  const dex = dexRes.status === "fulfilled" ? dexRes.value : null;
+  if (!row && !dex) return null;
+  const marketCapUsd = Math.max(
+    toNumberSafe(row?.usd_market_cap || row?.market_cap_usd || row?.marketCapUsd, 0),
+    toNumberSafe(dex?.marketCapUsd, 0),
+    toNumberSafe(dex?.fdvUsd, 0)
+  );
+  return {
+    marketCapUsd,
+    marketCapSol: toNumberSafe(row?.market_cap || row?.marketCapSol || row?.market_cap_sol, 0),
+    fdvUsd: Math.max(toNumberSafe(row?.fdv_usd || row?.fdvUsd, 0), toNumberSafe(dex?.fdvUsd, 0)),
+    priceUsd: Math.max(toNumberSafe(row?.price_usd || row?.priceUsd, 0), toNumberSafe(dex?.priceUsd, 0)),
+    pumpfunComplete: Boolean(row?.complete),
+    pumpfunUrl: pickPumpFunUrl(row || {}, safeMint),
+    dexSnapshot: dex || null
+  };
 }
 
 async function hydratePumpFunLaunchMarketCaps(rows = [], options = {}) {
@@ -5646,6 +5659,26 @@ app.get("/api/pumpfun/metadata/:id", (req, res) => {
   const row = id ? store[id] : null;
   if (!row) return res.status(404).json({ error: "Metadata not found" });
   res.json(row);
+});
+
+app.get("/api/pumpfun/coin/:mint", async (req, res) => {
+  try {
+    const mint = normalizeSolanaAddress(req.params.mint || "");
+    if (!mint) return res.status(400).json({ error: "Invalid Pump.fun mint" });
+    const snapshot = await readPumpFunCoinSnapshot(mint);
+    if (!snapshot) return res.status(404).json({ error: "Pump.fun coin market data is not indexed yet" });
+    res.json({
+      mint,
+      token: mint,
+      tokenAddress: mint,
+      chainId: "pumpfun",
+      source: "pumpfun",
+      pumpfunUrl: snapshot.pumpfunUrl || pickPumpFunUrl({}, mint),
+      ...snapshot
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load Pump.fun coin market data" });
+  }
 });
 
 function normalizeSolanaAddressText(value = "") {

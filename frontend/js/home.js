@@ -200,7 +200,17 @@ function mergeLaunchRows(base = [], updates = []) {
     const incomingMcapWei = BigInt(String(incomingPool.marketCapWei || "0"));
     const pool = previousMcapWei > 0n && incomingMcapWei <= 0n ? previousPool : { ...previousPool, ...incomingPool };
     const dexSnapshot = row.dexSnapshot || previous.dexSnapshot || null;
-    byToken.set(token, { ...previous, ...row, pool, dexSnapshot });
+    const merged = { ...previous, ...row, pool, dexSnapshot };
+    if (isPumpFunLaunch(merged)) {
+      for (const key of ["marketCapUsd", "marketCapSol", "fdvUsd", "priceUsd"]) {
+        const incoming = Number(row?.[key] || 0);
+        const existing = Number(previous?.[key] || 0);
+        if ((!Number.isFinite(incoming) || incoming <= 0) && Number.isFinite(existing) && existing > 0) {
+          merged[key] = existing;
+        }
+      }
+    }
+    byToken.set(token, merged);
   }
   return filterHomeLaunchRows(collapsePumpVerseRows(Array.from(byToken.values()))).sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
 }
@@ -1058,6 +1068,17 @@ async function hydrateVisibleMarketCaps(limit = 12) {
       const blockedUntil = Number(state.hydrateBackoffUntil.get(token) || 0);
       if (blockedUntil > now) return false;
 
+      if (isPumpFunLaunch(launch)) {
+        const pumpFunUsd = Math.max(
+          Number(launch?.marketCapUsd || 0),
+          Number(launch?.usd_market_cap || 0),
+          Number(launch?.market_cap_usd || 0),
+          Number(launch?.dexSnapshot?.marketCapUsd || 0),
+          Number(launch?.fdvUsd || 0)
+        );
+        return !Number.isFinite(pumpFunUsd) || pumpFunUsd <= 0;
+      }
+
       const dexMcap = Number(launch?.dexSnapshot?.marketCapUsd || 0);
       const dexLiq = Number(launch?.dexSnapshot?.liquidityUsd || 0);
       const poolMcapUsd = weiToUsd(launch?.pool?.marketCapWei || "0", state.ethUsd);
@@ -1076,6 +1097,23 @@ async function hydrateVisibleMarketCaps(limit = 12) {
   await Promise.all(
     visible.map(async (launch) => {
       try {
+        if (isPumpFunLaunch(launch)) {
+          const payload = await api.pumpfunCoin(launch.mint || launch.token);
+          if (payload?.token || payload?.mint) {
+            const token = getTokenId(launch);
+            if (token) state.hydrateBackoffUntil.delete(token);
+            hydrated.push({
+              ...launch,
+              ...payload,
+              chainId: "pumpfun",
+              source: "pumpfun",
+              token: payload.token || payload.mint || launch.token,
+              mint: payload.mint || payload.token || launch.mint,
+              dexSnapshot: payload.dexSnapshot || launch.dexSnapshot || null
+            });
+          }
+          return;
+        }
         const payload = await api.token(launch.token, {
           lite: true,
           fresh: true,
