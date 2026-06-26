@@ -25,7 +25,7 @@ import { initSupportWidget } from "./support.js";
 
 const WATCHLIST_KEY = "etherpump.watchlist.v1";
 const LAUNCH_CACHE_KEY = "etherpump.launches.cache.v3";
-const LAUNCH_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+const LAUNCH_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 
 const ui = {
@@ -118,9 +118,7 @@ function loadCachedLaunches() {
     const launches = Array.isArray(payload?.launches) ? payload.launches : [];
     if (!launches.length) return [];
     const rows = filterHomeLaunchRows(launches);
-    if (!Number.isFinite(ts) || Date.now() - ts > LAUNCH_CACHE_MAX_AGE_MS) {
-      return rows.filter((launch) => isPumpFunLaunch(launch));
-    }
+    if (!Number.isFinite(ts) || Date.now() - ts > LAUNCH_CACHE_MAX_AGE_MS) return [];
     return rows;
   } catch {
     return [];
@@ -1512,7 +1510,7 @@ async function refreshLaunches(options = {}) {
   }
 
   try {
-    const quick = await fetchLaunchesAcrossChains(fetchRecentLaunchPage, { limit: 24, lite: true, includeDex: true });
+    const quick = await fetchLaunchesAcrossChains(fetchRecentLaunchPage, { limit: 36, lite: true, includeDex: false });
     if (quick.launches.length) {
       state.launches = mergeLaunchRows(state.launches, quick.launches);
       saveCachedLaunches(state.launches);
@@ -1684,6 +1682,15 @@ async function init() {
   setupTrendingNav();
   setupInteractions();
   initCoinSearchOverlay({ triggerInputs: [ui.searchInput] });
+
+  const bootCached = loadCachedLaunches();
+  if (bootCached.length) {
+    state.launches = bootCached;
+    updateMoverSignals(state.launches);
+    renderTopCommunities();
+    renderTrending();
+    renderExplore();
+  }
 
   refreshEthUsd()
     .then(() => {
