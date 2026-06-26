@@ -8206,7 +8206,71 @@ app.get("/api/token/:token", async (req, res) => {
 
 app.get("/api/profile/:address", async (req, res) => {
   try {
-    const address = normalizeAddress(req.params.address);
+    const solanaAddress = normalizeSolanaAddress(req.params.address || "");
+    const evmAddress = normalizeAddress(req.params.address);
+    if (solanaAddress && !evmAddress) {
+      const pumpFunStore = await readPumpFunLaunchesPersistent({ refresh: true });
+      const pumpFunRows = await hydratePumpFunLaunchMarketCaps(
+        (Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : []).filter(
+          (row) => String(row?.creator || "").trim() === solanaAddress
+        ),
+        { fresh: true }
+      );
+      if (pumpFunRows.some((row) => Number(row?.marketCapUsd || 0) > 0)) {
+        writePumpFunLaunchesPersistent({ launches: Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches.map((row) => {
+          const fresh = pumpFunRows.find((item) => String(item?.mint || "").toLowerCase() === String(row?.mint || "").toLowerCase());
+          return fresh ? { ...row, ...fresh } : row;
+        }) : pumpFunRows }).catch(() => {
+          // best-effort profile market data persistence
+        });
+      }
+      const created = pumpFunRows.map((row) => ({
+        ...row,
+        chainId: "pumpfun",
+        source: "pumpfun",
+        tokenAddress: row.token || row.mint,
+        creator: solanaAddress,
+        holderBalance: "0",
+        holderBalanceFloat: 0,
+        pool: {
+          marketCapWei: "0",
+          marketCapEth: 0,
+          marketCapQuote: 0,
+          quoteMode: "solana"
+        },
+        feeSnapshot: {
+          creatorClaimableWei: "0",
+          creatorClaimedWei: "0",
+          creatorClaimableTokens: 0,
+          creatorClaimedTokens: 0
+        }
+      }));
+      return res.json({
+        address: solanaAddress,
+        chainType: "solana",
+        profile: {
+          address: solanaAddress,
+          username: `sol_${solanaAddress.slice(0, 6)}`,
+          bio: "",
+          imageUri: ""
+        },
+        created,
+        holdings: [],
+        creatorRewardsTotalWei: "0",
+        creatorRewardsTotalTokens: 0,
+        creatorRewardsClaimedTotalWei: "0",
+        creatorRewardsClaimedTotalTokens: 0,
+        creatorRewardsCombinedTotalWei: "0",
+        creatorRewardsCombinedTotalTokens: 0,
+        followers: [],
+        following: [],
+        followersCount: 0,
+        followingCount: 0,
+        socialIncluded: true
+      });
+    }
+
+    const address = evmAddress;
     if (!address) {
       return res.status(400).json({ error: "Invalid address" });
     }

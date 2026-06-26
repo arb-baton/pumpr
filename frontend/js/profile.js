@@ -173,9 +173,29 @@ function normalizeAddress(input) {
   }
 }
 
+function normalizeSolanaAddress(input = "") {
+  const text = String(input || "").trim();
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text) ? text : "";
+}
+
+function normalizeProfileAddress(input = "") {
+  return normalizeAddress(input) || normalizeSolanaAddress(input);
+}
+
+function isSolanaProfileAddress(input = "") {
+  const text = String(input || "").trim();
+  return Boolean(text && !normalizeAddress(text) && normalizeSolanaAddress(text));
+}
+
+function defaultProfileUsername(address = "") {
+  const sol = normalizeSolanaAddress(address);
+  if (sol && !normalizeAddress(address)) return `sol_${sol.slice(0, 6)}`;
+  return defaultUsername(address);
+}
+
 function profileHrefForAddress(value) {
-  const normalized = normalizeAddress(value);
-  return normalized ? `/profile?address=${normalized}` : "/profile";
+  const normalized = normalizeProfileAddress(value);
+  return normalized ? `/profile?address=${encodeURIComponent(normalized)}` : "/profile";
 }
 
 function connectedAddress() {
@@ -266,7 +286,7 @@ function updateProfileIdentity() {
       : "Guest";
   const avatarText = solanaConnected && !evmConnected ? "SOL" : connected ? username.slice(0, 2).toUpperCase() : "EP";
   const imageUri = evmConnected ? profile.imageUri || "" : "";
-  const profileHref = evmConnected ? `/profile?address=${ws.address}` : "/profile";
+  const profileHref = evmConnected ? `/profile?address=${encodeURIComponent(ws.address)}` : solanaConnected ? `/profile?address=${encodeURIComponent(ws.solanaAddress)}` : "/profile";
 
   if (ui.profileMenuName) ui.profileMenuName.textContent = username;
   if (ui.profileMenuNameLarge) ui.profileMenuNameLarge.textContent = username;
@@ -388,7 +408,7 @@ function formatMcapUsd(weiLike) {
 }
 
 function renderProfileHeader(address) {
-  const normalized = normalizeAddress(address);
+  const normalized = normalizeProfileAddress(address);
   if (!normalized) {
     ui.profileResolvedName.textContent = "Guest";
     if (ui.profileResolvedAddress) {
@@ -412,8 +432,9 @@ function renderProfileHeader(address) {
     return;
   }
 
-  const profile = loadUserProfile(normalized);
-  const username = profile.username || defaultUsername(normalized);
+  const isSolana = isSolanaProfileAddress(normalized);
+  const profile = isSolana ? state.payload?.profile || { username: defaultProfileUsername(normalized), bio: "", imageUri: "" } : loadUserProfile(normalized);
+  const username = profile.username || defaultProfileUsername(normalized);
   ui.profileResolvedName.textContent = username;
   if (ui.profileResolvedAddress) {
     ui.profileResolvedAddress.textContent = "";
@@ -439,7 +460,7 @@ function renderProfileHeader(address) {
       ui.profileEtherscanLink.href = "#";
     }
   }
-  setAvatar(ui.profileHeroAvatar, username.slice(0, 2).toUpperCase(), profile.imageUri || "");
+  setAvatar(ui.profileHeroAvatar, isSolana ? "SOL" : username.slice(0, 2).toUpperCase(), profile.imageUri || "");
   syncFollowButton();
 }
 
@@ -454,6 +475,14 @@ function syncFollowButton() {
       state.address ||
       getAddressFromUrl()
   );
+  if (isSolanaProfileAddress(state.address || getAddressFromUrl())) {
+    ui.profileFollowBtn.hidden = true;
+    ui.profileFollowBtn.style.display = "none";
+    ui.profileFollowBtn.disabled = false;
+    ui.profileFollowBtn.textContent = "Follow";
+    ui.profileFollowBtn.dataset.mode = "";
+    return;
+  }
   const own = Boolean(viewer && target && viewer.toLowerCase() === target.toLowerCase()) || viewingOwnProfile();
 
   if (!target) {
@@ -539,9 +568,40 @@ function setupAddressCopy() {
 function getAddressExplorerUrl(address, chainId) {
   const id = Number(chainId || 0);
   if (!address) return "";
+  if (isSolanaProfileAddress(address)) return `https://solscan.io/account/${address}`;
   if (id === 1) return `https://etherscan.io/address/${address}`;
   if (id === 11155111) return `https://sepolia.etherscan.io/address/${address}`;
   return "";
+}
+
+function isPumpFunProfileLaunch(item = {}) {
+  const chain = String(item?.chainId || "").toLowerCase();
+  const source = String(item?.source || "").toLowerCase();
+  const url = String(item?.pumpfunUrl || item?.url || "").toLowerCase();
+  return chain === "pumpfun" || source === "pumpfun" || url.includes("pump.fun/coin/");
+}
+
+function profileTokenHref(item = {}) {
+  if (isPumpFunProfileLaunch(item)) {
+    const mint = String(item?.mint || item?.token || "").trim();
+    return String(item?.pumpfunUrl || (mint ? `https://pump.fun/coin/${encodeURIComponent(mint)}` : "https://pump.fun/")).trim();
+  }
+  return `/token?token=${encodeURIComponent(String(item?.token || ""))}`;
+}
+
+function profileTokenLinkAttrs(item = {}) {
+  return isPumpFunProfileLaunch(item) ? 'target="_blank" rel="noopener noreferrer"' : "";
+}
+
+function formatProfileMarketCap(item = {}) {
+  if (isPumpFunProfileLaunch(item)) {
+    const usd = Math.max(Number(item?.marketCapUsd || 0), Number(item?.dexSnapshot?.marketCapUsd || 0), Number(item?.fdvUsd || 0));
+    if (Number.isFinite(usd) && usd > 0) return formatCompactUsd(usd);
+    const sol = Number(item?.marketCapSol || 0);
+    if (Number.isFinite(sol) && sol > 0) return `${sol >= 1000 ? sol.toLocaleString(undefined, { maximumFractionDigits: 0 }) : sol.toLocaleString(undefined, { maximumFractionDigits: 2 })} SOL`;
+    return "Syncing";
+  }
+  return formatMcapUsd(item.pool?.marketCapWei || "0");
 }
 
 function renderCreatedMiniList(created = []) {
@@ -555,15 +615,17 @@ function renderCreatedMiniList(created = []) {
     .slice(0, 6)
     .map((item) => {
       const image = resolveCoinImage(item);
+      const href = profileTokenHref(item);
+      const linkAttrs = profileTokenLinkAttrs(item);
       return `
-        <a class="profile-mini-item" href="/token?token=${item.token}">
+        <a class="profile-mini-item" href="${href}" ${linkAttrs}>
           <img src="${image}" alt="${item.symbol}" />
           <div>
             <strong>${item.name}</strong>
             <span>$${item.symbol}</span>
           </div>
           <div class="profile-mini-metric">
-            <b>${formatMcapUsd(item.pool?.marketCapWei || "0")}</b>
+            <b>${formatProfileMarketCap(item)}</b>
             <span>${humanAgo(item.createdAt)}</span>
           </div>
         </a>
@@ -615,19 +677,22 @@ function renderCoinsTab(created = []) {
       ${created
         .map((item) => {
           const image = resolveCoinImage(item);
+          const href = profileTokenHref(item);
+          const linkAttrs = profileTokenLinkAttrs(item);
+          const badge = isPumpFunProfileLaunch(item) ? "Pump.fun" : "PumpSwap";
           return `
             <article class="coin-card">
-              <a href="/token?token=${item.token}" class="coin-image-wrap">
+              <a href="${href}" class="coin-image-wrap" ${linkAttrs}>
                 <img class="coin-image" src="${image}" alt="${item.symbol}" />
-                <span class="coin-badge">PumpSwap</span>
+                <span class="coin-badge">${badge}</span>
               </a>
               <div class="coin-body">
                 <div class="coin-head">
-                  <h3><a href="/token?token=${item.token}">${item.name}</a></h3>
+                  <h3><a href="${href}" ${linkAttrs}>${item.name}</a></h3>
                   <span>$${item.symbol}</span>
                 </div>
                 <div class="coin-stats">
-                  <span>MC ${formatMcapUsd(item.pool?.marketCapWei || "0")}</span>
+                  <span>MC ${formatProfileMarketCap(item)}</span>
                   <span>Created ${humanAgo(item.createdAt)}</span>
                 </div>
               </div>
@@ -916,6 +981,7 @@ function updateTabButtons() {
 
 async function loadSocialIfNeeded() {
   if (!state.payload || state.socialLoaded || state.socialLoading) return;
+  if (isSolanaProfileAddress(state.payload.address)) return;
   const normalized = normalizeAddress(state.payload.address);
   if (!normalized) return;
 
@@ -1036,7 +1102,7 @@ function setSummary(payload) {
   if (ui.statFollowers) ui.statFollowers.textContent = String(followersCount);
   if (ui.statFollowing) ui.statFollowing.textContent = String(followingCount);
   if (ui.statCreated) ui.statCreated.textContent = String(created.length);
-  if (ui.statValue) ui.statValue.textContent = formatCompactUsd(weiToUsd(valueWei, state.ethUsd));
+  if (ui.statValue) ui.statValue.textContent = isSolanaProfileAddress(payload.address) ? "0 SOL" : formatCompactUsd(weiToUsd(valueWei, state.ethUsd));
   if (ui.createdCountInline) ui.createdCountInline.textContent = String(created.length);
   renderProfileHeader(payload.address);
   renderCreatedMiniList(created);
@@ -1050,20 +1116,21 @@ async function refreshEthUsd(force = false) {
 }
 
 async function loadProfile(address) {
-  const normalized = normalizeAddress(address);
+  const normalized = normalizeProfileAddress(address);
   if (!normalized) {
     throw new Error("Enter a valid wallet address");
   }
+  const isSolana = isSolanaProfileAddress(normalized);
 
   const requestSeq = ++state.profileLoadSeq;
   state.profileLoading = true;
   state.address = normalized;
   updateQuery(normalized);
   // Fast first paint: show header/address instantly, then hydrate profile data async.
-  const cachedFollowers = loadCachedFollowerCount(normalized);
+  const cachedFollowers = isSolana ? 0 : loadCachedFollowerCount(normalized);
   const warmPayload = {
     address: normalized,
-    profile: loadUserProfile(normalized),
+    profile: isSolana ? { address: normalized, username: defaultProfileUsername(normalized), bio: "", imageUri: "" } : loadUserProfile(normalized),
     created: [],
     holdings: [],
     followers: [],
@@ -1092,7 +1159,9 @@ async function loadProfile(address) {
     for (const row of payload?.following || []) {
       if (row?.address) relatedAddresses.add(row.address);
     }
-    await hydrateUserProfiles([...relatedAddresses], { force: true });
+    if (!isSolana) {
+      await hydrateUserProfiles([...relatedAddresses], { force: true });
+    }
     if (requestSeq !== state.profileLoadSeq) return;
     state.payload = payload;
     state.socialLoaded = Boolean(payload.socialIncluded);
@@ -1238,8 +1307,9 @@ function setupProfileMenu() {
 
   ui.profileShareBtn?.addEventListener("click", async () => {
     const ws = walletState();
-    if (!ws.address) return;
-    const profileUrl = new URL(`/profile?address=${ws.address}`, window.location.origin).toString();
+    const address = ws.address || ws.solanaAddress || "";
+    if (!address) return;
+    const profileUrl = new URL(`/profile?address=${encodeURIComponent(address)}`, window.location.origin).toString();
     try {
       await copyText(profileUrl);
       showCopyToast("Profile link copied");
@@ -1359,6 +1429,8 @@ async function init() {
       const ws = walletState();
       if (ws.address && !state.address) {
         await loadProfile(ws.address);
+      } else if (ws.solanaAddress && !state.address) {
+        await loadProfile(ws.solanaAddress);
       }
     }
   });
@@ -1417,7 +1489,7 @@ async function init() {
 
   const fromUrl = getAddressFromUrl();
   if (fromUrl) {
-    const normalizedFromUrl = normalizeAddress(fromUrl);
+    const normalizedFromUrl = normalizeProfileAddress(fromUrl);
     if (normalizedFromUrl) {
       await loadProfile(normalizedFromUrl);
       return;
@@ -1429,6 +1501,10 @@ async function init() {
   const ws = walletState();
   if (ws.address) {
     await loadProfile(ws.address);
+    return;
+  }
+  if (ws.solanaAddress) {
+    await loadProfile(ws.solanaAddress);
     return;
   }
 

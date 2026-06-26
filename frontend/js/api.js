@@ -112,7 +112,7 @@ export const api = {
     const params = new URLSearchParams();
     if (options.includeSocial) params.set("includeSocial", "1");
     const qs = params.toString();
-    return apiGet(`/api/profile/${address}${qs ? `?${qs}` : ""}`);
+    return apiGet(`/api/profile/${encodeURIComponent(String(address || ""))}${qs ? `?${qs}` : ""}`);
   },
   userProfile: (address) => apiGet(`/api/user-profile/${address}`),
   userProfiles: (addresses = []) => apiPost("/api/user-profiles", { addresses }),
