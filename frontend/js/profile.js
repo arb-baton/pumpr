@@ -3,6 +3,7 @@ import {
   defaultUsername,
   connectSocialWallet,
   disconnectWallet,
+  exportGeneratedWalletPrivateKey,
   fetchEthUsdPrice,
   ethers,
   formatCompactUsd,
@@ -86,6 +87,7 @@ const ui = {
   profileResolvedBio: document.getElementById("profileResolvedBio"),
   profileCopyAddressBtn: document.getElementById("profileCopyAddressBtn"),
   profileEtherscanLink: document.getElementById("profileEtherscanLink"),
+  profileExportKeyBtn: document.getElementById("profileExportKeyBtn"),
   profileHeroAvatar: document.getElementById("profileHeroAvatar"),
   profileFollowBtn: document.getElementById("profileFollowBtn"),
   statFollowers: document.getElementById("statFollowers"),
@@ -292,6 +294,38 @@ function setAvatar(node, text, imageUri = "") {
   node.classList.remove("with-image");
   node.style.backgroundImage = "";
   node.textContent = text;
+}
+
+function ensureProfileExportKeyButton() {
+  if (ui.profileExportKeyBtn) return ui.profileExportKeyBtn;
+  const row = document.querySelector(".profile-address-row");
+  if (!row) return null;
+  const button = document.createElement("button");
+  button.id = "profileExportKeyBtn";
+  button.className = "addr-copy-btn copy-pill-btn";
+  button.type = "button";
+  button.hidden = true;
+  button.textContent = "Export key";
+  row.appendChild(button);
+  ui.profileExportKeyBtn = button;
+  setupGeneratedKeyExportButton(button);
+  return button;
+}
+
+function setupGeneratedKeyExportButton(button) {
+  if (!button || button.dataset.boundExportKey === "true") return;
+  button.dataset.boundExportKey = "true";
+  button.addEventListener("click", async () => {
+    try {
+      const confirmed = window.confirm("This reveals the private key for your generated Solana wallet. Only export it if you are in a private place.");
+      if (!confirmed) return;
+      await copyText(exportGeneratedWalletPrivateKey());
+      showCopyToast("Private key copied");
+      setAlert(ui.alert, "Generated Solana private key copied. Store it somewhere secure.");
+    } catch (error) {
+      setAlert(ui.alert, parseUiError(error), true);
+    }
+  });
 }
 
 function setProfileMenuOpen(open) {
@@ -504,6 +538,8 @@ function renderProfileHeader(address) {
         ui.profileEtherscanLink.hidden = true;
         ui.profileEtherscanLink.href = "#";
       }
+      const exportBtn = ensureProfileExportKeyButton();
+      if (exportBtn) exportBtn.hidden = true;
       setAvatar(ui.profileHeroAvatar, String(profile.avatarText || username).slice(0, 2).toUpperCase(), profile.imageUri || "");
       syncFollowButton();
       return;
@@ -525,6 +561,8 @@ function renderProfileHeader(address) {
       ui.profileEtherscanLink.hidden = true;
       ui.profileEtherscanLink.href = "#";
     }
+    const exportBtn = ensureProfileExportKeyButton();
+    if (exportBtn) exportBtn.hidden = true;
     setAvatar(ui.profileHeroAvatar, "EP", "");
     syncFollowButton();
     return;
@@ -562,12 +600,15 @@ function renderProfileHeader(address) {
     const href = getAddressExplorerUrl(normalized, state.chainId);
     if (href) {
       ui.profileEtherscanLink.href = href;
+      ui.profileEtherscanLink.textContent = isSolana ? "Solscan" : "Etherscan";
       ui.profileEtherscanLink.hidden = false;
     } else {
       ui.profileEtherscanLink.hidden = true;
       ui.profileEtherscanLink.href = "#";
     }
   }
+  const exportBtn = ensureProfileExportKeyButton();
+  if (exportBtn) exportBtn.hidden = !generatedDisplay;
   setAvatar(ui.profileHeroAvatar, generatedDisplay ? generatedDisplay.avatarText : isSolana ? "SOL" : username.slice(0, 2).toUpperCase(), profile.imageUri || "");
   syncFollowButton();
 }
@@ -661,6 +702,7 @@ async function refreshFollowState() {
 }
 
 function setupAddressCopy() {
+  setupGeneratedKeyExportButton(ui.profileExportKeyBtn);
   ui.profileCopyAddressBtn?.addEventListener("click", async () => {
     const address = String(ui.profileCopyAddressBtn?.dataset.copyAddress || "");
     if (!address) return;
@@ -1616,6 +1658,21 @@ async function init() {
         await loadProfile(ws.solanaAddress);
       } else if (!state.address) {
         loadSocialProfile();
+      } else {
+        renderProfileHeader(state.address);
+        setSummary(state.payload || {
+          address: state.address,
+          profile: isSolanaProfileAddress(state.address)
+            ? { address: state.address, username: defaultProfileUsername(state.address), bio: "", imageUri: "" }
+            : loadUserProfile(state.address),
+          created: [],
+          holdings: [],
+          followers: [],
+          following: [],
+          followersCount: 0,
+          followingCount: 0,
+          socialIncluded: false
+        });
       }
     }
   });
@@ -1647,6 +1704,11 @@ async function init() {
   });
 
   window.addEventListener("pumpr:socialAuth", () => {
+    const ws = walletState();
+    if (ws.solanaAddress) {
+      loadProfile(ws.solanaAddress).catch((error) => setAlert(ui.alert, parseUiError(error), true));
+      return;
+    }
     loadSocialProfile();
   });
 
