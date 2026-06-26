@@ -6382,6 +6382,44 @@ button:disabled {
   color: #d2c7ec;
 }
 
+.private-key-card {
+  width: min(620px, 96vw);
+}
+
+.private-key-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.private-key-field span {
+  color: #b8c4e8;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.private-key-field textarea {
+  min-height: 112px;
+  resize: vertical;
+  width: 100%;
+  border: 1px solid rgba(124, 136, 170, 0.34);
+  border-radius: 12px;
+  background: #090d14;
+  color: #ecf3ff;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  padding: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.private-key-field textarea:focus {
+  outline: none;
+  border-color: rgba(111, 238, 159, 0.72);
+  box-shadow: 0 0 0 3px rgba(111, 238, 159, 0.12);
+}
+
 .wallet-picker-card {
   width: min(446px, 96vw);
   background: linear-gradient(180deg, #121722 0%, #0f131c 100%);

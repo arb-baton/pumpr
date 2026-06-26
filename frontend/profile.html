@@ -257,6 +257,7 @@
                     >
                       Etherscan
                     </a>
+                    <button id="profileExportKeyBtn" class="addr-copy-btn copy-pill-btn" type="button" hidden>Export key</button>
                   </div>
                   <p id="profileResolvedBio" class="profile-resolved-bio" hidden></p>
                 </div>
@@ -311,6 +312,24 @@
           <div class="deposit-qr-wrap">
             <img id="depositQrImage" alt="Deposit wallet QR code" />
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="privateKeyModal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card private-key-card">
+        <div class="edit-profile-head">
+          <h3>Export private key</h3>
+          <button id="privateKeyCloseBtn" class="btn-ghost" type="button">X</button>
+        </div>
+        <p>This is the private key for your generated Solana wallet. Anyone with this key can control the wallet.</p>
+        <label class="private-key-field">
+          <span>Generated Solana private key</span>
+          <textarea id="privateKeyValue" readonly spellcheck="false"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button id="privateKeyCopyBtn" class="btn-primary" type="button">Copy private key</button>
+          <button id="privateKeyDoneBtn" class="btn-ghost" type="button">Done</button>
         </div>
       </div>
     </div>

@@ -99,6 +99,11 @@ const ui = {
   profileTabsWrap: document.getElementById("profileTabs"),
   profileTabButtons: Array.from(document.querySelectorAll("[data-tab]")),
   profileTabContent: document.getElementById("profileTabContent"),
+  privateKeyModal: document.getElementById("privateKeyModal"),
+  privateKeyCloseBtn: document.getElementById("privateKeyCloseBtn"),
+  privateKeyDoneBtn: document.getElementById("privateKeyDoneBtn"),
+  privateKeyCopyBtn: document.getElementById("privateKeyCopyBtn"),
+  privateKeyValue: document.getElementById("privateKeyValue"),
   editProfileModal: document.getElementById("editProfileModal"),
   closeEditProfileModal: document.getElementById("closeEditProfileModal"),
   saveEditProfileBtn: document.getElementById("saveEditProfileBtn"),
@@ -312,16 +317,28 @@ function ensureProfileExportKeyButton() {
   return button;
 }
 
+function hidePrivateKeyModal() {
+  if (!ui.privateKeyModal) return;
+  ui.privateKeyModal.classList.remove("open");
+  ui.privateKeyModal.setAttribute("aria-hidden", "true");
+  if (ui.privateKeyValue) ui.privateKeyValue.value = "";
+}
+
+function showPrivateKeyModal(value = "") {
+  if (!ui.privateKeyModal || !ui.privateKeyValue) return;
+  ui.privateKeyValue.value = String(value || "");
+  ui.privateKeyModal.classList.add("open");
+  ui.privateKeyModal.setAttribute("aria-hidden", "false");
+  ui.privateKeyValue.focus();
+  ui.privateKeyValue.select();
+}
+
 function setupGeneratedKeyExportButton(button) {
   if (!button || button.dataset.boundExportKey === "true") return;
   button.dataset.boundExportKey = "true";
   button.addEventListener("click", async () => {
     try {
-      const confirmed = window.confirm("This reveals the private key for your generated Solana wallet. Only export it if you are in a private place.");
-      if (!confirmed) return;
-      await copyText(exportGeneratedWalletPrivateKey());
-      showCopyToast("Private key copied");
-      setAlert(ui.alert, "Generated Solana private key copied. Store it somewhere secure.");
+      showPrivateKeyModal(exportGeneratedWalletPrivateKey());
     } catch (error) {
       setAlert(ui.alert, parseUiError(error), true);
     }
@@ -711,6 +728,22 @@ function setupAddressCopy() {
       showCopyToast("Address copied to clipboard");
     } catch {
       setAlert(ui.alert, "Could not copy wallet address", true);
+    }
+  });
+  ui.privateKeyCloseBtn?.addEventListener("click", hidePrivateKeyModal);
+  ui.privateKeyDoneBtn?.addEventListener("click", hidePrivateKeyModal);
+  ui.privateKeyModal?.addEventListener("click", (event) => {
+    if (event.target === ui.privateKeyModal) hidePrivateKeyModal();
+  });
+  ui.privateKeyCopyBtn?.addEventListener("click", async () => {
+    const key = String(ui.privateKeyValue?.value || "");
+    if (!key) return;
+    try {
+      await copyText(key);
+      showCopyToast("Private key copied");
+      setAlert(ui.alert, "Generated Solana private key copied. Store it somewhere secure.");
+    } catch {
+      setAlert(ui.alert, "Could not copy private key", true);
     }
   });
 }
