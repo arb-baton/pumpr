@@ -1157,16 +1157,22 @@ function updateProfileIdentity() {
   const ws = walletState();
   const evmConnected = Boolean(ws.signer && ws.address);
   const generatedConnected = Boolean(ws.generatedWallet?.address);
+  const generated = ws.generatedWallet || null;
   const solanaConnected = Boolean(ws.solanaAddress);
   const connected = evmConnected || solanaConnected;
   const profile = evmConnected ? loadUserProfile(ws.address) : { username: "Guest", imageUri: "", bio: "" };
-  const name = solanaConnected && !evmConnected
+  const generatedName = generatedConnected
+    ? String(generated.name || (generated.username ? `@${generated.username}` : "") || generated.email || "")
+    : "";
+  const name = generatedConnected
+    ? generatedName || `sol_${String(generated.address || ws.solanaAddress).slice(0, 6)}`
+    : solanaConnected && !evmConnected
     ? `sol_${String(ws.solanaAddress).slice(0, 6)}`
     : evmConnected
       ? profile.username || defaultUsername(ws.address)
       : "Guest";
-  const avatarText = solanaConnected && !evmConnected ? "SOL" : connected ? name.slice(0, 2).toUpperCase() : "EP";
-  const imageUri = evmConnected ? profile.imageUri || "" : "";
+  const avatarText = generatedConnected && generated?.type === "x" ? "X" : solanaConnected && !evmConnected ? "SOL" : connected ? name.slice(0, 2).toUpperCase() : "EP";
+  const imageUri = generatedConnected ? String(generated.image || "") : evmConnected ? profile.imageUri || "" : "";
 
   if (ui.profileMenuName) ui.profileMenuName.textContent = name;
   if (ui.profileMenuNameLarge) ui.profileMenuNameLarge.textContent = name;
@@ -1175,7 +1181,13 @@ function updateProfileIdentity() {
       const cachedFollowers = loadCachedFollowerCount(ws.address);
       ui.profileMenuMeta.textContent = followerMetaText(cachedFollowers ?? 0);
     } else if (solanaConnected) {
-      ui.profileMenuMeta.textContent = generatedConnected ? "Generated Solana wallet" : "Solana wallet connected";
+      ui.profileMenuMeta.textContent = generatedConnected
+        ? generated?.type === "x" && generated.username
+          ? `@${generated.username}`
+          : generated?.type === "email"
+            ? "Email connected"
+            : "Generated Solana wallet"
+        : "Solana wallet connected";
     } else {
       ui.profileMenuMeta.textContent = "Not connected";
     }
@@ -1193,7 +1205,7 @@ function updateProfileIdentity() {
   setAvatar(ui.profileAvatar, avatarText, imageUri);
   setAvatar(ui.profileAvatarLarge, avatarText, imageUri);
 
-  const profileUrl = evmConnected ? `/profile?address=${ws.address}` : solanaConnected ? `/profile?address=${encodeURIComponent(ws.solanaAddress)}` : "/profile";
+  const profileUrl = evmConnected ? `/profile?address=${ws.address}` : solanaConnected ? `/profile?address=${encodeURIComponent(generated?.address || ws.solanaAddress)}` : "/profile";
   if (ui.profileNav) {
     ui.profileNav.href = profileUrl;
     ui.profileNav.style.display = connected ? "block" : "none";

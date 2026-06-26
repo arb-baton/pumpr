@@ -589,6 +589,8 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
 
   (async () => {
     try {
+      const handledSocialReturn = await handleSharedSocialAuthReturn({ labelEl, alertEl, notifyConnected });
+      if (handledSocialReturn) return;
       const restored = await restoreWalletFromSession("");
       const ws = walletState();
       if (!restored || (!ws.signer && !ws.solanaAddress)) return;
@@ -640,6 +642,15 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
       notifyDisconnected();
     }
   });
+  window.addEventListener("etherpump:walletChanged", () => {
+    setWalletLabel(labelEl);
+    const ws = walletState();
+    if (ws.signer || ws.solanaAddress) {
+      notifyConnected();
+    } else {
+      notifyDisconnected();
+    }
+  });
 
   const doConnect = async () => {
     try {
@@ -654,10 +665,10 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
       if (walletKey === "email") {
         const email = String(choice || "").slice("email:".length).trim().toLowerCase();
         const connected = await connectSocialWallet({ type: "email", email, name: email.split("@")[0] });
+        const generatedAddress = connected?.generatedWallet?.address || connected?.socialWallet?.address || connected?.publicKey || "";
         setWalletLabel(labelEl);
-        window.dispatchEvent(new CustomEvent("pumpr:socialAuth", { detail: { type: "email", email, address: connected?.address } }));
+        window.dispatchEvent(new CustomEvent("pumpr:socialAuth", { detail: { type: "email", email, address: generatedAddress } }));
         await notifyConnected();
-        const generatedAddress = connected?.generatedWallet?.address || connected?.publicKey || "";
         setAlert(alertEl, `Signed in as ${email}. Generated Solana wallet: ${shortAddress(generatedAddress)}`);
         return;
       }
@@ -761,6 +772,85 @@ function setSharedAvatar(node, name = "", imageUri = "") {
   }
 }
 
+function decodeBase64UrlJson(value = "") {
+  try {
+    const text = String(value || "");
+    if (!text) return null;
+    const padded = `${text}${"=".repeat((4 - (text.length % 4)) % 4)}`;
+    return JSON.parse(atob(padded.replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return null;
+  }
+}
+
+function displayNameForGeneratedWallet(generated = {}) {
+  if (!generated) return "";
+  if (generated.name) return String(generated.name);
+  if (generated.username) return `@${generated.username}`;
+  if (generated.email) return String(generated.email);
+  return generated.address ? `sol_${String(generated.address).slice(0, 6)}` : "";
+}
+
+function metaForGeneratedWallet(generated = {}) {
+  if (!generated) return "Generated Solana wallet";
+  if (generated.type === "x" && generated.username) return `@${generated.username}`;
+  if (generated.type === "email" && generated.email) return "Email connected";
+  return "Generated Solana wallet";
+}
+
+function avatarTextForGeneratedWallet(generated = {}) {
+  if (generated?.type === "x") return "X";
+  const label = displayNameForGeneratedWallet(generated);
+  return label ? label.slice(0, 2).toUpperCase() : "SOL";
+}
+
+async function handleSharedSocialAuthReturn({ labelEl, alertEl, notifyConnected } = {}) {
+  const params = new URLSearchParams(window.location.search);
+  const status = params.get("x");
+  if (!status) return false;
+
+  const finish = () => {
+    params.delete("x");
+    params.delete("x_user");
+    params.delete("reason");
+    const qs = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}`);
+  };
+
+  try {
+    if (status === "authorized") {
+      const xUser = decodeBase64UrlJson(params.get("x_user")) || {};
+      const social = {
+        type: "x",
+        id: String(xUser.id || ""),
+        username: String(xUser.username || ""),
+        name: String(xUser.name || xUser.username || "X user"),
+        image: String(xUser.image || ""),
+        followers: Math.max(0, Number(xUser.followers || 0) || 0)
+      };
+      const connected = await connectSocialWallet(social);
+      const generatedAddress = connected?.generatedWallet?.address || connected?.socialWallet?.address || connected?.publicKey || "";
+      setWalletLabel(labelEl);
+      window.dispatchEvent(new CustomEvent("pumpr:socialAuth", { detail: { ...social, address: generatedAddress } }));
+      if (typeof notifyConnected === "function") await notifyConnected();
+      setAlert(alertEl, `X connected. Generated Solana wallet: ${shortAddress(generatedAddress)}`);
+      return true;
+    }
+
+    if (status === "failed" || status === "expired" || status === "cancelled") {
+      setAlert(alertEl, params.get("reason") || "X authorization failed", true);
+      return true;
+    }
+  } catch (error) {
+    setAlert(alertEl, parseUiError(error), true);
+    return true;
+  } finally {
+    finish();
+  }
+
+  return false;
+}
+
 export function initTopbarWalletProfile({
   signInBtn,
   connectBtn,
@@ -821,6 +911,19 @@ export function initTopbarWalletProfile({
     if (!connected) {
       setProfileOpen(false);
       walletHub?.setOpen(false);
+      if (typeof onChange === "function") await onChange();
+      return;
+    }
+    if (generatedConnected) {
+      const generated = ws.generatedWallet || {};
+      const name = displayNameForGeneratedWallet(generated) || `sol_${String(generated.address || solana.address || "").slice(0, 6)}`;
+      if (els.profileMenuName) els.profileMenuName.textContent = name;
+      if (els.profileMenuNameLarge) els.profileMenuNameLarge.textContent = name;
+      if (els.profileMenuMeta) els.profileMenuMeta.textContent = metaForGeneratedWallet(generated);
+      if (els.profileNav) els.profileNav.href = `/profile?address=${encodeURIComponent(generated.address || solana.address)}`;
+      setSharedAvatar(els.profileAvatar, avatarTextForGeneratedWallet(generated), generated.image || "");
+      setSharedAvatar(els.profileAvatarLarge, avatarTextForGeneratedWallet(generated), generated.image || "");
+      walletHub?.refresh();
       if (typeof onChange === "function") await onChange();
       return;
     }
