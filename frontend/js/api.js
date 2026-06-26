@@ -174,6 +174,12 @@ export const api = {
   supportInbox: (address) => apiGet(`/api/support/inbox?address=${encodeURIComponent(String(address || ""))}`),
   sendSupportMessage: (body = {}) => apiPost("/api/support/message", body),
   pumpfunCoin: (mint) => apiGet(`/api/pumpfun/coin/${encodeURIComponent(String(mint || ""))}`),
+  launchAvailability: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.name) params.set("name", String(options.name));
+    if (options.symbol) params.set("symbol", String(options.symbol));
+    return apiGet(`/api/launch-availability?${params.toString()}`);
+  },
   pumpfunLaunch: (body = {}) => apiPost("/api/pumpfun/launch", body),
   pumpfunFinalize: (body = {}) => apiPost("/api/pumpfun/finalize", body),
   pumpfunKolBuy: (body = {}) => apiPost("/api/pumpfun/kol-buy", body),

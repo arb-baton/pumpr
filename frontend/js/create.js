@@ -1298,6 +1298,18 @@ async function prepareLaunchDetails() {
   };
 }
 
+async function ensureLaunchIdentityAvailable(details = {}) {
+  const result = await api.launchAvailability({
+    name: details.name,
+    symbol: details.symbol
+  });
+  if (result?.available !== false && !result?.duplicate) return result;
+  const existing = result?.existing || {};
+  const field = result?.field === "name" ? "name" : "ticker";
+  const taken = existing.symbol ? `$${existing.symbol}` : existing.name || "an existing token";
+  throw new Error(`A token with this ${field} already exists (${taken}). Pick a different token name and ticker.`);
+}
+
 async function launchOnChain(chainId, details, { showModal = true, quoteMode = selectedQuoteMode() } = {}) {
   const target = Number(chainId || 0);
   await loadChainConfig(target, quoteMode);
@@ -1673,6 +1685,8 @@ async function onCreate(event) {
     }
 
     const details = await prepareLaunchDetails();
+    setSubmitting(true, "Checking token name and ticker...");
+    await ensureLaunchIdentityAvailable(details);
     if (isPumpFunMode()) {
       await launchPumpFun(details);
     } else if (isPumpVerseMode()) {

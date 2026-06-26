@@ -5604,6 +5604,96 @@ async function recordPumpFunLaunch(row = {}) {
   return normalized;
 }
 
+function normalizeLaunchNameKey(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function normalizeLaunchSymbolKey(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/^\$+/, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "");
+}
+
+function launchIdentityMatch(row = {}, wanted = {}) {
+  const rowNameKey = normalizeLaunchNameKey(row.name || row.tokenName || "");
+  const rowSymbolKey = normalizeLaunchSymbolKey(row.symbol || row.tokenSymbol || "");
+  if (wanted.nameKey && rowNameKey && wanted.nameKey === rowNameKey) return "name";
+  if (wanted.symbolKey && rowSymbolKey && wanted.symbolKey === rowSymbolKey) return "symbol";
+  return "";
+}
+
+function duplicateLaunchPayload(row = {}, field = "") {
+  return {
+    duplicate: true,
+    field,
+    existing: {
+      name: String(row.name || row.tokenName || "").trim(),
+      symbol: String(row.symbol || row.tokenSymbol || "").trim().replace(/^\$/, "").toUpperCase(),
+      token: String(row.token || row.tokenAddress || row.mint || "").trim(),
+      chainId: row.chainId || "",
+      source: row.source || (row.mint ? "pumpfun" : "evm"),
+      url: String(row.pumpfunUrl || row.url || "").trim()
+    }
+  };
+}
+
+async function findDuplicateLaunchIdentity({ name = "", symbol = "" } = {}) {
+  const wanted = {
+    nameKey: normalizeLaunchNameKey(name),
+    symbolKey: normalizeLaunchSymbolKey(symbol)
+  };
+  if (!wanted.nameKey && !wanted.symbolKey) return { duplicate: false };
+
+  const pumpFunStore = await readPumpFunLaunchesPersistent({ refresh: true });
+  for (const row of Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : []) {
+    const field = launchIdentityMatch(row, wanted);
+    if (field) return duplicateLaunchPayload(row, field);
+  }
+
+  const deployment = loadDeploymentConfig();
+  const targets = [
+    ...resolveSupportedChains(deployment).map((row) => ({ chainId: row.chainId, quoteMode: "native" })),
+    ...resolveQuoteLaunchOptions().map((row) => ({ chainId: row.chainId, quoteMode: row.mode || "usdc" }))
+  ];
+  const seenTargets = new Set();
+  for (const target of targets) {
+    const chainId = parseChainId(target.chainId);
+    const quoteMode = normalizeQuoteMode(target.quoteMode);
+    const key = `${chainId}:${quoteMode}`;
+    if (!chainId || seenTargets.has(key)) continue;
+    seenTargets.add(key);
+    try {
+      const ctx = await getContext(chainId, { verify: false, quoteMode });
+      const rows = await readLaunchList(ctx);
+      for (const row of rows) {
+        const field = launchIdentityMatch(row, wanted);
+        if (field) return duplicateLaunchPayload({ ...row, chainId: ctx.chainId, source: "evm" }, field);
+      }
+    } catch {
+      // Keep checking other configured feeds; unavailable chains should not block launch checks.
+    }
+  }
+
+  return { duplicate: false };
+}
+
+async function assertLaunchIdentityAvailable({ name = "", symbol = "" } = {}) {
+  const duplicate = await findDuplicateLaunchIdentity({ name, symbol });
+  if (!duplicate?.duplicate) return duplicate;
+  const existing = duplicate.existing || {};
+  const display = existing.symbol ? `$${existing.symbol}` : existing.name || "that token";
+  const fieldLabel = duplicate.field === "name" ? "name" : "ticker";
+  const error = new Error(`A token with this ${fieldLabel} already exists (${display}). Pick a different token name and ticker.`);
+  error.status = 409;
+  error.duplicate = duplicate;
+  throw error;
+}
+
 function pumpFunSigningSecretKey() {
   const seed = String(
     process.env.PUMPFUN_SIGNING_SECRET ||
@@ -6214,6 +6304,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
     if (!name || !symbol) {
       return res.status(400).json({ error: "name and symbol are required" });
     }
+    await assertLaunchIdentityAvailable({ name, symbol });
     const userPublicKey = String(req.body?.userPublicKey || req.body?.creatorWallet || "").trim();
     if (!userPublicKey) {
       return res.status(400).json({ error: "Connect a Solana wallet first" });
@@ -6361,7 +6452,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       lastValidBlockHeight: latest.lastValidBlockHeight
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Pump.fun SDK transaction build failed" });
+    res.status(Number(error.status || 500)).json({ error: error.message || "Pump.fun SDK transaction build failed", duplicate: error.duplicate || null });
   }
 });
 
@@ -6563,6 +6654,20 @@ app.get("/api/holder/eligibility", async (req, res) => {
     res.json(eligibility);
   } catch (error) {
     res.status(400).json({ error: error.message || "Failed to verify Pump-r holder eligibility" });
+  }
+});
+
+app.get("/api/launch-availability", async (req, res) => {
+  try {
+    const name = String(req.query.name || "").trim();
+    const symbol = String(req.query.symbol || "").trim();
+    const result = await findDuplicateLaunchIdentity({ name, symbol });
+    res.json({
+      available: !result.duplicate,
+      ...result
+    });
+  } catch (error) {
+    res.status(Number(error.status || 500)).json({ error: error.message || "Failed to check token availability" });
   }
 });
 
