@@ -5319,6 +5319,10 @@ function normalizePumpFunLaunch(row = {}) {
   const mint = String(row.mint || row.token || row.tokenAddress || "").trim();
   if (!mint || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) return null;
   const symbol = String(row.symbol || "").trim().replace(/^\$/, "").toUpperCase().slice(0, 13);
+  const marketCapUsd = toNumberSafe(row.marketCapUsd || row.usd_market_cap || row.market_cap_usd, 0);
+  const marketCapSol = toNumberSafe(row.marketCapSol || row.market_cap_sol || row.market_cap, 0);
+  const fdvUsd = toNumberSafe(row.fdvUsd || row.fdv_usd, 0);
+  const priceUsd = toNumberSafe(row.priceUsd || row.price_usd, 0);
   return {
     id: String(row.id || mint).trim(),
     chainId: "pumpfun",
@@ -5334,8 +5338,60 @@ function normalizePumpFunLaunch(row = {}) {
     pumpfunUrl: pickPumpFunUrl(row, mint),
     signature: String(row.signature || "").trim(),
     metadataUri: String(row.metadataUri || "").trim(),
+    marketCapUsd,
+    marketCapSol,
+    fdvUsd,
+    priceUsd,
+    pumpfunComplete: Boolean(row.pumpfunComplete || row.complete),
     createdAt: Number(row.createdAt || Math.floor(Date.now() / 1000))
   };
+}
+
+function pumpFunFrontendApiUrl(mint = "") {
+  return `https://frontend-api-v3.pump.fun/coins/${encodeURIComponent(String(mint || "").trim())}`;
+}
+
+async function readPumpFunCoinSnapshot(mint = "") {
+  const safeMint = String(mint || "").trim();
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(safeMint)) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    const response = await fetch(pumpFunFrontendApiUrl(safeMint), {
+      headers: { Accept: "application/json" },
+      signal: controller.signal
+    });
+    if (!response.ok) return null;
+    const row = await response.json().catch(() => null);
+    if (!row || typeof row !== "object") return null;
+    return {
+      marketCapUsd: toNumberSafe(row.usd_market_cap || row.market_cap_usd || row.marketCapUsd, 0),
+      marketCapSol: toNumberSafe(row.market_cap || row.marketCapSol || row.market_cap_sol, 0),
+      fdvUsd: toNumberSafe(row.fdv_usd || row.fdvUsd || row.usd_market_cap, 0),
+      priceUsd: toNumberSafe(row.price_usd || row.priceUsd, 0),
+      pumpfunComplete: Boolean(row.complete),
+      pumpfunUrl: pickPumpFunUrl(row, safeMint)
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function hydratePumpFunLaunchMarketCaps(rows = [], options = {}) {
+  const launches = Array.isArray(rows) ? rows : [];
+  const forceFresh = Boolean(options.fresh);
+  return mapWithConcurrency(launches, 4, async (launch) => {
+    if (!forceFresh && Number(launch?.marketCapUsd || 0) > 0) return launch;
+    const snapshot = await readPumpFunCoinSnapshot(launch?.mint || launch?.token || "");
+    if (!snapshot) return launch;
+    return {
+      ...launch,
+      ...snapshot,
+      pumpfunUrl: snapshot.pumpfunUrl || launch.pumpfunUrl
+    };
+  });
 }
 
 function sanitizePumpFunLaunchesStore(store = {}) {
@@ -5445,7 +5501,8 @@ async function writePumpFunLaunchesPersistent(store) {
 }
 
 async function recordPumpFunLaunch(row = {}) {
-  const normalized = normalizePumpFunLaunch(row);
+  const snapshot = Number(row?.marketCapUsd || 0) > 0 ? null : await readPumpFunCoinSnapshot(row?.mint || row?.token || "");
+  const normalized = normalizePumpFunLaunch(snapshot ? { ...row, ...snapshot } : row);
   if (!normalized) return null;
   const store = await readPumpFunLaunchesPersistent({ refresh: true });
   const launches = [normalized, ...(Array.isArray(store.launches) ? store.launches : []).filter((item) => String(item?.mint || "").toLowerCase() !== normalized.mint.toLowerCase())];
@@ -6548,10 +6605,18 @@ app.get("/api/launches", async (req, res) => {
       (ctx.chainId === 1 || String(req.query.includePumpFun || "0") === "1");
     if (includePumpFunFeed) {
       const pumpFunStore = await readPumpFunLaunchesPersistent({ refresh: forceFresh });
-      const pumpFunLaunches = Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : [];
+      const pumpFunLaunches = await hydratePumpFunLaunchMarketCaps(
+        Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : [],
+        { fresh: forceFresh }
+      );
       const launches = [...pumpFunLaunches, ...(Array.isArray(payload.launches) ? payload.launches : [])]
         .sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0))
         .slice(0, limit);
+      if (pumpFunLaunches.some((row) => Number(row?.marketCapUsd || 0) > 0)) {
+        writePumpFunLaunchesPersistent({ launches: pumpFunLaunches }).catch(() => {
+          // best-effort snapshot persistence
+        });
+      }
       return res.json({
         ...payload,
         total: Number(payload.total || 0) + pumpFunLaunches.length,

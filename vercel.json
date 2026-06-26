@@ -128,6 +128,14 @@
       "dest": "/frontend/airdrop.html"
     },
     {
+      "src": "/pumpr-card$",
+      "dest": "/frontend/pumpr-card.html"
+    },
+    {
+      "src": "/card$",
+      "dest": "/frontend/pumpr-card.html"
+    },
+    {
       "src": "/home$",
       "dest": "/frontend/index.html"
     },

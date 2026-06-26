@@ -518,7 +518,37 @@ function setProfileMenuOpen(open) {
   ui.profileMenuBtn.setAttribute("aria-expanded", open ? "true" : "false");
 }
 
+function formatCompactMarketCapNumber(usd) {
+  if (usd >= 1_000_000_000) {
+    const v = usd / 1_000_000_000;
+    return `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}B`;
+  }
+  if (usd >= 1_000_000) {
+    const v = usd / 1_000_000;
+    return `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}M`;
+  }
+  if (usd >= 1_000) {
+    const v = usd / 1_000;
+    return `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}k`;
+  }
+  if (usd >= 1) return `${Math.round(usd)}`;
+  return usd.toFixed(2);
+}
+
 function formatLaunchMarketCap(launch) {
+  if (isPumpFunLaunch(launch)) {
+    const pumpFunUsd = Math.max(
+      Number(launch?.marketCapUsd || 0),
+      Number(launch?.usd_market_cap || 0),
+      Number(launch?.market_cap_usd || 0),
+      Number(launch?.dexSnapshot?.marketCapUsd || 0),
+      Number(launch?.fdvUsd || 0)
+    );
+    if (Number.isFinite(pumpFunUsd) && pumpFunUsd > 0) return `$${formatCompactMarketCapNumber(pumpFunUsd)} MC`;
+    const pumpFunSol = Math.max(Number(launch?.marketCapSol || 0), Number(launch?.market_cap || 0));
+    if (Number.isFinite(pumpFunSol) && pumpFunSol > 0) return `${formatCompactMarketCapNumber(pumpFunSol)} SOL MC`;
+    return "Syncing MC";
+  }
   const dexMcapRaw = Number(launch?.dexSnapshot?.marketCapUsd || 0);
   const dexLiqUsd = Number(launch?.dexSnapshot?.liquidityUsd || 0);
   const dexVolUsd = Number(launch?.dexSnapshot?.volume24hUsd || 0);
@@ -555,22 +585,7 @@ function formatLaunchMarketCap(launch) {
   }
   const usd = dexMcap > 0 ? dexMcap : fallbackUsd;
   if (usd <= 0) return "Syncing MC";
-  let label = "";
-  if (usd >= 1_000_000_000) {
-    const v = usd / 1_000_000_000;
-    label = `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}B`;
-  } else if (usd >= 1_000_000) {
-    const v = usd / 1_000_000;
-    label = `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}M`;
-  } else if (usd >= 1_000) {
-    const v = usd / 1_000;
-    label = `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}k`;
-  } else if (usd >= 1) {
-    label = `${Math.round(usd)}`;
-  } else {
-    label = usd.toFixed(2);
-  }
-  return `$${label} MC`;
+  return `$${formatCompactMarketCapNumber(usd)} MC`;
 }
 
 function formatTokenAmount(value) {
