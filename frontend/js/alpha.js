@@ -67,7 +67,9 @@ const state = {
   filter: "all",
   activeTip: null,
   xProfile: null,
-  walletControls: null
+  walletControls: null,
+  submitBusy: false,
+  submitStatusEl: null
 };
 
 function escapeHtml(value = "") {
@@ -264,6 +266,61 @@ function closeModal(el) {
   if (!el) return;
   el.classList.remove("open");
   el.setAttribute("aria-hidden", "true");
+}
+
+function ensureSubmitStatus() {
+  if (state.submitStatusEl) return state.submitStatusEl;
+  if (!ui.submitForm) return null;
+  const node = document.createElement("p");
+  node.className = "alpha-submit-status";
+  node.setAttribute("role", "status");
+  node.setAttribute("aria-live", "polite");
+  Object.assign(node.style, {
+    display: "none",
+    margin: "0",
+    padding: "0.7rem 0.85rem",
+    borderRadius: "12px",
+    border: "1px solid rgba(124, 136, 170, 0.34)",
+    background: "rgba(20, 27, 42, 0.88)",
+    color: "#dce5ff",
+    fontWeight: "700"
+  });
+  const actions = ui.submitForm.querySelector(".go-modal-actions");
+  if (actions) actions.insertAdjacentElement("beforebegin", node);
+  else ui.submitForm.appendChild(node);
+  state.submitStatusEl = node;
+  return node;
+}
+
+function setSubmitStatus(message = "", isError = false) {
+  const node = ensureSubmitStatus();
+  if (!node) return;
+  node.textContent = message;
+  node.style.display = message ? "block" : "none";
+  node.style.borderColor = isError ? "rgba(255, 126, 126, 0.58)" : "rgba(111, 238, 159, 0.45)";
+  node.style.background = isError ? "rgba(82, 23, 32, 0.82)" : "rgba(20, 43, 33, 0.82)";
+  node.style.color = isError ? "#ffd3d3" : "#d8ffe7";
+}
+
+function setSubmitBusy(busy, message = "") {
+  state.submitBusy = Boolean(busy);
+  const submit = ui.submitForm?.querySelector('button[type="submit"]');
+  if (submit) {
+    submit.disabled = state.submitBusy;
+    submit.textContent = state.submitBusy ? "Publishing..." : "Publish alpha";
+  }
+  if (message) setSubmitStatus(message, false);
+}
+
+function showSubmitValidationMessage() {
+  const invalid = ui.submitForm?.querySelector(":invalid");
+  if (!invalid) return false;
+  const label = invalid.closest("label")?.childNodes?.[0]?.textContent?.trim?.() || "Required field";
+  const message = invalid.validationMessage || `${label} is required`;
+  setSubmitStatus(`${label}: ${message}`, true);
+  invalid.scrollIntoView({ block: "center", behavior: "smooth" });
+  window.setTimeout(() => invalid.focus?.({ preventScroll: true }), 120);
+  return true;
 }
 
 function filteredTips() {
@@ -484,47 +541,60 @@ function requestXAuthorization() {
 
 async function submitAlpha(event) {
   event.preventDefault();
-  const ws = await ensureConnected();
-  await ensureXConnected();
-  const authorWallet = String(ui.authorWallet?.value || ws.address || "").trim();
-  const chainId = Number(ui.chainId.value || 1);
-  if (!isValidTokenAddressForChain(String(ui.tokenAddress?.value || ""), chainId)) {
-    throw new Error(isSolanaChain(chainId) ? "Enter a valid Solana token mint address" : "Enter a valid token contract address");
+  if (state.submitBusy) return;
+  if (ui.submitForm && !ui.submitForm.checkValidity()) {
+    showSubmitValidationMessage();
+    ui.submitForm.reportValidity?.();
+    return;
   }
-  if (!isValidTipWallet(authorWallet)) throw new Error("Enter a valid tip wallet address");
-  let evidenceUrl = String(ui.evidenceUrl?.value || "").trim();
-  let evidenceType = String(ui.evidenceType?.value || "").trim();
-  const evidenceFile = ui.evidenceFile?.files?.[0] || null;
-  if (evidenceFile && !evidenceUrl) {
-    if (evidenceFile.size > 2 * 1024 * 1024) throw new Error("Evidence file must be 2 MB or smaller");
-    setAlert(ui.alert, "Uploading alpha evidence...");
-    const upload = await api.uploadFile(await fileToDataUrl(evidenceFile));
-    evidenceUrl = upload?.url || "";
-    evidenceType = upload?.mime || evidenceFile.type || "";
+  setSubmitBusy(true, "Publishing alpha...");
+  try {
+    const ws = await ensureConnected();
+    await ensureXConnected();
+    const authorWallet = String(ui.authorWallet?.value || ws.address || "").trim();
+    const chainId = Number(ui.chainId.value || 1);
+    if (!isValidTokenAddressForChain(String(ui.tokenAddress?.value || ""), chainId)) {
+      throw new Error(isSolanaChain(chainId) ? "Enter a valid Solana token mint address" : "Enter a valid token contract address");
+    }
+    if (!isValidTipWallet(authorWallet)) throw new Error("Enter a valid tip wallet address");
+    let evidenceUrl = String(ui.evidenceUrl?.value || "").trim();
+    let evidenceType = String(ui.evidenceType?.value || "").trim();
+    const evidenceFile = ui.evidenceFile?.files?.[0] || null;
+    if (evidenceFile && !evidenceUrl) {
+      if (evidenceFile.size > 2 * 1024 * 1024) throw new Error("Evidence file must be 2 MB or smaller");
+      setSubmitStatus("Uploading alpha evidence...", false);
+      setAlert(ui.alert, "Uploading alpha evidence...");
+      const upload = await api.uploadFile(await fileToDataUrl(evidenceFile));
+      evidenceUrl = upload?.url || "";
+      evidenceType = upload?.mime || evidenceFile.type || "";
+    }
+    await api.createAlphaTip({
+      projectName: ui.projectName.value,
+      tokenSymbol: ui.tokenSymbol.value,
+      tokenAddress: ui.tokenAddress.value,
+      chainId,
+      title: ui.title.value,
+      teaser: ui.teaser.value,
+      body: ui.body.value,
+      evidenceUrl,
+      evidenceType,
+      category: ui.category.value || "Intel",
+      confidence: ui.confidence.value || "medium",
+      author: ws.address,
+      authorName: state.xProfile?.username || "",
+      authorWallet,
+      ...xPayload()
+    });
+    setSubmitStatus("", false);
+    closeModal(ui.submitModal);
+    ui.submitForm.reset();
+    if (ui.evidenceName) ui.evidenceName.textContent = "No evidence selected";
+    renderXStatus();
+    await loadAlpha();
+    setAlert(ui.alert, "Alpha published");
+  } finally {
+    setSubmitBusy(false);
   }
-  await api.createAlphaTip({
-    projectName: ui.projectName.value,
-    tokenSymbol: ui.tokenSymbol.value,
-    tokenAddress: ui.tokenAddress.value,
-    chainId,
-    title: ui.title.value,
-    teaser: ui.teaser.value,
-    body: ui.body.value,
-    evidenceUrl,
-    evidenceType,
-    category: ui.category.value || "Intel",
-    confidence: ui.confidence.value || "medium",
-    author: ws.address,
-    authorName: state.xProfile?.username || "",
-    authorWallet,
-    ...xPayload()
-  });
-  closeModal(ui.submitModal);
-  ui.submitForm.reset();
-  if (ui.evidenceName) ui.evidenceName.textContent = "No evidence selected";
-  renderXStatus();
-  await loadAlpha();
-  setAlert(ui.alert, "Alpha published");
 }
 
 function openTipModal(id) {
@@ -610,10 +680,17 @@ function bindEvents() {
     }
     await ensureConnected();
     fillSubmitDefaults();
+    setSubmitStatus("", false);
     openModal(ui.submitModal);
   });
-  ui.submitClose?.addEventListener("click", () => closeModal(ui.submitModal));
-  ui.submitCancel.forEach((button) => button.addEventListener("click", () => closeModal(ui.submitModal)));
+  ui.submitClose?.addEventListener("click", () => {
+    setSubmitStatus("", false);
+    closeModal(ui.submitModal);
+  });
+  ui.submitCancel.forEach((button) => button.addEventListener("click", () => {
+    setSubmitStatus("", false);
+    closeModal(ui.submitModal);
+  }));
   ui.evidenceChoose?.addEventListener("click", () => ui.evidenceFile?.click());
   ui.evidenceFile?.addEventListener("change", () => {
     const file = ui.evidenceFile?.files?.[0] || null;
@@ -621,8 +698,16 @@ function bindEvents() {
     if (ui.evidenceUrl) ui.evidenceUrl.value = "";
     if (ui.evidenceType) ui.evidenceType.value = file?.type || "";
   });
+  ui.submitForm?.addEventListener("invalid", (event) => {
+    event.preventDefault();
+    showSubmitValidationMessage();
+  }, true);
   ui.submitForm?.addEventListener("submit", (event) => {
-    submitAlpha(event).catch((error) => setAlert(ui.alert, parseUiError(error), true));
+    submitAlpha(event).catch((error) => {
+      const message = parseUiError(error);
+      setSubmitStatus(message, true);
+      setAlert(ui.alert, message, true);
+    });
   });
   ui.tipClose?.addEventListener("click", () => closeModal(ui.tipModal));
   ui.tipCancel.forEach((button) => button.addEventListener("click", () => closeModal(ui.tipModal)));
