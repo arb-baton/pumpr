@@ -2963,6 +2963,31 @@ function extractPumpFunBountyObjects(html = "") {
   return out;
 }
 
+function extractPumpFunBountyRowsFromPayload(payload) {
+  const root =
+    Array.isArray(payload) ? payload :
+    Array.isArray(payload?.items) ? payload.items :
+    Array.isArray(payload?.bounties) ? payload.bounties :
+    Array.isArray(payload?.data?.items) ? payload.data.items :
+    Array.isArray(payload?.data) ? payload.data :
+    [];
+  return root
+    .map((item) => item?.bounty || item?.parentBounty || item?.task || item)
+    .filter((item) => item && typeof item === "object" && item.taskId);
+}
+
+function nextPumpFunCursor(payload = {}) {
+  return sanitizeGoText(
+    payload.nextCursor ||
+      payload.cursor ||
+      payload.page?.nextCursor ||
+      payload.pagination?.nextCursor ||
+      payload.meta?.nextCursor ||
+      "",
+    500
+  );
+}
+
 function parseNextFlightStringRefs(html = "") {
   const refs = new Map();
   const decoded = unescapePumpFunPayload(html);
@@ -3084,34 +3109,90 @@ function normalizePumpFunBounty(row = {}) {
   });
 }
 
+async function fetchPumpFunBountyRowsFromApi() {
+  const sourceUrl = String(process.env.PUMPFUN_BOUNTIES_API_URL || "https://livestream-api.pump.fun/bounties/tasks").trim();
+  const pageLimit = Math.max(1, Math.min(100, Number(process.env.PUMPFUN_BOUNTY_PAGE_LIMIT || 100)));
+  const maxPages = Math.max(1, Math.min(100, Number(process.env.PUMPFUN_BOUNTY_MAX_PAGES || 50)));
+  const maxItems = Math.max(pageLimit, Math.min(5_000, Number(process.env.PUMPFUN_BOUNTY_MAX_ITEMS || 5_000)));
+  const rows = [];
+  let cursor = "";
+  for (let page = 0; page < maxPages && rows.length < maxItems; page += 1) {
+    const url = new URL(sourceUrl);
+    if (!url.searchParams.has("limit")) url.searchParams.set("limit", String(pageLimit));
+    if (!url.searchParams.has("listedOpenOnly") && !url.searchParams.has("status")) url.searchParams.set("listedOpenOnly", "true");
+    if (!url.searchParams.has("sort")) url.searchParams.set("sort", "createdAt");
+    if (!url.searchParams.has("order")) url.searchParams.set("order", "desc");
+    if (cursor) url.searchParams.set("cursor", cursor);
+    const response = await withTimeout(
+      fetch(url, {
+        headers: {
+          "User-Agent": "PumpRBot/1.0 (+https://pump-r.fun)",
+          Accept: "application/json",
+          Origin: "https://pump.fun",
+          Referer: "https://pump.fun/go/open"
+        }
+      }),
+      8_000,
+      "Pump.fun bounty API"
+    );
+    if (!response.ok) throw new Error(`Pump.fun bounty API returned ${response.status}`);
+    const payload = await response.json();
+    const pageRows = extractPumpFunBountyRowsFromPayload(payload);
+    rows.push(...pageRows.slice(0, Math.max(0, maxItems - rows.length)));
+    const nextCursor = nextPumpFunCursor(payload);
+    if (!nextCursor || nextCursor === cursor || !pageRows.length) break;
+    cursor = nextCursor;
+  }
+  return rows;
+}
+
+async function fetchPumpFunBountyRowsFromHtml() {
+  const sourceUrl = String(process.env.PUMPFUN_BOUNTIES_URL || "https://pump.fun/go").trim();
+  const response = await withTimeout(
+    fetch(sourceUrl, {
+      headers: {
+        "User-Agent": "PumpRBot/1.0 (+https://pump-r.fun)",
+        Accept: "text/html,application/json"
+      }
+    }),
+    8_000,
+    "Pump.fun bounties"
+  );
+  if (!response.ok) throw new Error(`Pump.fun returned ${response.status}`);
+  const contentType = String(response.headers.get("content-type") || "");
+  if (contentType.includes("application/json")) return extractPumpFunBountyRowsFromPayload(await response.json());
+  return extractPumpFunBountyObjects(await response.text());
+}
+
+function dedupeAndSortPumpFunBounties(rows = []) {
+  const byId = new Map();
+  for (const row of rows) {
+    if (!row?.id) continue;
+    byId.set(row.id, row);
+  }
+  return [...byId.values()].sort((a, b) =>
+    Number(b.createdAt || 0) - Number(a.createdAt || 0) ||
+    Number(b.rewardUsd || 0) - Number(a.rewardUsd || 0) ||
+    String(a.id || "").localeCompare(String(b.id || ""))
+  );
+}
+
 async function fetchPumpFunBounties(options = {}) {
   const ttlMs = Math.max(15_000, Number(process.env.PUMPFUN_BOUNTY_CACHE_TTL_MS || 60_000));
   const now = Date.now();
   if (!options.fresh && pumpFunBountiesCache.rows.length && now - pumpFunBountiesCache.fetchedAt < ttlMs) {
     return pumpFunBountiesCache;
   }
-  const sourceUrl = String(process.env.PUMPFUN_BOUNTIES_URL || "https://pump.fun/go").trim();
   try {
-    const response = await withTimeout(
-      fetch(sourceUrl, {
-        headers: {
-          "User-Agent": "PumpRBot/1.0 (+https://pump-r.fun)",
-          Accept: "text/html,application/json"
-        }
-      }),
-      8_000,
-      "Pump.fun bounties"
-    );
-    if (!response.ok) throw new Error(`Pump.fun returned ${response.status}`);
-    const contentType = String(response.headers.get("content-type") || "");
     let rawRows = [];
-    if (contentType.includes("application/json")) {
-      const json = await response.json();
-      rawRows = Array.isArray(json?.bounties) ? json.bounties : Array.isArray(json?.data) ? json.data : [];
-    } else {
-      rawRows = extractPumpFunBountyObjects(await response.text());
+    try {
+      rawRows = await fetchPumpFunBountyRowsFromApi();
+      if (!rawRows.length) throw new Error("Pump.fun bounty API returned no rows");
+    } catch (apiError) {
+      rawRows = await fetchPumpFunBountyRowsFromHtml();
+      pumpFunBountiesCache.error = `Pump.fun API fallback: ${apiError?.message || "unavailable"}`;
     }
-    const rows = rawRows.map(normalizePumpFunBounty).filter(Boolean);
+    const rows = dedupeAndSortPumpFunBounties(rawRows.map(normalizePumpFunBounty).filter((row) => row && row.status === "open"));
     pumpFunBountiesCache = { rows, fetchedAt: now, error: "" };
   } catch (error) {
     pumpFunBountiesCache = {
@@ -7431,7 +7512,7 @@ app.post("/api/agents/:id/run-bounty", async (req, res) => {
 
 app.get("/api/go", async (req, res) => {
   try {
-    const limit = Math.max(1, Math.min(120, Number(req.query.limit || 80)));
+    const limit = Math.max(1, Math.min(2_000, Number(req.query.limit || 500)));
     const tab = String(req.query.tab || "trending").toLowerCase();
     const fresh = String(req.query.fresh || "") === "1";
     const store = readGoDb();
@@ -7448,12 +7529,11 @@ app.get("/api/go", async (req, res) => {
       .map(normalizeGoSubmission)
       .filter(Boolean)
       .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
-    const rankedBounties = [...openBounties].sort((a, b) => {
-      if (tab === "bounties") return Number(b.rewardUsd || 0) - Number(a.rewardUsd || 0);
-      const bScore = Number(b.rewardUsd || 0) + Number(b.submissions || 0) * 75 + Number(b.createdAt || 0) / 1_000_000;
-      const aScore = Number(a.rewardUsd || 0) + Number(a.submissions || 0) * 75 + Number(a.createdAt || 0) / 1_000_000;
-      return bScore - aScore;
-    });
+    const rankedBounties = [...openBounties].sort((a, b) =>
+      Number(b.createdAt || 0) - Number(a.createdAt || 0) ||
+      Number(b.rewardUsd || 0) - Number(a.rewardUsd || 0) ||
+      Number(b.submissions || 0) - Number(a.submissions || 0)
+    );
     res.json({
       bounties: rankedBounties.slice(0, limit),
       submissions: submissions.slice(0, limit),

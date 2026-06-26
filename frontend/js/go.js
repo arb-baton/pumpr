@@ -1,4 +1,4 @@
-﻿import { api } from "./api.js?v=20260617pumpfeedfix";
+﻿import { api } from "./api.js?v=20260626bountyfeed";
 import {
   defaultUsername,
   connectSolanaWallet,
@@ -107,6 +107,8 @@ const ui = {
 
 const GO_DRAFT_KEY = "etherpump.go.bountyDraft.v1";
 const GO_X_AUTH_KEY = "etherpump.go.xauth.v1";
+const GO_LIST_LIMIT = 500;
+const GO_REFRESH_INTERVAL_MS = 30_000;
 
 const state = {
   tab: "trending",
@@ -120,7 +122,9 @@ const state = {
   agents: [],
   preparedPumpFunSubmission: null,
   pumpFunSession: null,
-  walletControls: null
+  walletControls: null,
+  loadingList: false,
+  refreshTimer: null
 };
 
 const GO_ESCROW_ABI = [
@@ -1080,17 +1084,24 @@ function updateSubmitModalCopy() {
   }
 }
 
-async function loadList() {
-  if (!state.goConfig?.payoutChains?.length) {
-    state.goConfig = await api.goConfig().catch(() => ({ payoutChains: [] }));
-    renderPayoutOptions();
+async function loadList(options = {}) {
+  if (state.loadingList) return;
+  state.loadingList = true;
+  try {
+    if (!state.goConfig?.payoutChains?.length) {
+      state.goConfig = await api.goConfig().catch(() => ({ payoutChains: [] }));
+      renderPayoutOptions();
+    }
+    const fresh = options.fresh ?? state.bounties.length === 0;
+    const payload = await api.go(state.tab, GO_LIST_LIMIT, { fresh });
+    state.bounties = Array.isArray(payload.bounties) ? payload.bounties : [];
+    state.submissions = Array.isArray(payload.submissions) ? payload.submissions : [];
+    state.stats = payload.stats || {};
+    renderList();
+    renderSide();
+  } finally {
+    state.loadingList = false;
   }
-  const payload = await api.go(state.tab, 80, { fresh: state.bounties.length === 0 });
-  state.bounties = Array.isArray(payload.bounties) ? payload.bounties : [];
-  state.submissions = Array.isArray(payload.submissions) ? payload.submissions : [];
-  state.stats = payload.stats || {};
-  renderList();
-  renderSide();
 }
 
 async function loadDetail(id) {
@@ -1388,6 +1399,24 @@ async function submitDirectToPumpFun(options = {}) {
   }
 }
 
+function startGoLiveRefresh() {
+  if (state.refreshTimer) window.clearInterval(state.refreshTimer);
+  const refresh = async () => {
+    if (document.hidden) return;
+    try {
+      const activeId = state.activeBounty?.id || "";
+      await loadList({ fresh: true });
+      if (activeId) await loadDetail(activeId);
+    } catch {
+      // Keep background refresh quiet; the next manual action will surface errors.
+    }
+  };
+  state.refreshTimer = window.setInterval(refresh, GO_REFRESH_INTERVAL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refresh();
+  });
+}
+
 async function init() {
   const xReturned = handleXOAuthReturn();
   await initWallet();
@@ -1510,6 +1539,7 @@ async function init() {
     } else {
       await loadList();
     }
+    startGoLiveRefresh();
     if ((xReturned || window.location.hash === "#create-bounty") && restoreBountyDraft()) {
       setBountyStep(hasXAuth() ? "rewards" : "details");
       openModal(ui.bountyModal);
