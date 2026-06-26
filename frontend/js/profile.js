@@ -27,6 +27,7 @@ import { initSupportWidget } from "./support.js";
 
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 const CLAIM_MIN_USD = 8;
+const SOCIAL_AUTH_KEY = "pumpr.social.session.v1";
 
 async function ensurePumpRHolderPaymentAccess(address) {
   const eligibility = await api.holderEligibility({ address });
@@ -123,6 +124,47 @@ const state = {
 };
 let walletHub = null;
 let walletControls = null;
+
+function readSocialAuthSession() {
+  try {
+    const raw = localStorage.getItem(SOCIAL_AUTH_KEY);
+    const parsed = JSON.parse(raw || "{}");
+    if (!parsed || typeof parsed !== "object") return null;
+    if (parsed.type === "x" && parsed.username) return parsed;
+    if (parsed.type === "email" && parsed.email) return parsed;
+  } catch {
+    // ignore corrupt social session
+  }
+  return null;
+}
+
+function saveSocialAuthSession(value = {}) {
+  try {
+    localStorage.setItem(SOCIAL_AUTH_KEY, JSON.stringify({ ...value, createdAt: Date.now() }));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function clearSocialAuthSession() {
+  try {
+    localStorage.removeItem(SOCIAL_AUTH_KEY);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function decodeBase64UrlJson(value = "") {
+  try {
+    const text = String(value || "");
+    if (!text) return null;
+    const padded = `${text}${"=".repeat((4 - (text.length % 4)) % 4)}`;
+    const json = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
 
 function followerMetaText(count) {
   const numeric = Math.max(0, Number(count || 0));
@@ -277,15 +319,21 @@ function updateProfileIdentity() {
   const ws = walletState();
   const evmConnected = Boolean(ws.signer && ws.address);
   const solanaConnected = Boolean(ws.solanaAddress);
-  const connected = evmConnected || solanaConnected;
+  const social = readSocialAuthSession();
+  const socialConnected = Boolean(!evmConnected && !solanaConnected && social);
+  const connected = evmConnected || solanaConnected || socialConnected;
   const profile = evmConnected ? loadUserProfile(ws.address) : { username: "Guest", imageUri: "", bio: "" };
   const username = solanaConnected && !evmConnected
     ? `sol_${String(ws.solanaAddress).slice(0, 6)}`
     : evmConnected
       ? profile.username || defaultUsername(ws.address)
+      : socialConnected
+        ? social.type === "x"
+          ? social.name || `@${social.username}`
+          : social.name || social.email
       : "Guest";
-  const avatarText = solanaConnected && !evmConnected ? "SOL" : connected ? username.slice(0, 2).toUpperCase() : "EP";
-  const imageUri = evmConnected ? profile.imageUri || "" : "";
+  const avatarText = solanaConnected && !evmConnected ? "SOL" : socialConnected && social.type === "x" ? "X" : connected ? username.slice(0, 2).toUpperCase() : "EP";
+  const imageUri = evmConnected ? profile.imageUri || "" : socialConnected ? String(social.image || "") : "";
   const profileHref = evmConnected ? `/profile?address=${encodeURIComponent(ws.address)}` : solanaConnected ? `/profile?address=${encodeURIComponent(ws.solanaAddress)}` : "/profile";
 
   if (ui.profileMenuName) ui.profileMenuName.textContent = username;
@@ -296,6 +344,8 @@ function updateProfileIdentity() {
       ui.profileMenuMeta.textContent = followerMetaText(cachedFollowers ?? 0);
     } else if (solanaConnected) {
       ui.profileMenuMeta.textContent = "Solana wallet connected";
+    } else if (socialConnected) {
+      ui.profileMenuMeta.textContent = social.type === "x" ? `@${social.username}` : "Email connected";
     } else {
       ui.profileMenuMeta.textContent = "Not connected";
     }
@@ -410,6 +460,31 @@ function formatMcapUsd(weiLike) {
 function renderProfileHeader(address) {
   const normalized = normalizeProfileAddress(address);
   if (!normalized) {
+    if (state.payload?.chainType === "social") {
+      const profile = state.payload.profile || {};
+      const username = String(profile.username || "Social profile");
+      ui.profileResolvedName.textContent = username;
+      if (ui.profileResolvedAddress) {
+        ui.profileResolvedAddress.textContent = "";
+        ui.profileResolvedAddress.hidden = true;
+      }
+      if (ui.profileResolvedBio) {
+        const bioText = String(profile.bio || "").trim();
+        ui.profileResolvedBio.textContent = bioText;
+        ui.profileResolvedBio.hidden = !bioText;
+      }
+      if (ui.profileCopyAddressBtn) {
+        ui.profileCopyAddressBtn.hidden = true;
+        ui.profileCopyAddressBtn.dataset.copyAddress = "";
+      }
+      if (ui.profileEtherscanLink) {
+        ui.profileEtherscanLink.hidden = true;
+        ui.profileEtherscanLink.href = "#";
+      }
+      setAvatar(ui.profileHeroAvatar, String(profile.avatarText || username).slice(0, 2).toUpperCase(), profile.imageUri || "");
+      syncFollowButton();
+      return;
+    }
     ui.profileResolvedName.textContent = "Guest";
     if (ui.profileResolvedAddress) {
       ui.profileResolvedAddress.textContent = "";
@@ -1092,6 +1167,33 @@ function setupCreatorRewardsActions() {
   });
 }
 
+function handleSocialAuthReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const status = params.get("x");
+  if (!status) return;
+
+  if (status === "authorized") {
+    const xUser = decodeBase64UrlJson(params.get("x_user")) || {};
+    saveSocialAuthSession({
+      type: "x",
+      id: String(xUser.id || ""),
+      username: String(xUser.username || ""),
+      name: String(xUser.name || xUser.username || "X user"),
+      image: String(xUser.image || ""),
+      followers: Math.max(0, Number(xUser.followers || 0) || 0)
+    });
+    setAlert(ui.alert, "X connected");
+  } else if (status === "failed" || status === "expired" || status === "cancelled") {
+    setAlert(ui.alert, params.get("reason") || "X authorization failed", true);
+  }
+
+  params.delete("x");
+  params.delete("x_user");
+  params.delete("reason");
+  const qs = params.toString();
+  window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash || ""}`);
+}
+
 function setSummary(payload) {
   const created = payload.created || [];
   const holdings = payload.holdings || [];
@@ -1113,6 +1215,44 @@ async function refreshEthUsd(force = false) {
   if (Number.isFinite(price) && price > 0) {
     state.ethUsd = price;
   }
+}
+
+function loadSocialProfile(session = readSocialAuthSession()) {
+  if (!session) return false;
+  const isX = session.type === "x";
+  const username = isX
+    ? session.name || `@${session.username}`
+    : session.name || session.email;
+  const bio = isX
+    ? `Connected with X @${session.username}${Number(session.followers || 0) > 0 ? ` • ${Number(session.followers || 0).toLocaleString()} followers` : ""}`
+    : `Signed in with ${session.email}`;
+  state.profileLoading = false;
+  state.address = "";
+  state.socialLoaded = true;
+  state.socialLoading = false;
+  state.payload = {
+    address: "",
+    chainType: "social",
+    profile: {
+      address: "",
+      username,
+      bio,
+      imageUri: session.image || "",
+      avatarText: isX ? "X" : "EM"
+    },
+    created: [],
+    holdings: [],
+    followers: [],
+    following: [],
+    followersCount: Number(session.followers || 0),
+    followingCount: 0,
+    socialIncluded: true
+  };
+  updateQuery("");
+  setSummary(state.payload);
+  renderActiveTab();
+  updateProfileIdentity();
+  return true;
 }
 
 async function loadProfile(address) {
@@ -1320,18 +1460,25 @@ function setupProfileMenu() {
 
   ui.menuLogoutBtn?.addEventListener("click", () => {
     const ws = walletState();
-    if (!ws.signer && !ws.address && !ws.solanaAddress) {
+    const social = readSocialAuthSession();
+    if (!ws.signer && !ws.address && !ws.solanaAddress && !social) {
       setAlert(ui.alert, "Wallet already disconnected");
       setProfileMenuOpen(false);
       return;
     }
     disconnectWallet();
+    clearSocialAuthSession();
     setWalletLabel(ui.walletLabel);
     if (ui.disconnectBtn?.style) ui.disconnectBtn.style.display = "none";
-    setAlert(ui.alert, "Wallet disconnected");
+    setAlert(ui.alert, "Signed out");
     setProfileMenuOpen(false);
     updateProfileIdentity();
     walletHub?.refresh();
+    state.payload = null;
+    state.address = "";
+    updateQuery("");
+    renderProfileHeader("");
+    renderActiveTab();
   });
 }
 
@@ -1395,6 +1542,7 @@ async function init() {
   }
 
   await loadConfig();
+  handleSocialAuthReturn();
 
   walletHub = initWalletHubMenu({
     triggerEl: ui.walletHubBtn,
@@ -1431,6 +1579,8 @@ async function init() {
         await loadProfile(ws.address);
       } else if (ws.solanaAddress && !state.address) {
         await loadProfile(ws.solanaAddress);
+      } else if (!state.address) {
+        loadSocialProfile();
       }
     }
   });
@@ -1459,6 +1609,10 @@ async function init() {
       return;
     }
     ui.connectBtn?.click();
+  });
+
+  window.addEventListener("pumpr:socialAuth", () => {
+    loadSocialProfile();
   });
 
   setupProfileMenu();
@@ -1505,6 +1659,9 @@ async function init() {
   }
   if (ws.solanaAddress) {
     await loadProfile(ws.solanaAddress);
+    return;
+  }
+  if (loadSocialProfile()) {
     return;
   }
 

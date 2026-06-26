@@ -13103,3 +13103,37 @@ button[disabled] {
     grid-template-columns: 1fr;
   }
 }
+
+.wallet-picker-social-panel {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+}
+
+.wallet-picker-email-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.wallet-picker-email-form input {
+  min-width: 0;
+  border: 1px solid rgba(143, 159, 197, 0.32);
+  border-radius: 8px;
+  background: #090d14;
+  color: #f8fbff;
+  padding: 0.82rem 0.9rem;
+  font: inherit;
+}
+
+.wallet-picker-email-form input:focus {
+  outline: 2px solid rgba(125, 255, 199, 0.32);
+  border-color: rgba(125, 255, 199, 0.72);
+}
+
+@media (max-width: 560px) {
+  .wallet-picker-email-form {
+    grid-template-columns: 1fr;
+  }
+}

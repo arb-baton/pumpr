@@ -356,7 +356,7 @@ function showWalletPickerModal(wallets = []) {
       return;
     }
 
-    const preferredOrder = ["metamask", "rabby", "coinbase", "phantom", "injected", "unknown"];
+    const preferredOrder = ["phantom", "metamask", "rabby", "coinbase", "injected", "unknown"];
     const orderedWallets = rows.sort((a, b) => {
       const ai = preferredOrder.indexOf(a.key);
       const bi = preferredOrder.indexOf(b.key);
@@ -432,6 +432,22 @@ function showWalletPickerModal(wallets = []) {
           </span>
           <span class="wallet-picker-arrow">></span>
         </button>
+        <div class="wallet-picker-social-panel" hidden>
+          <button type="button" class="btn-ghost wallet-picker-btn" data-wallet-x>
+            <span class="wallet-picker-btn-left">
+              <span class="wallet-picker-icon wallet-email">X</span>
+              <span>
+                <span class="wallet-picker-name">Continue with X</span>
+                <small>Use your X profile</small>
+              </span>
+            </span>
+            <span class="wallet-picker-arrow">></span>
+          </button>
+          <form class="wallet-picker-email-form">
+            <input type="email" name="email" autocomplete="email" placeholder="you@example.com" required />
+            <button type="submit" class="btn-primary">Continue</button>
+          </form>
+        </div>
         <div class="wallet-picker-actions">
           <button type="button" class="btn-ghost wallet-picker-cancel">Cancel</button>
         </div>
@@ -479,7 +495,29 @@ function showWalletPickerModal(wallets = []) {
     });
 
     overlay.querySelector("[data-wallet-email]")?.addEventListener("click", () => {
-      // placeholder for future email/social login
+      const panel = overlay.querySelector(".wallet-picker-social-panel");
+      if (!panel) return;
+      const hidden = panel.hasAttribute("hidden");
+      if (hidden) {
+        panel.removeAttribute("hidden");
+        panel.querySelector("input")?.focus();
+      } else {
+        panel.setAttribute("hidden", "");
+      }
+    });
+
+    overlay.querySelector("[data-wallet-x]")?.addEventListener("click", () => {
+      cleanup();
+      resolve("x-auth");
+    });
+
+    overlay.querySelector(".wallet-picker-email-form")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const email = String(new FormData(form).get("email") || "").trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+      cleanup();
+      resolve(`email:${email}`);
     });
 
     overlay.querySelectorAll("[data-wallet-id]").forEach((button) => {
@@ -578,6 +616,26 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
       }
       const choice = await showWalletPickerModal(wallets);
       const walletKey = String(choice || "").split(":")[0];
+      if (walletKey === "x-auth") {
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash || ""}`;
+        window.location.href = `/api/x/oauth/start?returnTo=${encodeURIComponent(returnTo)}`;
+        return;
+      }
+      if (walletKey === "email") {
+        const email = String(choice || "").slice("email:".length).trim().toLowerCase();
+        try {
+          localStorage.setItem(
+            "pumpr.social.session.v1",
+            JSON.stringify({ type: "email", email, name: email.split("@")[0], createdAt: Date.now() })
+          );
+        } catch {
+          // ignore storage failures
+        }
+        window.dispatchEvent(new CustomEvent("pumpr:socialAuth", { detail: { type: "email", email } }));
+        await notifyConnected();
+        setAlert(alertEl, `Signed in as ${email}`);
+        return;
+      }
       if (walletKey === "phantom") {
         await connectSolanaWallet({ requirePrompt: true, requireSignature: true });
       } else {
@@ -740,7 +798,7 @@ export function initTopbarWalletProfile({
       if (els.profileMenuName) els.profileMenuName.textContent = name;
       if (els.profileMenuNameLarge) els.profileMenuNameLarge.textContent = name;
       if (els.profileMenuMeta) els.profileMenuMeta.textContent = "Solana wallet connected";
-      if (els.profileNav) els.profileNav.href = "/profile";
+      if (els.profileNav) els.profileNav.href = `/profile?address=${encodeURIComponent(solana.address)}`;
       setSharedAvatar(els.profileAvatar, "SOL", "");
       setSharedAvatar(els.profileAvatarLarge, "SOL", "");
       walletHub?.setOpen(false);
@@ -784,7 +842,7 @@ export function initTopbarWalletProfile({
   });
 
   signInBtn?.addEventListener("click", async () => {
-    if (walletState().signer) return;
+    if (walletState().signer || walletState().solanaAddress) return;
     await controls.connect();
     await update();
   });
