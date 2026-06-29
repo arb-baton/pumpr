@@ -27,10 +27,13 @@ import {
 import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js";
 import { initCoinSearchOverlay } from "./searchModal.js?v=20260505a";
 import { initSupportWidget } from "./support.js";
+import { KOL_LEADERBOARD } from "./kolData.js";
 
 const MIN_INITIAL_LIQUIDITY_ETH = 0;
 const HOME_LAUNCH_CACHE_KEY = "etherpump.launches.cache.v3";
 const HOME_LAUNCH_CACHE_MAX_ITEMS = 120;
+const DEFAULT_PUMPFUN_SUPPLY = 1_000_000_000;
+const PUMPFUN_ESTIMATE_VIRTUAL_SOL = 30;
 
 const ui = {
   walletSelect: document.getElementById("walletChoice"),
@@ -76,6 +79,17 @@ const ui = {
   advancedDetails: document.querySelector(".create-advanced"),
   pumpfunOptions: null,
   pumpfunDevBuySol: null,
+  kolApplicationCard: null,
+  kolSendEnabled: null,
+  kolToggleText: null,
+  kolSelect: null,
+  kolBuySol: null,
+  kolSelectedAvatar: null,
+  kolSelectedName: null,
+  kolSelectedWallet: null,
+  kolTokenEstimate: null,
+  kolSupplyEstimate: null,
+  kolRouteStatus: null,
   createForm: document.getElementById("createForm"),
   launchSubmitBtn: document.getElementById("launchSubmitBtn"),
   name: document.getElementById("name"),
@@ -220,6 +234,70 @@ function ensurePumpFunOptions() {
   ui.advancedDetails?.insertAdjacentElement("afterend", panel);
   ui.pumpfunOptions = panel;
   ui.pumpfunDevBuySol = panel.querySelector("#pumpfunDevBuySol");
+  ensureKolSendOptions();
+}
+
+function ensureKolSendOptions() {
+  if (ui.kolApplicationCard || !ui.pumpfunOptions) return;
+  const panel = document.createElement("section");
+  panel.id = "kolApplicationCard";
+  panel.className = "kol-application-card";
+  panel.hidden = true;
+  panel.innerHTML = `
+    <div class="kol-application-head">
+      <div>
+        <p class="kol-eyebrow">Token send</p>
+        <h3>Send tokens after launch</h3>
+        <p class="kol-subcopy">Optional buy and transfer to a selected Solana wallet after the Pump.fun token is live.</p>
+      </div>
+      <label class="kol-toggle">
+        <input id="kolSendEnabled" type="checkbox" />
+        <span class="kol-switch" aria-hidden="true"></span>
+        <span id="kolToggleText" class="kol-toggle-text">Off</span>
+      </label>
+    </div>
+    <div class="kol-application-body">
+      <div class="kol-preview">
+        <img id="kolSelectedAvatar" alt="" src="/assets/pump-r-logo.png" />
+        <div>
+          <strong id="kolSelectedName">Select wallet</strong>
+          <span id="kolSelectedWallet">Wallet -</span>
+        </div>
+      </div>
+      <label>
+        Wallet list
+        <select id="kolSelect"></select>
+      </label>
+      <label>
+        SOL buy amount
+        <input id="kolBuySol" type="number" step="any" min="0" placeholder="0.05" value="0.05" />
+      </label>
+      <div class="kol-estimate-grid">
+        <article>
+          <span>Estimated tokens</span>
+          <strong id="kolTokenEstimate">0 tokens</strong>
+        </article>
+        <article>
+          <span>Estimated supply</span>
+          <strong id="kolSupplyEstimate">0%</strong>
+        </article>
+      </div>
+      <p id="kolRouteStatus" class="kol-route-status">Token send is off.</p>
+    </div>
+  `;
+  ui.pumpfunOptions.insertAdjacentElement("afterend", panel);
+  ui.kolApplicationCard = panel;
+  ui.kolSendEnabled = panel.querySelector("#kolSendEnabled");
+  ui.kolToggleText = panel.querySelector("#kolToggleText");
+  ui.kolSelect = panel.querySelector("#kolSelect");
+  ui.kolBuySol = panel.querySelector("#kolBuySol");
+  ui.kolSelectedAvatar = panel.querySelector("#kolSelectedAvatar");
+  ui.kolSelectedName = panel.querySelector("#kolSelectedName");
+  ui.kolSelectedWallet = panel.querySelector("#kolSelectedWallet");
+  ui.kolTokenEstimate = panel.querySelector("#kolTokenEstimate");
+  ui.kolSupplyEstimate = panel.querySelector("#kolSupplyEstimate");
+  ui.kolRouteStatus = panel.querySelector("#kolRouteStatus");
+  setupKolApplicationControls();
 }
 
 function followerMetaText(count) {
@@ -387,6 +465,8 @@ function renderChainSelector() {
     if (isPumpFunMode()) ui.advancedDetails.open = false;
   }
   if (ui.pumpfunOptions) ui.pumpfunOptions.hidden = !isPumpFunMode();
+  if (ui.kolApplicationCard) ui.kolApplicationCard.hidden = !isPumpFunMode();
+  updateKolEstimate();
   if (ui.launchChainLabel) {
     ui.launchChainLabel.textContent = isPumpVerseMode()
       ? "PumpVerse"
@@ -1009,6 +1089,88 @@ function formatTokenAmount(value) {
   }).format(n);
 }
 
+function safeKolRows() {
+  return Array.isArray(KOL_LEADERBOARD)
+    ? KOL_LEADERBOARD.filter((row) => row?.name && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(row.wallet || "")))
+    : [];
+}
+
+function selectedKol() {
+  const rows = safeKolRows();
+  const wallet = String(ui.kolSelect?.value || rows[0]?.wallet || "").trim();
+  return rows.find((row) => row.wallet === wallet) || rows[0] || null;
+}
+
+function estimateKolBuy(solAmountInput = parseNumberInput(ui.kolBuySol?.value, 0)) {
+  const solAmount = Math.max(0, Number(solAmountInput || 0));
+  const totalSupply = Math.max(1, parseNumberInput(ui.supply?.value, DEFAULT_PUMPFUN_SUPPLY) || DEFAULT_PUMPFUN_SUPPLY);
+  const tokens = solAmount > 0
+    ? (solAmount / (PUMPFUN_ESTIMATE_VIRTUAL_SOL + solAmount)) * totalSupply
+    : 0;
+  const supplyPct = totalSupply > 0 ? (tokens / totalSupply) * 100 : 0;
+  return { solAmount, totalSupply, tokens, supplyPct };
+}
+
+function updateKolEstimate() {
+  const enabled = Boolean(ui.kolSendEnabled?.checked);
+  const kol = selectedKol();
+  const quote = estimateKolBuy();
+  ui.kolApplicationCard?.classList.toggle("enabled", enabled);
+  if (ui.kolToggleText) {
+    ui.kolToggleText.textContent = enabled ? "On" : "Off";
+  }
+  if (ui.kolSelectedAvatar) {
+    ui.kolSelectedAvatar.src = kol?.image || "/assets/pump-r-logo.png";
+  }
+  if (ui.kolSelectedName) {
+    ui.kolSelectedName.textContent = kol?.name || "Select wallet";
+  }
+  if (ui.kolSelectedWallet) {
+    ui.kolSelectedWallet.textContent = kol?.wallet ? shortAddress(kol.wallet) : "Wallet -";
+    ui.kolSelectedWallet.title = kol?.wallet || "";
+  }
+  if (ui.kolTokenEstimate) {
+    ui.kolTokenEstimate.textContent = `${formatTokenAmount(quote.tokens)} tokens`;
+  }
+  if (ui.kolSupplyEstimate) {
+    ui.kolSupplyEstimate.textContent = `${quote.supplyPct.toFixed(4)}%`;
+  }
+  if (ui.kolRouteStatus) {
+    ui.kolRouteStatus.textContent = enabled
+      ? `Launch will buy ${quote.solAmount.toFixed(3)} SOL and send about ${formatTokenAmount(quote.tokens)} tokens to ${kol?.name || "the selected wallet"}.`
+      : "Token send is off.";
+  }
+}
+
+function setupKolApplicationControls() {
+  if (!ui.kolSelect) return;
+  const rows = safeKolRows();
+  ui.kolSelect.innerHTML = rows
+    .map((row, index) => `<option value="${escapeHtml(row.wallet)}">${index + 1}. ${escapeHtml(row.name)} - ${escapeHtml(shortAddress(row.wallet))}</option>`)
+    .join("");
+  ui.kolSendEnabled?.addEventListener("change", updateKolEstimate);
+  ui.kolSelect.addEventListener("change", updateKolEstimate);
+  ui.kolBuySol?.addEventListener("input", updateKolEstimate);
+  ui.supply?.addEventListener("input", updateKolEstimate);
+  updateKolEstimate();
+}
+
+function readKolApplication() {
+  if (!ui.kolSendEnabled?.checked) return null;
+  const kol = selectedKol();
+  if (!kol?.wallet) return null;
+  const quote = estimateKolBuy();
+  return {
+    enabled: true,
+    name: kol.name,
+    wallet: kol.wallet,
+    image: kol.image || "",
+    buySol: quote.solAmount,
+    estimatedTokens: quote.tokens,
+    estimatedSupplyPct: quote.supplyPct
+  };
+}
+
 function formatEthAmount(valueWei) {
   const value = Number(ethers.formatEther(valueWei || 0n));
   if (!Number.isFinite(value) || value <= 0) return "0 ETH";
@@ -1242,6 +1404,7 @@ async function prepareLaunchDetails() {
   const description = composeDescription();
   const initialLiquidityEthInput = ui.devBuyEth.value.trim();
   const pumpfunDevBuySol = parseNumberInput(ui.pumpfunDevBuySol?.value, 0);
+  const kolApplication = isPumpFunMode() ? readKolApplication() : null;
 
   if (!name || !symbol) throw new Error("Coin name and ticker are required");
   if (isPumpFunMode()) {
@@ -1253,6 +1416,14 @@ async function prepareLaunchDetails() {
     }
     if (!Number.isFinite(pumpfunDevBuySol) || pumpfunDevBuySol < 0) {
       throw new Error("Pump.fun dev wallet buy must be 0 SOL or higher.");
+    }
+    if (ui.kolSendEnabled?.checked) {
+      if (!kolApplication?.wallet) {
+        throw new Error("Select a valid Solana wallet before enabling token send.");
+      }
+      if (!Number.isFinite(Number(kolApplication.buySol)) || Number(kolApplication.buySol) <= 0) {
+        throw new Error("Token send needs a SOL buy amount above 0.");
+      }
     }
   }
   if (!Number.isFinite(creatorAllocationPct) || creatorAllocationPct < 0) {
@@ -1294,7 +1465,8 @@ async function prepareLaunchDetails() {
     starterBuyEth: ethers.parseUnits(initialLiquidityEthInput || "0", selectedQuoteAsset().decimals || 18),
     pumpfunDevBuySol,
     pumpfunDevBuyLamports: ethers.parseUnits(String(pumpfunDevBuySol || 0), 9),
-    pumpfunCreatorWallet: ui.pumpfunCreatorWallet?.value?.trim?.() || ""
+    pumpfunCreatorWallet: ui.pumpfunCreatorWallet?.value?.trim?.() || "",
+    kolApplication
   };
 }
 
@@ -1496,6 +1668,9 @@ function normalizePumpFunHomeLaunch(row = {}) {
     description: String(row.description || "").trim().slice(0, 4000),
     imageUri: String(row.imageUri || row.image || "").trim().slice(0, 2048),
     creator: String(row.creator || row.user || "").trim(),
+    kolApplication: row.kolApplication && typeof row.kolApplication === "object" ? row.kolApplication : null,
+    kolBuySignature: String(row.kolBuySignature || "").trim(),
+    kolTransferSignature: String(row.kolTransferSignature || "").trim(),
     pumpfunUrl: String(row.pumpfunUrl || row.url || `https://pump.fun/coin/${encodeURIComponent(mint)}`).trim(),
     signature: String(row.signature || "").trim(),
     metadataUri: String(row.metadataUri || "").trim(),
@@ -1535,7 +1710,12 @@ async function launchPumpFun(details) {
     action: "launch tokens through Pump-r"
   });
   const solanaWeb3 = await loadSolanaWeb3();
-  setAlert(ui.alert, "Preparing official Pump.fun SDK transaction...");
+  setAlert(
+    ui.alert,
+    details.kolApplication?.enabled
+      ? `Preparing Pump.fun launch with token send for ${details.kolApplication.name}.`
+      : "Preparing official Pump.fun SDK transaction..."
+  );
   const payload = await api.pumpfunLaunch({
     name: details.name,
     symbol: details.symbol,
@@ -1547,7 +1727,8 @@ async function launchPumpFun(details) {
     starterBuySol: String(details.pumpfunDevBuySol || 0),
     creatorWallet: details.pumpfunCreatorWallet || publicKey,
     userPublicKey: publicKey,
-    source: "Pump-r"
+    source: "Pump-r",
+    kolApplication: details.kolApplication || null
   });
   const mint = String(payload?.mint || payload?.tokenAddress || payload?.token || "");
   const pumpfunUrl = String(payload?.pumpfunUrl || payload?.url || (mint ? `https://pump.fun/coin/${mint}` : ""));
@@ -1558,6 +1739,10 @@ async function launchPumpFun(details) {
   setAlert(ui.alert, "Open Phantom to sign first. Pump-r will add the mint signature after your approval, simulate the transaction, then broadcast through the configured Solana RPC.");
   const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
   let signature = "";
+  let kolBuySignature = "";
+  let kolTransferSignature = "";
+  let kolApplication = details.kolApplication || null;
+  let finalizedLaunch = null;
   if (typeof provider.signTransaction === "function") {
     const signed = await provider.signTransaction(transaction);
     setAlert(ui.alert, "Finalizing Pump.fun launch with the mint signature...");
@@ -1566,13 +1751,60 @@ async function launchPumpFun(details) {
       signedTransactionBase64: bytesToBase64(signed.serialize({ requireAllSignatures: false, verifySignatures: false }))
     });
     signature = String(finalized?.signature || "");
-    cachePumpFunLaunchForHome(finalized?.launch || {
+    finalizedLaunch = finalized?.launch || null;
+    if (details.kolApplication?.enabled && Number(details.kolApplication.buySol || 0) > 0) {
+      setAlert(ui.alert, `Open Phantom again to buy ${details.kolApplication.buySol} SOL for the token send. Tokens will land in your wallet first.`);
+      const kolPayload = await api.pumpfunKolBuy({
+        mint,
+        creatorWallet: details.pumpfunCreatorWallet || publicKey,
+        userPublicKey: publicKey,
+        kolApplication: details.kolApplication
+      });
+      const kolTransactionBase64 = String(kolPayload?.transactionBase64 || "");
+      if (!kolTransactionBase64) throw new Error("Token send buy transaction was not returned.");
+      const kolTransaction = solanaWeb3.Transaction.from(base64ToBytes(kolTransactionBase64));
+      const signedKol = await provider.signTransaction(kolTransaction);
+      setAlert(ui.alert, "Broadcasting token buy to your wallet...");
+      const kolSent = await api.solanaSendTransaction({
+        signedTransactionBase64: bytesToBase64(signedKol.serialize({ requireAllSignatures: false, verifySignatures: false })),
+        rpcUrl: kolPayload.rpcUrl,
+        blockhash: kolPayload.blockhash,
+        lastValidBlockHeight: kolPayload.lastValidBlockHeight
+      });
+      kolBuySignature = String(kolSent?.signature || "");
+      kolApplication = kolPayload.kolApplication || details.kolApplication;
+      setAlert(ui.alert, `Open Phantom once more to transfer the token allocation to ${details.kolApplication.name}.`);
+      const transferPayload = await api.pumpfunKolTransfer({
+        mint,
+        userPublicKey: publicKey,
+        tokenAmount: kolApplication?.kolBuy?.tokenAmount || "",
+        kolApplication
+      });
+      const transferTransactionBase64 = String(transferPayload?.transactionBase64 || "");
+      if (!transferTransactionBase64) throw new Error("Token transfer transaction was not returned.");
+      const transferTransaction = solanaWeb3.Transaction.from(base64ToBytes(transferTransactionBase64));
+      const signedTransfer = await provider.signTransaction(transferTransaction);
+      setAlert(ui.alert, "Broadcasting token transfer...");
+      const transferSent = await api.solanaSendTransaction({
+        signedTransactionBase64: bytesToBase64(signedTransfer.serialize({ requireAllSignatures: false, verifySignatures: false })),
+        rpcUrl: transferPayload.rpcUrl,
+        blockhash: transferPayload.blockhash,
+        lastValidBlockHeight: transferPayload.lastValidBlockHeight
+      });
+      kolTransferSignature = String(transferSent?.signature || "");
+      kolApplication = transferPayload.kolApplication || kolApplication;
+    }
+    cachePumpFunLaunchForHome({
+      ...(finalizedLaunch || {}),
       mint,
       name: details.name,
       symbol: details.symbol,
       description: details.description,
       imageUri: details.imageUri,
       creator: publicKey,
+      kolApplication,
+      kolBuySignature,
+      kolTransferSignature,
       pumpfunUrl,
       signature,
       metadataUri: payload?.metadataUri,
@@ -1593,11 +1825,11 @@ async function launchPumpFun(details) {
   ui.resultLink.href = pumpfunUrl || `https://pump.fun/coin/${encodeURIComponent(mint)}`;
   ui.resultLink.textContent = "Open Pump.fun token page";
   ui.resultLink.style.display = "inline-block";
-  setAlert(ui.alert, `Pump.fun transaction sent${signature ? ` (${shortAddress(signature)})` : ""}. Redirecting...`);
+  setAlert(ui.alert, `Pump.fun transaction sent${signature ? ` (${shortAddress(signature)})` : ""}${kolBuySignature ? `; token buy completed (${shortAddress(kolBuySignature)})` : ""}${kolTransferSignature ? `; token transfer sent (${shortAddress(kolTransferSignature)})` : ""}. Redirecting...`);
   window.setTimeout(() => {
     window.location.href = ui.resultLink.href;
   }, 900);
-  return { ...payload, signature };
+  return { ...payload, signature, kolBuySignature, kolTransferSignature };
 }
 
 async function launchPumpVerse(details) {
