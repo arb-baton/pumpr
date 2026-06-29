@@ -4,14 +4,12 @@ import {
   TOKEN_ABI,
   connectSolanaWallet as connectSharedSolanaWallet,
   defaultUsername,
-  disconnectWallet,
   ensureWalletChain,
   ethers,
   fetchEthUsdPrice,
   getPreferredChainId,
   hydrateFollowerCount,
   hydrateUserProfile,
-  loadCachedFollowerCount,
   loadUserProfile,
   makeFallbackImage,
   makeFactoryContract,
@@ -24,7 +22,7 @@ import {
   solanaWalletState,
   walletState
 } from "./core.js";
-import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js";
+import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js";
 import { initCoinSearchOverlay } from "./searchModal.js?v=20260505a";
 import { initSupportWidget } from "./support.js";
 import { KOL_LEADERBOARD } from "./kolData.js";
@@ -610,6 +608,7 @@ function selectPumpFunLaunchMode() {
   state.selectedQuoteMode = "native";
   renderChainSelector();
   updateProfileIdentity();
+  walletControls?.refresh?.();
   setAlert(ui.alert, "Pump.fun launch selected. Sign in with Phantom or Solflare, then launch with the official Pump.fun SDK transaction.");
 }
 
@@ -667,70 +666,22 @@ function setProfileMenuOpen(open) {
 function updateProfileIdentity() {
   const sharedSolana = solanaWalletState();
   const activeSolanaPublicKey = state.solanaWallet?.publicKey || sharedSolana.address || "";
-  if (isPumpFunMode() && activeSolanaPublicKey) {
-    const publicKey = activeSolanaPublicKey;
-    if (!state.solanaWallet && sharedSolana.provider) {
-      state.solanaWallet = { provider: sharedSolana.provider, publicKey };
-    }
-    const username = `sol_${publicKey.slice(0, 6)}`;
-    if (ui.profileMenuName) ui.profileMenuName.textContent = username;
-    if (ui.profileMenuNameLarge) ui.profileMenuNameLarge.textContent = username;
-    if (ui.profileMenuMeta) ui.profileMenuMeta.textContent = "Solana wallet connected";
-    if (ui.signInBtn) ui.signInBtn.style.display = "none";
-    if (ui.walletHubBtn) ui.walletHubBtn.style.display = "none";
-    if (ui.profileMenuBtn) ui.profileMenuBtn.style.display = "inline-flex";
-    if (ui.profileNav) ui.profileNav.href = "/profile";
-    if (ui.profileNavSide) ui.profileNavSide.href = "/profile";
-    if (ui.editProfileBtn) {
-      ui.editProfileBtn.disabled = true;
-      ui.editProfileBtn.style.opacity = "0.6";
-      ui.editProfileBtn.style.cursor = "not-allowed";
-    }
-    if (ui.menuLogoutBtn) ui.menuLogoutBtn.textContent = "Disconnect Solana";
-    setAvatarNode(ui.profileAvatar, "SOL", "");
-    setAvatarNode(ui.profileAvatarLarge, "SOL", "");
-    return;
+  if (sharedSolana.provider && sharedSolana.address) {
+    state.solanaWallet = { provider: sharedSolana.provider, publicKey: sharedSolana.address };
+  } else if (!activeSolanaPublicKey) {
+    state.solanaWallet = null;
   }
   const ws = walletState();
   const connected = Boolean(ws.signer && ws.address);
-  const generatedConnected = Boolean(ws.generatedWallet?.address);
-  const profile = connected ? loadUserProfile(ws.address) : { username: "Guest", bio: "", imageUri: "" };
-  const username = profile.username || (connected ? defaultUsername(ws.address) : "Guest");
-  const avatarText = connected ? username.slice(0, 2).toUpperCase() : "EP";
-  const imageUri = connected ? profile.imageUri || "" : "";
-  const profileHref = connected ? `/profile?address=${ws.address}` : "/profile";
-
-  if (ui.profileMenuName) ui.profileMenuName.textContent = username;
-  if (ui.profileMenuNameLarge) ui.profileMenuNameLarge.textContent = username;
-  if (ui.profileMenuMeta) {
-    if (connected) {
-      const cachedFollowers = loadCachedFollowerCount(ws.address);
-      ui.profileMenuMeta.textContent = followerMetaText(cachedFollowers ?? 0);
-    } else {
-      ui.profileMenuMeta.textContent = "Not connected";
-    }
-  }
-  if (ui.signInBtn) ui.signInBtn.style.display = connected || generatedConnected ? "none" : "inline-flex";
-  if (ui.walletHubBtn) ui.walletHubBtn.style.display = connected || generatedConnected ? "inline-flex" : "none";
-  if (ui.profileMenuBtn) ui.profileMenuBtn.style.display = connected || generatedConnected ? "inline-flex" : "none";
-  if (!connected) {
-    walletHub?.setOpen(false);
-    setProfileMenuOpen(false);
-  }
-  setAvatarNode(ui.profileAvatar, avatarText, imageUri);
-  setAvatarNode(ui.profileAvatarLarge, avatarText, imageUri);
-  if (ui.profileNav) ui.profileNav.href = profileHref;
-  if (ui.profileNavSide) ui.profileNavSide.href = profileHref;
+  const generatedAddress = String(ws.generatedWallet?.address || "");
+  const profileAddress = ws.address || generatedAddress || activeSolanaPublicKey || "";
+  if (ui.profileNavSide) ui.profileNavSide.href = profileAddress ? `/profile?address=${encodeURIComponent(profileAddress)}` : "/profile";
 
   if (ui.editProfileBtn) {
     ui.editProfileBtn.disabled = !connected;
     ui.editProfileBtn.style.opacity = connected ? "1" : "0.6";
     ui.editProfileBtn.style.cursor = connected ? "pointer" : "not-allowed";
   }
-  if (ui.menuLogoutBtn) {
-    ui.menuLogoutBtn.textContent = connected ? "Log out" : "Connect wallet";
-  }
-
   if (connected) {
     const currentAddress = String(ws.address || "");
     hydrateFollowerCount(currentAddress).then((followersCount) => {
@@ -779,19 +730,6 @@ async function openEditProfileModal() {
 }
 
 function setupProfileMenu() {
-  ui.profileMenuBtn?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    walletHub?.setOpen(false);
-    const isOpen = ui.profileMenu?.classList.contains("open");
-    setProfileMenuOpen(!isOpen);
-  });
-
-  document.addEventListener("click", (event) => {
-    if (!ui.profileMenu || !ui.profileMenuBtn) return;
-    if (ui.profileMenu.contains(event.target) || ui.profileMenuBtn.contains(event.target)) return;
-    setProfileMenuOpen(false);
-  });
-
   ui.editProfileBtn?.addEventListener("click", () => {
     if (ui.editProfileBtn.disabled) return;
     setProfileMenuOpen(false);
@@ -808,30 +746,6 @@ function setupProfileMenu() {
     } catch {
       setAlert(ui.alert, "Could not copy profile link", true);
     }
-  });
-
-  ui.menuLogoutBtn?.addEventListener("click", () => {
-    if (isPumpFunMode() && state.solanaWallet?.publicKey) {
-      disconnectWallet();
-      state.solanaWallet = null;
-      setAlert(ui.alert, "Solana wallet disconnected");
-      setProfileMenuOpen(false);
-      updateProfileIdentity();
-      return;
-    }
-    const ws = walletState();
-    if (!ws.signer && !ws.address && !ws.solanaAddress) {
-      setAlert(ui.alert, "Wallet already disconnected");
-      setProfileMenuOpen(false);
-      return;
-    }
-    disconnectWallet();
-    setWalletLabel(ui.walletLabel);
-    if (ui.disconnectBtn?.style) ui.disconnectBtn.style.display = "none";
-    setAlert(ui.alert, "Wallet disconnected");
-    setProfileMenuOpen(false);
-    updateProfileIdentity();
-    walletHub?.refresh();
   });
 }
 
@@ -1632,6 +1546,7 @@ async function connectSolanaWallet(options = {}) {
   if (!wallet?.provider || !text) throw new Error("Solana wallet did not return a public key");
   state.solanaWallet = { provider: wallet.provider, publicKey: text };
   updateProfileIdentity();
+  await walletControls?.refresh?.();
   return { provider: wallet.provider, publicKey: text };
 }
 
@@ -1959,67 +1874,32 @@ async function init() {
 
   await loadChainConfig(getPreferredChainId() || state.selectedChainId);
 
-  walletHub = initWalletHubMenu({
-    triggerEl: ui.walletHubBtn,
-    menuEl: ui.walletHubMenu,
-    balanceEl: ui.walletHubBalance,
-    balanceLargeEl: ui.walletHubBalanceLarge,
-    nativeEl: ui.walletHubNative,
-    addressBtnEl: ui.walletHubAddressBtn,
-    historyLinkEl: ui.walletHubHistoryLink,
-    depositBtnEl: ui.walletHubDepositBtn,
-    tradeLinkEl: ui.walletHubTradeLink,
-    buyLinkEl: ui.walletHubBuyLink,
-    depositModalEl: ui.depositModal,
-    depositCloseBtnEl: ui.depositCloseBtn,
-    depositCopyBtnEl: ui.depositCopyBtn,
-    depositAddressEl: ui.depositAddressText,
-    depositQrEl: ui.depositQrImage,
-    alertEl: ui.alert,
-    onOpen: () => setProfileMenuOpen(false)
-  });
-
-  walletControls = initWalletControls({
-    selectEl: ui.walletSelect,
-    connectBtn: ui.connectBtn,
-    disconnectBtn: ui.disconnectBtn,
-    labelEl: ui.walletLabel,
-    alertEl: ui.alert,
-    onConnected: async () => {
-      await ensureWalletChain(state.selectedChainId);
-      updateProfileIdentity();
-      setProfileMenuOpen(false);
-      syncLiquidityInputMin();
-      updateLaunchMath({ source: "liquidity" });
-      await walletHub?.refresh();
+  const syncWalletUi = async () => {
+    const sharedSolana = solanaWalletState();
+    state.solanaWallet = sharedSolana.provider && sharedSolana.address
+      ? { provider: sharedSolana.provider, publicKey: sharedSolana.address }
+      : null;
+    const ws = walletState();
+    if (ws.signer && !isPumpFunMode()) {
+      await ensureWalletChain(state.selectedChainId).catch((err) => setAlert(ui.alert, parseUiError(err), true));
     }
-  });
-
-  ui.disconnectBtn?.addEventListener("click", () => {
     updateProfileIdentity();
     setProfileMenuOpen(false);
     syncLiquidityInputMin();
     updateLaunchMath({ source: "liquidity" });
-    walletHub?.refresh();
-  });
+    await walletHub?.refresh();
+  };
 
-  ui.connectBtn?.addEventListener("click", () => {
-    setTimeout(() => {
-      updateProfileIdentity();
-      syncLiquidityInputMin();
-      updateLaunchMath({ source: "liquidity" });
-      walletHub?.refresh();
-    }, 20);
+  walletControls = initTopbarWalletProfile({
+    signInBtn: ui.signInBtn,
+    connectBtn: ui.connectBtn,
+    disconnectBtn: ui.disconnectBtn,
+    walletSelect: ui.walletSelect,
+    walletLabel: ui.walletLabel,
+    alertEl: ui.alert,
+    onChange: syncWalletUi
   });
-
-  ui.walletSelect?.addEventListener("change", () => {
-    setTimeout(() => {
-      updateProfileIdentity();
-      syncLiquidityInputMin();
-      updateLaunchMath({ source: "liquidity" });
-      walletHub?.refresh();
-    }, 20);
-  });
+  walletHub = walletControls?.walletHub || null;
 
   ui.launchChainOptions?.addEventListener("click", (event) => {
     const button = event.target?.closest?.("[data-launch-mode], [data-chain-id]");
@@ -2068,18 +1948,6 @@ async function init() {
   };
   window.addEventListener("etherpump:chainChanged", handleChainChanged);
   window.addEventListener("Pump-r:chainChanged", handleChainChanged);
-
-  ui.signInBtn?.addEventListener("click", () => {
-    if (isPumpFunMode()) {
-      connectSolanaWallet({ requirePrompt: true, requireSignature: true }).catch((err) => setAlert(ui.alert, parseUiError(err), true));
-      return;
-    }
-    if (walletControls?.connect) {
-      walletControls.connect();
-      return;
-    }
-    ui.connectBtn?.click();
-  });
 
   setupProfileMenu();
   setupEditProfileModal();
