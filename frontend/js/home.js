@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260630esm";
+import { api } from "./api.js?v=20260630homeperf";
 import {
   CHAIN_OPTIONS,
   defaultUsername,
@@ -244,6 +244,19 @@ async function fetchRecentLaunchPage(options = {}) {
   return { total: Number(page?.total || launches.length), launches };
 }
 
+async function fetchFastHomeLaunchPage(options = {}) {
+  return fetchRecentLaunchPage({
+    limit: 36,
+    lite: true,
+    home: true,
+    includeDex: false,
+    includePumpFun: true,
+    pumpFunOnly: true,
+    allChains: true,
+    ...options
+  });
+}
+
 function configuredFeedChains() {
   const configured = Array.isArray(state.supportedChains) ? state.supportedChains : [];
   const chains = configured
@@ -270,7 +283,7 @@ function configuredFeedTargets() {
   });
 }
 
-async function fetchLaunchesAcrossChains(fetcher, options = {}) {
+async function fetchLaunchesAcrossChainsProgressive(fetcher, options = {}, onBatch = () => {}) {
   const targets = configuredFeedTargets();
   let pumpFunFeedRequested = false;
   const results = await Promise.allSettled(
@@ -278,7 +291,7 @@ async function fetchLaunchesAcrossChains(fetcher, options = {}) {
       const includePumpFun = quote === "native" && !pumpFunFeedRequested;
       if (includePumpFun) pumpFunFeedRequested = true;
       const payload = await fetcher({ ...options, chainId, quote, includePumpFun });
-      return {
+      const normalized = {
         total: Number(payload?.total || 0),
         launches: (Array.isArray(payload?.launches) ? payload.launches : []).map((row) => ({
           ...row,
@@ -286,6 +299,8 @@ async function fetchLaunchesAcrossChains(fetcher, options = {}) {
           quoteMode: String(row?.quoteMode || row?.pool?.quoteMode || quote || "native").toLowerCase()
         }))
       };
+      if (normalized.launches.length) onBatch(normalized);
+      return normalized;
     })
   );
 
@@ -1145,6 +1160,14 @@ async function hydrateVisibleMarketCaps(limit = 12) {
   renderExplore();
 }
 
+function scheduleVisibleMarketCapHydration(limit = 10, delayMs = 900) {
+  window.setTimeout(() => {
+    hydrateVisibleMarketCaps(limit).catch(() => {
+      // best-effort card enrichment
+    });
+  }, delayMs);
+}
+
 function setActiveFilterButton() {
   for (const button of ui.filterButtons) {
     button.classList.toggle("active", button.dataset.filter === state.filter);
@@ -1510,7 +1533,7 @@ async function refreshLaunches(options = {}) {
   }
 
   try {
-    const quick = await fetchLaunchesAcrossChains(fetchRecentLaunchPage, { limit: 36, lite: true, includeDex: false });
+    const quick = await fetchFastHomeLaunchPage();
     if (quick.launches.length) {
       state.launches = mergeLaunchRows(state.launches, quick.launches);
       saveCachedLaunches(state.launches);
@@ -1518,9 +1541,7 @@ async function refreshLaunches(options = {}) {
       renderTopCommunities();
       renderTrending();
       renderExplore();
-      hydrateVisibleMarketCaps(10).catch(() => {
-        // best-effort card enrichment
-      });
+      scheduleVisibleMarketCapHydration(8, 1000);
     }
   } catch (error) {
     lastError = error;
@@ -1528,10 +1549,31 @@ async function refreshLaunches(options = {}) {
 
   if (enrich) {
     const retryDelays = [0, 500, 1200];
+    let renderedProgressiveBatch = false;
+    const renderProgressiveBatch = (payload) => {
+      const batch = Array.isArray(payload?.launches)
+        ? payload.launches.filter((row) => Boolean(row && row.token))
+        : [];
+      if (!batch.length) return;
+      state.launches = mergeLaunchRows(state.launches, batch);
+      saveCachedLaunches(state.launches);
+      updateMoverSignals(state.launches);
+      renderTopCommunities();
+      renderTrending();
+      renderExplore();
+      if (!renderedProgressiveBatch) {
+        renderedProgressiveBatch = true;
+        scheduleVisibleMarketCapHydration(8, 1000);
+      }
+    };
     for (const delayMs of retryDelays) {
       if (delayMs > 0) await sleep(delayMs);
       try {
-        launchesRes = await fetchLaunchesAcrossChains(fetchLaunchPages, { pageSize: 24, includeDex: true });
+        launchesRes = await fetchLaunchesAcrossChainsProgressive(
+          fetchLaunchPages,
+          { pageSize: 24, includeDex: true },
+          renderProgressiveBatch
+        );
         break;
       } catch (error) {
         lastError = error;

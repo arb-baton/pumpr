@@ -6913,20 +6913,128 @@ app.get("/api/config", async (req, res) => {
   }
 });
 
+function compactCreatorProfileForHome(profile) {
+  if (!profile || typeof profile !== "object") return null;
+  const imageUri = String(profile.imageUri || profile.image || "").trim();
+  return {
+    address: String(profile.address || "").trim(),
+    username: String(profile.username || profile.name || "").trim().slice(0, 80),
+    imageUri: imageUri && !imageUri.startsWith("data:") ? imageUri : ""
+  };
+}
+
+function compactPoolForHome(pool) {
+  if (!pool || typeof pool !== "object") return null;
+  return {
+    address: String(pool.address || "").trim(),
+    graduated: Boolean(pool.graduated),
+    migratedPair: String(pool.migratedPair || "").trim(),
+    quoteMode: String(pool.quoteMode || "").trim(),
+    quoteAsset: pool.quoteAsset
+      ? {
+          mode: String(pool.quoteAsset.mode || "").trim(),
+          symbol: String(pool.quoteAsset.symbol || "").trim(),
+          decimals: toNumberSafe(pool.quoteAsset.decimals, 18),
+          isNative: Boolean(pool.quoteAsset.isNative)
+        }
+      : null,
+    marketCapWei: String(pool.marketCapWei || "0"),
+    marketCapEth: toNumberSafe(pool.marketCapEth, 0),
+    marketCapQuote: toNumberSafe(pool.marketCapQuote, 0),
+    fdvWei: String(pool.fdvWei || "0"),
+    fdvEth: toNumberSafe(pool.fdvEth, 0),
+    fdvQuote: toNumberSafe(pool.fdvQuote, 0),
+    bondingProgressPct: toNumberSafe(pool.bondingProgressPct, 0),
+    lastTradeAt: Number(pool.lastTradeAt || 0)
+  };
+}
+
+function compactDexSnapshotForHome(dex) {
+  if (!dex || typeof dex !== "object") return null;
+  return {
+    chainId: String(dex.chainId || "").trim(),
+    dexId: String(dex.dexId || "").trim(),
+    pairAddress: String(dex.pairAddress || "").trim(),
+    pairUrl: String(dex.pairUrl || "").trim(),
+    baseSymbol: String(dex.baseSymbol || "").trim(),
+    quoteSymbol: String(dex.quoteSymbol || "").trim(),
+    priceNative: toNumberSafe(dex.priceNative, 0),
+    priceUsd: toNumberSafe(dex.priceUsd, 0),
+    marketCapUsd: toNumberSafe(dex.marketCapUsd, 0),
+    fdvUsd: toNumberSafe(dex.fdvUsd, 0),
+    liquidityUsd: toNumberSafe(dex.liquidityUsd, 0),
+    volume24hUsd: toNumberSafe(dex.volume24hUsd, 0),
+    priceChange24hPct: toNumberSafe(dex.priceChange24hPct, 0),
+    pairCreatedAt: Number(dex.pairCreatedAt || 0)
+  };
+}
+
+function compactLaunchForHome(row = {}) {
+  const imageUri = String(row.imageUri || row.imageURI || row.image || "").trim();
+  const tokenAddress = String(row.tokenAddress || row.token || row.mint || "").trim();
+  const poolAddress = typeof row.pool === "string"
+    ? row.pool
+    : String(row.poolAddress || row.pool?.address || "").trim();
+  return {
+    id: row.id,
+    chainId: row.chainId,
+    source: row.source || "",
+    token: tokenAddress,
+    tokenAddress,
+    mint: String(row.mint || row.token || "").trim(),
+    poolAddress,
+    creator: String(row.creator || "").trim(),
+    name: String(row.name || row.tokenName || "").trim(),
+    symbol: String(row.symbol || row.tokenSymbol || "").trim(),
+    imageURI: imageUri,
+    description: String(row.description || "").trim().slice(0, 360),
+    createdAt: Number(row.createdAt || 0),
+    pumpfunUrl: String(row.pumpfunUrl || row.pumpFunUrl || "").trim(),
+    signature: String(row.signature || "").trim(),
+    marketCapUsd: toNumberSafe(row.marketCapUsd, 0),
+    marketCapSol: toNumberSafe(row.marketCapSol, 0),
+    fdvUsd: toNumberSafe(row.fdvUsd, 0),
+    priceUsd: toNumberSafe(row.priceUsd, 0),
+    pumpfunComplete: Boolean(row.pumpfunComplete),
+    pool: compactPoolForHome(row.pool),
+    dexSnapshot: compactDexSnapshotForHome(row.dexSnapshot),
+    creatorProfile: compactCreatorProfileForHome(row.creatorProfile)
+  };
+}
+
+function compactLaunchPayloadForHome(payload = {}) {
+  return {
+    ...payload,
+    launches: (Array.isArray(payload.launches) ? payload.launches : []).map(compactLaunchForHome)
+  };
+}
+
 app.get("/api/launches", async (req, res) => {
   try {
     const limit = Math.max(1, Math.min(120, Number(req.query.limit || 20)));
     const offset = Math.max(0, Number(req.query.offset || 0));
     const includeDex = String(req.query.includeDex || "0") === "1";
     const lite = String(req.query.lite || "0") === "1";
+    const homeLite = String(req.query.home || "0") === "1";
+    const fastHome = homeLite && lite && !includeDex;
+    const pumpFunOnly = String(req.query.pumpFunOnly || "0") === "1";
     const forceFresh = String(req.query.fresh || "0") === "1";
+
+    if (pumpFunOnly) {
+      const pumpFunStore = await readPumpFunLaunchesPersistent({ refresh: forceFresh && !fastHome });
+      const pumpFunLaunches = (Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : [])
+        .sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
+      const launches = pumpFunLaunches.slice(offset, offset + limit);
+      const pumpFunPayload = { total: pumpFunLaunches.length, launches };
+      return res.json(homeLite ? compactLaunchPayloadForHome(pumpFunPayload) : pumpFunPayload);
+    }
 
     const deployment = loadDeploymentConfig();
     const requestedChainId = resolveRequestedChainId(req, deployment);
     const quoteMode = resolveRequestedQuoteMode(req);
     const ctx = await getContext(requestedChainId, { verify: false, quoteMode });
     const count = await readFactoryLaunchCount(ctx.factory);
-    const launchesKey = `${ctx.quoteMode}:${ctx.chainId}:${ctx.factoryAddress.toLowerCase()}:${count}:${limit}:${offset}:${includeDex ? "dex" : "nodex"}:${lite ? "lite" : "full"}`;
+    const launchesKey = `${ctx.quoteMode}:${ctx.chainId}:${ctx.factoryAddress.toLowerCase()}:${count}:${limit}:${offset}:${includeDex ? "dex" : "nodex"}:${lite ? "lite" : "full"}:${fastHome ? "homefast" : "standard"}`;
     const builder = async () => {
       const page = await readLaunchPage(ctx, limit, offset);
       const creatorAddresses = [...new Set(page.launches.map((launch) => String(launch?.creator || "").toLowerCase()).filter(Boolean))];
@@ -6943,15 +7051,19 @@ app.get("/api/launches", async (req, res) => {
         async ({ launch, index }) => {
         let pool = null;
         let dexSnapshot = null;
-        try {
-          // Even in lite mode, read live pool snapshot so home cards don't stick to seeded defaults.
-          pool = await withTimeout(
-            readPoolSnapshot(ctx.provider, launch, { quoteMode: ctx.quoteMode, quoteAsset: ctx.quoteAsset }),
-            lite ? 1800 : RPC_READ_TIMEOUT_MS,
-            "pool snapshot"
-          );
-        } catch {
+        if (fastHome) {
           pool = buildPoolFallbackFromLaunch(launch);
+        } else {
+          try {
+            // Even in lite mode, read live pool snapshot so non-home card requests don't stick to seeded defaults.
+            pool = await withTimeout(
+              readPoolSnapshot(ctx.provider, launch, { quoteMode: ctx.quoteMode, quoteAsset: ctx.quoteAsset }),
+              lite ? 1800 : RPC_READ_TIMEOUT_MS,
+              "pool snapshot"
+            );
+          } catch {
+            pool = buildPoolFallbackFromLaunch(launch);
+          }
         }
         if (includeDex && index < Math.min(limit, 24)) {
           try {
@@ -7005,26 +7117,27 @@ app.get("/api/launches", async (req, res) => {
       (ctx.chainId === 1 || String(req.query.includePumpFun || "0") === "1");
     if (includePumpFunFeed) {
       const pumpFunStore = await readPumpFunLaunchesPersistent({ refresh: forceFresh });
-      const pumpFunLaunches = await hydratePumpFunLaunchMarketCaps(
-        Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : [],
-        { fresh: forceFresh }
-      );
+      const rawPumpFunLaunches = Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : [];
+      const pumpFunLaunches = fastHome
+        ? rawPumpFunLaunches
+        : await hydratePumpFunLaunchMarketCaps(rawPumpFunLaunches, { fresh: forceFresh });
       const launches = [...pumpFunLaunches, ...(Array.isArray(payload.launches) ? payload.launches : [])]
         .sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0))
         .slice(0, limit);
-      if (pumpFunLaunches.some((row) => Number(row?.marketCapUsd || 0) > 0)) {
+      if (!fastHome && pumpFunLaunches.some((row) => Number(row?.marketCapUsd || 0) > 0)) {
         writePumpFunLaunchesPersistent({ launches: pumpFunLaunches }).catch(() => {
           // best-effort snapshot persistence
         });
       }
-      return res.json({
+      const pumpFunPayload = {
         ...payload,
         total: Number(payload.total || 0) + pumpFunLaunches.length,
         launches
-      });
+      };
+      return res.json(homeLite ? compactLaunchPayloadForHome(pumpFunPayload) : pumpFunPayload);
     }
 
-    res.json(payload);
+    res.json(homeLite ? compactLaunchPayloadForHome(payload) : payload);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

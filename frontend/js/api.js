@@ -3,7 +3,7 @@ import { getPreferredChainId } from "./core.js?v=20260630esm";
 function withPreferredChain(path) {
   const chainId = getPreferredChainId();
   if (!chainId) return path;
-  if (/[?&]chainId=/.test(path)) return path;
+  if (/[?&](chainId|allChains)=/.test(path)) return path;
   return `${path}${path.includes("?") ? "&" : "?"}chainId=${chainId}`;
 }
 
@@ -94,6 +94,9 @@ export const api = {
     if (options.lite) params.set("lite", "1");
     if (options.fresh) params.set("fresh", "1");
     if (options.includePumpFun) params.set("includePumpFun", "1");
+    if (options.allChains) params.set("allChains", "1");
+    if (options.home) params.set("home", "1");
+    if (options.pumpFunOnly) params.set("pumpFunOnly", "1");
     if (Number.isFinite(Number(options.chainId))) params.set("chainId", String(Math.floor(Number(options.chainId))));
     if (options.quote) params.set("quote", String(options.quote));
     return apiGet(`/api/launches?${params.toString()}`);
