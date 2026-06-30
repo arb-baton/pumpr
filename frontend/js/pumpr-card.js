@@ -1,5 +1,5 @@
-import { api } from "./api.js?v=20260630signin";
-import { walletState } from "./core.js?v=20260630signin";
+import { api } from "./api.js?v=20260630local";
+import { walletState } from "./core.js?v=20260630local";
 
 const form = document.getElementById("pumprCardWaitlistForm");
 const emailInput = document.getElementById("pumprCardEmail");

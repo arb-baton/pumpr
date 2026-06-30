@@ -1,6 +1,6 @@
-import { api } from "./api.js?v=20260630signin";
-import { defaultUsername, loadUserProfile, shortAddress, walletState } from "./core.js?v=20260630signin";
-import { setAlert } from "./ui.js?v=20260630signin";
+import { api } from "./api.js?v=20260630local";
+import { defaultUsername, loadUserProfile, shortAddress, walletState } from "./core.js?v=20260630local";
+import { setAlert } from "./ui.js?v=20260630local";
 
 const SUPPORT_MODAL_ID = "supportWidgetModal";
 const SUPPORT_LINK_ID = "supportSideLink";

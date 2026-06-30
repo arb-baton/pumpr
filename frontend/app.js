@@ -1,4 +1,4 @@
-import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.5/+esm";
+import { ethers } from "./vendor/ethers.min.js?v=20260630local";
 
 const FACTORY_ABI = [
   "function createLaunch(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps) returns (uint256 launchId,address tokenAddress,address poolAddress)",

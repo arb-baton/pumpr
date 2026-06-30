@@ -18,7 +18,7 @@ import {
   solanaWalletState,
   walletState,
   parseUiError
-} from "./core.js?v=20260630signin";
+} from "./core.js?v=20260630local";
 
 export function setAlert(el, message, isError = false) {
   if (!el) return;

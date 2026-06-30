@@ -1,4 +1,4 @@
-import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.5/+esm";
+import { ethers } from "../vendor/ethers.min.js?v=20260630local";
 
 export { ethers };
 
