@@ -1,7 +1,7 @@
-﻿import { api } from "./api.js";
-import { defaultUsername, parseUiError, shortAddress, walletState } from "./core.js";
-import { initTopbarWalletProfile, setAlert } from "./ui.js";
-import { initSupportWidget } from "./support.js";
+﻿import { api } from "./api.js?v=20260630signin";
+import { defaultUsername, parseUiError, shortAddress, walletState } from "./core.js?v=20260630signin";
+import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260630signin";
+import { initSupportWidget } from "./support.js?v=20260630signin";
 
 const ui = {
   alert: document.getElementById("alert"),

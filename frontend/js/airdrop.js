@@ -1,6 +1,6 @@
-import { api } from "./api.js";
-import { parseUiError, shortAddress } from "./core.js";
-import { setAlert } from "./ui.js";
+import { api } from "./api.js?v=20260630signin";
+import { parseUiError, shortAddress } from "./core.js?v=20260630signin";
+import { setAlert } from "./ui.js?v=20260630signin";
 
 const ui = {
   officialTop: document.getElementById("airdropOfficialTop"),

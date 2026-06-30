@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api } from "./api.js?v=20260630signin";
 import {
   connectSocialWallet,
   defaultUsername,
@@ -7,9 +7,9 @@ import {
   resolveCoinImage,
   shortAddress,
   walletState
-} from "./core.js";
-import { initWalletControls, setAlert, showCopyToast } from "./ui.js";
-import { initCoinSearchOverlay } from "./searchModal.js?v=20260504e";
+} from "./core.js?v=20260630signin";
+import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260630signin";
+import { initCoinSearchOverlay } from "./searchModal.js?v=20260630signin";
 
 const X_AUTH_KEY = "Pump-r.community.xauth.v2";
 
@@ -624,7 +624,7 @@ function startXOAuth() {
   const address = activeWalletAddress();
   if (!address) {
     setAlert(ui.alert, "Connect wallet before authorizing X", true);
-    ui.connectBtn?.click();
+    state.walletControls?.connect();
     return;
   }
   if (state.token && !walletMatchesCommunity()) {
@@ -666,8 +666,7 @@ function updateCharCount() {
 }
 
 function setupEvents() {
-  ui.signInBtn?.addEventListener("click", () => ui.connectBtn?.click());
-  ui.composerWalletBtn?.addEventListener("click", () => ui.connectBtn?.click());
+  ui.composerWalletBtn?.addEventListener("click", () => state.walletControls?.connect());
   ui.connectXBtn?.addEventListener("click", startXOAuth);
   ui.postInput?.addEventListener("input", updateCharCount);
   ui.publishBtn?.addEventListener("click", () => publishPost().catch((err) => setAlert(ui.alert, err.message, true)));
@@ -783,15 +782,15 @@ async function init() {
   renderGates();
   updateCharCount();
   setupEvents();
-  state.walletControls = initWalletControls({
-    selectEl: ui.walletSelect,
+  state.walletControls = initTopbarWalletProfile({
+    signInBtn: ui.signInBtn,
     connectBtn: ui.connectBtn,
     disconnectBtn: ui.disconnectBtn,
-    labelEl: ui.walletLabel,
+    walletSelect: ui.walletSelect,
+    walletLabel: ui.walletLabel,
     alertEl: ui.alert,
-    onConnected: () => renderGates()
+    onChange: renderGates
   });
-  ui.disconnectBtn?.addEventListener("click", renderGates);
   initCoinSearchOverlay({ triggerInputs: [ui.tokenSearchInput] });
   try {
     const cfg = await api.config();

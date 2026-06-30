@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api } from "./api.js?v=20260630signin";
 import {
   connectSocialWallet,
   defaultUsername,
@@ -9,8 +9,8 @@ import {
   parseUiError,
   shortAddress,
   walletState
-} from "./core.js";
-import { initWalletControls, setAlert, setWalletLabel } from "./ui.js";
+} from "./core.js?v=20260630signin";
+import { initTopbarWalletProfile, setAlert, setWalletLabel } from "./ui.js?v=20260630signin";
 
 const ALPHA_X_AUTH_KEY = "etherpump.alpha.xauth.v1";
 
@@ -482,19 +482,14 @@ function updateProfileLinks() {
 }
 
 async function initWallet() {
-  state.walletControls = initWalletControls({
-    selectEl: ui.walletSelect,
+  state.walletControls = initTopbarWalletProfile({
+    signInBtn: ui.signInBtn,
     connectBtn: ui.connectBtn,
     disconnectBtn: ui.disconnectBtn,
-    labelEl: ui.walletLabel,
+    walletSelect: ui.walletSelect,
+    walletLabel: ui.walletLabel,
     alertEl: ui.alert,
-    onConnected: updateProfileLinks,
-    onDisconnected: updateProfileLinks
-  });
-  ui.signInBtn?.addEventListener("click", async () => {
-    if (hasActiveWallet()) return;
-    await state.walletControls?.connect();
-    updateProfileLinks();
+    onChange: updateProfileLinks
   });
   updateProfileLinks();
 }

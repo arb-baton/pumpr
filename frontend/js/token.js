@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api } from "./api.js?v=20260630signin";
 import {
   TOKEN_ABI,
   defaultUsername,
@@ -24,10 +24,10 @@ import {
   setPreferredChainId,
   shortAddress,
   walletState
-} from "./core.js";
-import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js";
-import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260504e";
-import { initSupportWidget } from "./support.js";
+} from "./core.js?v=20260630signin";
+import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260630signin";
+import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260630signin";
+import { initSupportWidget } from "./support.js?v=20260630signin";
 
 const RANGE_MS = {
   "5m": 5 * 60 * 1000,
@@ -931,29 +931,62 @@ function setProfileMenuOpen(open) {
 
 function updateProfileIdentity() {
   const ws = walletState();
-  const connected = Boolean(ws.signer && ws.address);
-  const profile = connected ? loadUserProfile(ws.address) : { username: "Guest", bio: "", imageUri: "" };
-  const username = connected ? profile.username || defaultUsername(ws.address) : "Guest";
-  const avatarText = connected ? username.slice(0, 2).toUpperCase() : "EP";
-  const imageUri = connected ? profile.imageUri || "" : "";
-  const profileHref = connected ? `/profile?address=${ws.address}` : "/profile";
+  const evmConnected = Boolean(ws.signer && ws.address);
+  const generated = ws.generatedWallet || null;
+  const generatedConnected = Boolean(generated?.address);
+  const solanaConnected = Boolean(ws.solanaAddress);
+  const connected = evmConnected || solanaConnected;
+  const profile = evmConnected ? loadUserProfile(ws.address) : { username: "Guest", bio: "", imageUri: "" };
+  const generatedName = generatedConnected
+    ? String(generated.name || (generated.username ? `@${generated.username}` : "") || generated.email || "")
+    : "";
+  const username = generatedConnected
+    ? generatedName || `sol_${String(generated.address || ws.solanaAddress).slice(0, 6)}`
+    : solanaConnected && !evmConnected
+      ? `sol_${String(ws.solanaAddress).slice(0, 6)}`
+      : evmConnected
+        ? profile.username || defaultUsername(ws.address)
+        : "Guest";
+  const avatarText = generatedConnected && generated?.type === "x"
+    ? "X"
+    : solanaConnected && !evmConnected
+      ? "SOL"
+      : connected
+        ? username.slice(0, 2).toUpperCase()
+        : "EP";
+  const imageUri = generatedConnected ? String(generated.image || "") : evmConnected ? profile.imageUri || "" : "";
+  const profileHref = evmConnected
+    ? `/profile?address=${ws.address}`
+    : solanaConnected
+      ? `/profile?address=${encodeURIComponent(generated?.address || ws.solanaAddress)}`
+      : "/profile";
 
   if (ui.profileMenuName) ui.profileMenuName.textContent = username;
   if (ui.profileMenuNameLarge) ui.profileMenuNameLarge.textContent = username;
   if (ui.profileMenuMeta) {
-    if (connected) {
+    if (evmConnected) {
       const cachedFollowers = loadCachedFollowerCount(ws.address);
       ui.profileMenuMeta.textContent = followerMetaText(cachedFollowers ?? 0);
+    } else if (solanaConnected) {
+      ui.profileMenuMeta.textContent = generatedConnected
+        ? generated?.type === "x" && generated.username
+          ? `@${generated.username}`
+          : generated?.type === "email"
+            ? "Email connected"
+            : "Generated Solana wallet"
+        : "Solana wallet connected";
     } else {
       ui.profileMenuMeta.textContent = "Not connected";
     }
   }
   if (ui.signInBtn) ui.signInBtn.style.display = connected ? "none" : "inline-flex";
-  if (ui.walletHubBtn) ui.walletHubBtn.style.display = connected ? "inline-flex" : "none";
+  if (ui.walletHubBtn) ui.walletHubBtn.style.display = evmConnected || generatedConnected ? "inline-flex" : "none";
   if (ui.profileMenuBtn) ui.profileMenuBtn.style.display = connected ? "inline-flex" : "none";
   if (!connected) {
     walletHub?.setOpen(false);
     setProfileMenuOpen(false);
+  } else if (!evmConnected && !generatedConnected) {
+    walletHub?.setOpen(false);
   }
   setAvatarNode(ui.profileAvatar, avatarText, imageUri);
   setAvatarNode(ui.profileAvatarLarge, avatarText, imageUri);
@@ -968,16 +1001,16 @@ function updateProfileIdentity() {
   }
 
   if (ui.editProfileBtn) {
-    ui.editProfileBtn.disabled = !connected;
-    ui.editProfileBtn.style.opacity = connected ? "1" : "0.6";
-    ui.editProfileBtn.style.cursor = connected ? "pointer" : "not-allowed";
+    ui.editProfileBtn.disabled = !evmConnected;
+    ui.editProfileBtn.style.opacity = evmConnected ? "1" : "0.6";
+    ui.editProfileBtn.style.cursor = evmConnected ? "pointer" : "not-allowed";
   }
 
   if (ui.menuLogoutBtn) {
     ui.menuLogoutBtn.textContent = connected ? "Log out" : "Connect wallet";
   }
 
-  if (connected) {
+  if (evmConnected) {
     const currentAddress = String(ws.address || "");
     hydrateFollowerCount(currentAddress).then((followersCount) => {
       const next = walletState();
@@ -1001,7 +1034,6 @@ function updateProfileIdentity() {
     });
   }
 }
-
 function hideEditProfileModal() {
   if (!ui.editProfileModal) return;
   ui.editProfileModal.classList.remove("open");

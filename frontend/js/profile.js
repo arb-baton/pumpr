@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api } from "./api.js?v=20260630signin";
 import {
   defaultUsername,
   connectSocialWallet,
@@ -22,10 +22,10 @@ import {
   shortAddress,
   weiToUsd,
   walletState
-} from "./core.js";
-import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js";
-import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260505a";
-import { initSupportWidget } from "./support.js";
+} from "./core.js?v=20260630signin";
+import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260630signin";
+import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260630signin";
+import { initSupportWidget } from "./support.js?v=20260630signin";
 
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 const CLAIM_MIN_USD = 8;

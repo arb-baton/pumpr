@@ -1105,14 +1105,6 @@ export function disconnectWallet() {
 export async function restoreWalletFromSession(choice = "") {
   const session = loadWalletSession();
   if (!session.connected) {
-    const recovered = recoverSavedSocialIdentity();
-    if (recovered?.socialKey) {
-      const row = findSocialWalletRowByIdentity(recovered);
-      if (row?.secretKeyBase64) {
-        saveSocialAuthSession(recovered);
-        return await activateGeneratedWallet({ ...row, identity: recovered });
-      }
-    }
     return null;
   }
 

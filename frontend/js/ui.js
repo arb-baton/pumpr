@@ -18,7 +18,7 @@ import {
   solanaWalletState,
   walletState,
   parseUiError
-} from "./core.js";
+} from "./core.js?v=20260630signin";
 
 export function setAlert(el, message, isError = false) {
   if (!el) return;
@@ -977,7 +977,11 @@ export function initTopbarWalletProfile({
   });
 
   signInBtn?.addEventListener("click", async () => {
-    if (walletState().signer || walletState().solanaAddress) return;
+    const buttonVisible = signInBtn.offsetParent !== null && getComputedStyle(signInBtn).display !== "none";
+    if (!buttonVisible && (walletState().signer || walletState().solanaAddress)) {
+      await update();
+      return;
+    }
     await controls.connect();
     await update();
   });
