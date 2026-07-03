@@ -33,7 +33,7 @@
     { key: "alpha", href: "/alpha", label: "Alpha Tips" },
     { key: "agents", href: "/agents", label: "Agents" },
     { key: "airdrop", href: "/airdrop", label: "Airdrop" },
-    { key: "referral", href: "/referrals", label: "Referrals", match: (path) => path === "/referrals" || path.startsWith("/r/") },
+    { key: "referral", href: "/referrals", label: "Referrals", pill: "beta", match: (path) => path === "/referrals" || path.startsWith("/r/") },
     { key: "card", href: "/pumpr-card", label: "PUMPR Card" },
     { key: "profile", href: "/profile", label: "Profile", id: "profileNavSide" },
     { key: "communities", href: "/communities", label: "Communities" },
@@ -98,7 +98,7 @@
       link.target = "_blank";
       link.rel = "noreferrer noopener";
     }
-    link.innerHTML = `<span class="side-icon" aria-hidden="true">${sideIcons[item.key]}</span><span class="side-link-label">${item.label}</span>`;
+    link.innerHTML = `<span class="side-icon" aria-hidden="true">${sideIcons[item.key]}</span><span class="side-link-label">${item.label}</span>${item.pill ? `<span class="side-pill side-pill-beta">${item.pill}</span>` : ""}`;
     return link;
   }
 
@@ -120,6 +120,19 @@
       }
       if (label) label.textContent = item.label;
       if (icon && sideIcons[item.key]) icon.innerHTML = sideIcons[item.key];
+      let pill = link.querySelector(".side-pill");
+      if (item.pill && !pill) {
+        pill = document.createElement("span");
+        pill.className = "side-pill side-pill-beta";
+        link.appendChild(pill);
+      }
+      if (pill) {
+        if (item.pill) {
+          pill.textContent = item.pill;
+        } else {
+          pill.remove();
+        }
+      }
       const pathname = location.pathname || "/";
       const isActive = item.match ? item.match(pathname) : pathname === item.href || pathname.startsWith(`${item.href}/`);
       link.classList.toggle("active", Boolean(isActive));
