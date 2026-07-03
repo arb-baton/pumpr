@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260703sharedauth";
+import { api } from "./api.js?v=20260703launchmode";
 import {
   FACTORY_ABI,
   TOKEN_ABI,
@@ -114,6 +114,7 @@ const ui = {
   devBuyEth: document.getElementById("devBuyEth"),
   tradeTaxPct: document.getElementById("tradeTaxPct"),
   launchMcapUsd: document.getElementById("launchMcapUsd"),
+  pumpfunCreatorWalletWrap: document.getElementById("pumpfunCreatorWalletWrap"),
   launchMathCard: document.getElementById("launchMathCard"),
   launchMathPrimary: document.getElementById("launchMathPrimary"),
   launchMathSecondary: document.getElementById("launchMathSecondary"),
@@ -322,8 +323,15 @@ function formatHolderAccessMessage(eligibility = {}, action = "launch tokens") {
   return `You hold ${heldText} $${symbol} on ${chain}. Hold any amount above 0 $${symbol} in this wallet to ${action}. 1%+ holders will also be eligible for later airdrops.`;
 }
 
-async function ensurePumpRHolderAccess({ address = "", solanaAddress = "", action = "launch tokens" } = {}) {
-  const eligibility = await api.holderEligibility({ address, solanaAddress });
+function currentLaunchContext() {
+  return isPumpFunMode()
+    ? { launchMode: "pumpfun", targetChainId: 101 }
+    : { launchMode: "evm", targetChainId: Number(state.selectedChainId || state.config?.chainId || 1) };
+}
+
+async function ensurePumpRHolderAccess({ address = "", solanaAddress = "", action = "launch tokens", launchMode = "", targetChainId = 0 } = {}) {
+  const context = launchMode || targetChainId ? { launchMode, targetChainId } : currentLaunchContext();
+  const eligibility = await api.holderEligibility({ address, solanaAddress, ...context });
   if (eligibility?.required === false) return eligibility;
   if (!eligibility?.configured) {
     throw new Error("Official Pump-r token is not configured yet. Set PUMPR_TOKEN_ADDRESS and PUMPR_TOKEN_CHAIN_ID before enabling launches.");
@@ -474,6 +482,9 @@ function renderChainSelector() {
   }
   if (ui.pumpfunOptions) ui.pumpfunOptions.hidden = !isPumpFunMode();
   if (ui.kolApplicationCard) ui.kolApplicationCard.hidden = !isPumpFunMode();
+  if (ui.pumpfunCreatorWalletWrap) ui.pumpfunCreatorWalletWrap.hidden = !isPumpFunMode();
+  ui.createForm?.classList.toggle("create-mode-solana", isPumpFunMode());
+  ui.createForm?.classList.toggle("create-mode-evm", !isPumpFunMode());
   updateKolEstimate();
   if (ui.launchChainLabel) {
     ui.launchChainLabel.textContent = isPumpVerseMode()
@@ -1437,7 +1448,9 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
   await walletHub?.refresh();
   await ensurePumpRHolderAccess({
     address: walletState().address,
-    action: "launch tokens through Pump-r"
+    action: "launch tokens through Pump-r",
+    launchMode: "evm",
+    targetChainId: state.selectedChainId
   });
 
   const factory = makeFactoryContract(state.config.factoryAddress);
@@ -1672,7 +1685,9 @@ async function launchPumpFun(details) {
   const { provider, publicKey } = await connectSolanaWallet();
   await ensurePumpRHolderAccess({
     solanaAddress: publicKey,
-    action: "launch tokens through Pump-r"
+    action: "launch tokens through Pump-r",
+    launchMode: "pumpfun",
+    targetChainId: 101
   });
   const solanaWeb3 = await loadSolanaWeb3();
   setAlert(

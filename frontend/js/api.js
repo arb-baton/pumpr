@@ -201,6 +201,8 @@ export const api = {
     const params = new URLSearchParams();
     if (options.address) params.set("address", String(options.address));
     if (options.solanaAddress) params.set("solanaAddress", String(options.solanaAddress));
+    if (options.launchMode) params.set("launchMode", String(options.launchMode));
+    if (Number.isFinite(Number(options.targetChainId))) params.set("targetChainId", String(Math.floor(Number(options.targetChainId))));
     return apiGet(`/api/holder/eligibility?${params.toString()}`);
   },
   airdropPreview: (options = {}) => {

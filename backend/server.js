@@ -2816,24 +2816,46 @@ async function readSolanaOfficialHolderEligibility(official, solanaAddress) {
   });
 }
 
-async function readOfficialHolderEligibility({ address = "", solanaAddress = "" } = {}) {
+async function readOfficialHolderEligibility({ address = "", solanaAddress = "", launchMode = "", targetChainId = 0 } = {}) {
   const official = officialAirdropConfig();
   if (!official.configured) {
     return buildHolderEligibilityPayload(official, { balanceRaw: "0", supplyRaw: "0", balanceTokens: 0 });
   }
+  const mode = String(launchMode || "").trim().toLowerCase();
+  const target = Math.floor(Number(targetChainId || 0));
+  const isPumpFunLaunch = mode === "pumpfun" || target === 101;
+  const isEvmLaunch = mode === "evm" || (target > 0 && target !== 101);
+  if (official.chainId === 101 && isEvmLaunch && !solanaAddress) {
+    return {
+      ...buildHolderEligibilityPayload(official, { balanceRaw: "0", supplyRaw: "0", balanceTokens: 0 }),
+      required: false,
+      launchContextSkipped: true,
+      launchContext: "evm",
+      message: "Solana Pump-r holder validation applies to Pump.fun launches only."
+    };
+  }
   if (official.chainId === 101) {
     return readSolanaOfficialHolderEligibility(official, solanaAddress || address);
+  }
+  if (official.chainId !== 101 && isPumpFunLaunch && !address) {
+    return {
+      ...buildHolderEligibilityPayload(official, { balanceRaw: "0", supplyRaw: "0", balanceTokens: 0 }),
+      required: false,
+      launchContextSkipped: true,
+      launchContext: "pumpfun",
+      message: "EVM Pump-r holder validation applies to EVM launches only."
+    };
   }
   return readEvmOfficialHolderEligibility(official, address);
 }
 
-async function assertOfficialHolderAccess({ address = "", solanaAddress = "", action = "launch" } = {}) {
+async function assertOfficialHolderAccess({ address = "", solanaAddress = "", action = "launch", launchMode = "", targetChainId = 0 } = {}) {
   if (!officialHolderGateRequired()) return null;
   const official = officialAirdropConfig();
   if (!official.configured) {
     throw new Error("Official Pump-r token is not configured. Set PUMPR_TOKEN_ADDRESS and PUMPR_TOKEN_CHAIN_ID before enabling launches or payouts.");
   }
-  const eligibility = await readOfficialHolderEligibility({ address, solanaAddress });
+  const eligibility = await readOfficialHolderEligibility({ address, solanaAddress, launchMode, targetChainId });
   if (!eligibility.eligibleToLaunch) {
     const held = Number(eligibility.balanceTokens || 0);
     const heldText = Number.isFinite(held) && held > 0
@@ -6419,7 +6441,9 @@ app.post("/api/pumpfun/launch", async (req, res) => {
     }
     const holderEligibility = await assertOfficialHolderAccess({
       solanaAddress: userPublicKey,
-      action: "launch tokens through Pump-r"
+      action: "launch tokens through Pump-r",
+      launchMode: "pumpfun",
+      targetChainId: 101
     });
     const kolApplication = sanitizeKolApplication(req.body?.kolApplication);
 
@@ -6951,7 +6975,9 @@ app.get("/api/holder/eligibility", async (req, res) => {
   try {
     const eligibility = await readOfficialHolderEligibility({
       address: req.query.address || "",
-      solanaAddress: req.query.solanaAddress || req.query.solana || ""
+      solanaAddress: req.query.solanaAddress || req.query.solana || "",
+      launchMode: req.query.launchMode || req.query.mode || "",
+      targetChainId: req.query.targetChainId || req.query.launchChainId || req.query.chainId || 0
     });
     res.json(eligibility);
   } catch (error) {
