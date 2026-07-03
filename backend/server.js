@@ -49,12 +49,14 @@ const SUPABASE_AGENTS_OBJECT = String(process.env.SUPABASE_AGENTS_OBJECT || "age
 const SUPABASE_PUMPFUN_PREPARED_OBJECT = String(process.env.SUPABASE_PUMPFUN_PREPARED_OBJECT || "pumpfun/prepared-submissions.json").trim();
 const SUPABASE_PUMPFUN_SESSIONS_OBJECT = String(process.env.SUPABASE_PUMPFUN_SESSIONS_OBJECT || "pumpfun/sessions.json").trim();
 const SUPABASE_PUMPFUN_LAUNCHES_OBJECT = String(process.env.SUPABASE_PUMPFUN_LAUNCHES_OBJECT || "pumpfun/launches.json").trim();
+const SUPABASE_SUPPORT_OBJECT = String(process.env.SUPABASE_SUPPORT_OBJECT || "support/messages.json").trim();
 const SUPABASE_PUMPR_CARD_WAITLIST_OBJECT = String(process.env.SUPABASE_PUMPR_CARD_WAITLIST_OBJECT || "pumpr-card/waitlist.json").trim();
 const COMMUNITY_RESET_BEFORE_UNIX = Math.max(0, Number(process.env.COMMUNITY_RESET_BEFORE_UNIX || "1782413298"));
 const PROFILE_IMAGE_URI_MAX_LENGTH = 2 * 1024 * 1024;
-const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || "0") === "1";
+const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || (IS_VERCEL_RUNTIME ? "1" : "0")) === "1";
 const STRICT_SOCIAL_STORE = String(process.env.STRICT_SOCIAL_STORE || (STRICT_PROFILE_STORE ? "1" : "0")) === "1";
-const STRICT_UPLOAD_STORE = String(process.env.STRICT_UPLOAD_STORE || "0") === "1";
+const STRICT_JSON_STORE = String(process.env.STRICT_JSON_STORE || (IS_VERCEL_RUNTIME ? "1" : "0")) === "1";
+const STRICT_UPLOAD_STORE = String(process.env.STRICT_UPLOAD_STORE || (IS_VERCEL_RUNTIME ? "1" : "0")) === "1";
 // Vercel runtime filesystem is ephemeral/read-only for project paths. Force inline mode there.
 const USE_DISK_UPLOADS = !IS_VERCEL_RUNTIME && UPLOAD_MODE !== "inline";
 
@@ -275,6 +277,7 @@ const tokenLaunchHintCache = new Map();
 let profileDbCache = null;
 let followDbCache = null;
 let supportDbCache = null;
+let supportDbRemoteLoaded = false;
 let communityDbCache = null;
 let communityDbRemoteLoaded = false;
 let goDbCache = null;
@@ -1095,6 +1098,20 @@ function isSupabaseStorageConfigured() {
   return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && SUPABASE_STORAGE_BUCKET);
 }
 
+function assertJsonStoreConfigured(label, objectPath) {
+  if (!STRICT_JSON_STORE) return;
+  if (!isSupabaseStorageConfigured()) {
+    throw new Error(`${label} store requires SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_STORAGE_BUCKET in production`);
+  }
+  if (!String(objectPath || "").trim()) {
+    throw new Error(`${label} store requires a Supabase storage object path in production`);
+  }
+}
+
+function allowFileJsonFallback() {
+  return !STRICT_JSON_STORE;
+}
+
 function getSupabaseStorageUploadUrl(objectPath) {
   const base = SUPABASE_URL.replace(/\/+$/, "");
   const safePath = String(objectPath || "")
@@ -1420,6 +1437,9 @@ async function setPersistedProfile(address, value = {}) {
     }
   } catch (error) {
     if (isSupabaseMissingTableError(error)) {
+      if (!allowFileProfileFallback()) {
+        throw new Error(`Supabase profile write failed: ${error?.message || "profile table missing"}`);
+      }
       const saved = setPersistedProfileSync(normalized, next);
       cacheProfileRow(normalized, saved);
       return saved;
@@ -1581,6 +1601,7 @@ async function readCommunityDbPersistent(options = {}) {
 
 async function writeCommunityDbPersistent(store) {
   const safe = sanitizeCommunityStore(store);
+  assertJsonStoreConfigured("Community", SUPABASE_COMMUNITY_OBJECT);
   writeCommunityDb(safe);
   if (isSupabaseStorageConfigured()) {
     await writeCommunityDbRemote(safe);
@@ -1689,9 +1710,11 @@ async function readPumprCardWaitlistPersistent(options = {}) {
 }
 
 async function writePumprCardWaitlistPersistent(store) {
+  assertJsonStoreConfigured("PUMPR Card waitlist", SUPABASE_PUMPR_CARD_WAITLIST_OBJECT);
   const safe = writePumprCardWaitlistDb(store);
   if (isSupabaseStorageConfigured()) {
     await writePumprCardWaitlistRemote(safe).catch((error) => {
+      if (!allowFileJsonFallback()) throw error;
       console.warn(`Supabase PUMPR Card waitlist write failed: ${error?.message || "connection error"}`);
     });
   }
@@ -2013,6 +2036,7 @@ async function readAlphaDbPersistent(options = {}) {
 }
 
 async function writeAlphaDbPersistent(store) {
+  assertJsonStoreConfigured("Alpha", SUPABASE_ALPHA_OBJECT);
   const safe = writeAlphaDb(store);
   if (isSupabaseStorageConfigured()) {
     await writeAlphaDbRemote(safe);
@@ -2226,6 +2250,7 @@ async function readAgentsDbPersistent(options = {}) {
 }
 
 async function writeAgentsDbPersistent(store) {
+  assertJsonStoreConfigured("Agents", SUPABASE_AGENTS_OBJECT);
   const safe = writeAgentsDb(store);
   if (isSupabaseStorageConfigured()) {
     await writeAgentsDbRemote(safe);
@@ -2362,6 +2387,7 @@ async function readPumpFunPreparedDbPersistent() {
 }
 
 async function writePumpFunPreparedDbPersistent(store) {
+  assertJsonStoreConfigured("Pump.fun prepared launch", SUPABASE_PUMPFUN_PREPARED_OBJECT);
   const safe = writePumpFunPreparedDb(store);
   if (isSupabaseStorageConfigured()) {
     await writePumpFunPreparedDbRemote(safe);
@@ -4361,8 +4387,12 @@ function writeSupportDb(store) {
   const safe = {
     messages: Array.isArray(store?.messages) ? store.messages : []
   };
-  fs.mkdirSync(path.dirname(SUPPORT_DB_PATH), { recursive: true });
-  fs.writeFileSync(SUPPORT_DB_PATH, JSON.stringify(safe, null, 2));
+  try {
+    fs.mkdirSync(path.dirname(SUPPORT_DB_PATH), { recursive: true });
+    fs.writeFileSync(SUPPORT_DB_PATH, JSON.stringify(safe, null, 2));
+  } catch {
+    // /tmp/local cache failures should not block remote storage attempts.
+  }
   supportDbCache = safe;
 }
 
@@ -4389,10 +4419,75 @@ function normalizeSupportMessage(row = {}) {
   };
 }
 
-function listSupportMessagesForAddress(address) {
+function sanitizeSupportStore(store = {}) {
+  const messages = (Array.isArray(store?.messages) ? store.messages : [])
+    .map((row) => normalizeSupportMessage(row))
+    .filter(Boolean)
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    .slice(0, 2000);
+  return { messages };
+}
+
+async function readSupportDbRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_SUPPORT_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_SUPPORT_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Supabase support read failed: ${response.status}`);
+  return sanitizeSupportStore(await response.json().catch(() => ({ messages: [] })));
+}
+
+async function writeSupportDbRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_SUPPORT_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_SUPPORT_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizeSupportStore(store), null, 2)
+  });
+  if (!response.ok) throw new Error(`Supabase support write failed: ${response.status}`);
+  return true;
+}
+
+async function readSupportDbPersistent(options = {}) {
+  const refresh = Boolean(options.refresh);
+  if (isSupabaseStorageConfigured() && (refresh || !supportDbRemoteLoaded)) {
+    try {
+      const remote = await readSupportDbRemote();
+      if (remote) writeSupportDb(remote);
+      supportDbRemoteLoaded = true;
+    } catch (error) {
+      console.warn(`Supabase support read failed: ${error?.message || "connection error"}`);
+      supportDbRemoteLoaded = true;
+    }
+  }
+  return sanitizeSupportStore(readSupportDb());
+}
+
+async function writeSupportDbPersistent(store) {
+  assertJsonStoreConfigured("Support", SUPABASE_SUPPORT_OBJECT);
+  const safe = sanitizeSupportStore(store);
+  writeSupportDb(safe);
+  if (isSupabaseStorageConfigured()) {
+    await writeSupportDbRemote(safe);
+  }
+  return safe;
+}
+
+function listSupportMessagesForAddress(address, storeOverride = null) {
   const key = supportAddressKey(address);
   if (!key) return [];
-  const store = readSupportDb();
+  const store = storeOverride || readSupportDb();
   const rows = (Array.isArray(store.messages) ? store.messages : [])
     .map((row) => normalizeSupportMessage(row))
     .filter(Boolean)
@@ -4401,21 +4496,21 @@ function listSupportMessagesForAddress(address) {
   return rows;
 }
 
-function listAllSupportMessages() {
-  const store = readSupportDb();
+function listAllSupportMessages(storeOverride = null) {
+  const store = storeOverride || readSupportDb();
   return (Array.isArray(store.messages) ? store.messages : [])
     .map((row) => normalizeSupportMessage(row))
     .filter(Boolean)
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
-function listSupportInbox(platformAddress) {
+function listSupportInbox(platformAddress, storeOverride = null) {
   const key = supportAddressKey(platformAddress);
   if (!key) return [];
-  return listAllSupportMessages().filter((row) => supportAddressKey(row.toAddress) === key);
+  return listAllSupportMessages(storeOverride).filter((row) => supportAddressKey(row.toAddress) === key);
 }
 
-function createSupportMessage(payload = {}) {
+async function createSupportMessage(payload = {}) {
   const fromAddress = normalizeSupportAddress(payload.fromAddress || payload.from || "");
   const platformAddress = resolvePlatformSupportAddress();
   if (!fromAddress) throw new Error("fromAddress is required");
@@ -4429,7 +4524,7 @@ function createSupportMessage(payload = {}) {
   const categoryRaw = String(payload.category || "").trim();
   const tokenAddress = normalizeProfileAddress(payload.tokenAddress || "");
 
-  const store = readSupportDb();
+  const store = await readSupportDbPersistent();
   const next = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
     fromAddress,
@@ -4448,7 +4543,7 @@ function createSupportMessage(payload = {}) {
   if (messages.length > 2000) {
     messages.splice(0, messages.length - 2000);
   }
-  writeSupportDb({ messages });
+  await writeSupportDbPersistent({ messages });
   return normalized;
 }
 
@@ -5823,11 +5918,13 @@ async function readPumpFunLaunchesPersistent(options = {}) {
 }
 
 async function writePumpFunLaunchesPersistent(store) {
+  assertJsonStoreConfigured("Pump.fun launches", SUPABASE_PUMPFUN_LAUNCHES_OBJECT);
   const safe = writePumpFunLaunchesDb(store);
   if (isSupabaseStorageConfigured()) {
     try {
       await writePumpFunLaunchesRemote(safe);
     } catch (error) {
+      if (!allowFileJsonFallback()) throw error;
       console.warn(`Supabase Pump.fun launch write failed: ${error?.message || "connection error"}`);
     }
   }
@@ -6208,8 +6305,9 @@ async function readPumpFunSessionsPersistent(options = {}) {
 }
 
 async function writePumpFunSessionsPersistent(store) {
+  assertJsonStoreConfigured("Pump.fun sessions", SUPABASE_PUMPFUN_SESSIONS_OBJECT);
   const safe = writePumpFunSessionsDb(store);
-  if (isSupabaseStorageConfigured()) await writePumpFunSessionsDbRemote(safe).catch(() => false);
+  if (isSupabaseStorageConfigured()) await writePumpFunSessionsDbRemote(safe);
   return safe;
 }
 
@@ -8521,7 +8619,7 @@ app.get("/api/support/config", async (_req, res) => {
 
 app.post("/api/support/message", async (req, res) => {
   try {
-    const row = createSupportMessage(req.body || {});
+    const row = await createSupportMessage(req.body || {});
     res.json({ message: row });
   } catch (error) {
     const text = String(error?.message || "Failed to send support message");
@@ -8560,7 +8658,8 @@ app.get("/api/support/messages", async (req, res) => {
   try {
     const address = normalizeSupportAddress(req.query.address || "");
     if (!address) return res.status(400).json({ error: "address is required" });
-    const rows = listSupportMessagesForAddress(address).slice(0, 200);
+    const store = await readSupportDbPersistent({ refresh: true });
+    const rows = listSupportMessagesForAddress(address, store).slice(0, 200);
     res.json({ messages: rows });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to load support messages" });
@@ -8574,7 +8673,8 @@ app.get("/api/support/inbox", async (req, res) => {
     if (!hasAdminRequestAccess(req, "pumpr-admin")) {
       return res.status(403).json({ error: "Only platform support wallet can view inbox" });
     }
-    const rows = listAllSupportMessages().slice(0, 500);
+    const store = await readSupportDbPersistent({ refresh: true });
+    const rows = listSupportInbox(resolvePlatformSupportAddress(), store).slice(0, 500);
     res.json({ messages: rows });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to load support inbox" });

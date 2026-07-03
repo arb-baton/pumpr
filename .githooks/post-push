@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "[pumpr] Post-push production deploy starting..."
+node scripts/vercel-production-deploy.js
