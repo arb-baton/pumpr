@@ -9149,7 +9149,7 @@ select:focus,
 }
 
 .airdrop-kol-tile {
-  min-height: 188px;
+  min-height: 212px;
   display: grid;
   grid-template-rows: auto 1fr auto;
   justify-items: center;
@@ -9213,6 +9213,25 @@ select:focus,
   font-weight: 900;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.airdrop-kol-social {
+  max-width: 122px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #dfe8ff;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.15;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.airdrop-kol-social:hover {
+  color: #7df2aa;
 }
 
 .airdrop-kol-wallet-copy {

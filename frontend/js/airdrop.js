@@ -12,6 +12,59 @@ const KOL_BOOSTED_WALLETS = new Set([
   "CUHBzSPSaNS3tArEtM3maSV6pNdJhHJFYZpurPPK9P7H",
   "2fg5QD1eD7rzNNCsvnhmXFm5hqNgwTTG8p7kQ6f3rx6f"
 ]);
+const KOL_X_HANDLES = new Map([
+  ["GV6UUmNxz2RpKxmNAPadYKb7uQpszwqQAu3qLJxVdC52", "blknoiz06"],
+  ["CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o", "Cented7"],
+  ["CUHBzSPSaNS3tArEtM3maSV6pNdJhHJFYZpurPPK9P7H", "samsrepx"],
+  ["2fg5QD1eD7rzNNCsvnhmXFm5hqNgwTTG8p7kQ6f3rx6f", "Cupseyy"],
+  ["86AEJExyjeNNgcp7GrAvCXTDicf5aGWgoERbXFiG1EdD", "Publixplayz"],
+  ["EaVboaPxFCYanjoNWdkxTbPvt57nhXGu5i6m9m6ZS2kK", "cladzsol"],
+  ["8deJ9xeUvXSJwicYptA9mHsU2rN2pDx37KWzkDkEXhU6", "CookerFlips"],
+  ["7mHqL9GzGnbsYLoHLDzB7FiHAZbND2CZCJYFvU9PU1d3", "Kimbazxz"],
+  ["4vw54BmAogeRV3vPKWyFet5yf8DTLcREzdSzx4rw9Ud9", "notdecu"],
+  ["xyzfhxfy8NhfeNG3Um3WaUvFXzNuHkrhrZMD8dsStB6", "oh_gasp"],
+  ["69z4qTgQ5DBRTJvnQzx2h8jZhNsv5UgADotEwwKUm2JS", "thekryptoking_"],
+  ["8nqtxpFpuXwfXG4pBLsDkkuMMPK9FjSkBMCn542HiM3v", "dovvvv7"],
+  ["6TAHDM5Tod7dBTZdYQxzgJZKxxPfiNV9udPHMiUNumyK", "Blueycryp"],
+  ["6S8GezkxYUfZy9JPtYnanbcZTMB87Wjt1qx3c6ELajKC", "nyhrox"],
+  ["AstaWuJuQiAS3AfqmM3xZxrJhkkZNXtW4VyaGQfqV6JL", "astaso1"],
+  ["YvEsBWpHK5PJ6Q8m4YrocwKeWys1NG67pbgi73UPnuX", "GucciArchives"],
+  ["8rvAsDKeAcEjEkiZMug9k8v1y8mW6gQQiMobd89Uy7qR", "casino616"],
+  ["5ZuV8eqkvzYFVEKbLvGBdexL2tFv7E5BCd2HZpjqbdg", "Humanevolvd"],
+  ["BTf4A2exGK9BCVDNzy65b9dUzXgMqB4weVkvTMFQsadd", "Kevsznx"],
+  ["5YRgrP3mjGzrzirYYN5HAQH19cTYREYwGxW6XRJQUzij", "slingoorio"],
+  ["2hN82SXLUffhG3vxpezRmae1sGrCBMqHHBDxjmjpagqk", "lyftical"],
+  ["BXNiM7pqt9Ld3b2Hc8iT3mA5bSwoe9CRrtkSUs15SLWN", "absolquant"],
+  ["5B52w1ZW9tuwUduueP5J7HXz5AcGfruGoX6YoAudvyxG", "Yennii56"],
+  ["EP5mvfhGv6x1XR33Fd8eioiYjtRXAawafPmkz9xBpDvG", "Zemrics"],
+  ["JAunzNqs3bVBcWDjDxfq9rgLzJMCadNXoaCgfzLGMtYs", "Penguzxbt"],
+  ["4fZFcK8ms3bFMpo1ACzEUz8bH741fQW4zhAMGd5yZMHu", "CryptoRilsio"],
+  ["8MaVa9kdt3NW4Q5HyNAm1X5LbR8PQRVDc1W8NMVK88D5", "daumenxyz"],
+  ["J23qr98GjGJJqKq9CBEnyRhHbmkaVxtTJNNxKu597wsA", "gr3gor14n"],
+  ["Fi2hrxExy6TJnKcbPtQpo6iZzX9SUVbB9mDw6d29NgCn", "quantgz"],
+  ["SAALE2x3sn51EyahJyqD6913L3GqHZdZo3egUdMayQp", "Crypt0Pirate_"],
+  ["CAPn1yH4oSywsxGU456jfgTrSSUidf9jgeAnHceNUJdw", "himothy"],
+  ["ardinRsN1mNYVeoJWTBsWeYeXvuR9UUDGMsCDKpb6AT", "trunoest"],
+  ["UxuuMeyX2pZPHmGZ2w3Q8MysvExCAquMtvEfqp2etvm", "pandoraflips"],
+  ["7bsTkeWcSPG6nzsbXucxV89YUULoSExNJdX2WqfLHwZ4", "bigwarzeth"],
+  ["DZAa55HwXgv5hStwaTEJGXZz1DhHejvpb7Yr762urXam", "ohzarke"],
+  ["5vg7he5HibvsAW86wfiuP6jw7VwKmUAnP6P93mVCdpJu", "blixze"],
+  ["J9TYAsWWidbrcZybmLSfrLzryANf4CgJBLdvwdGuC8MB", "johnsoncooks101"],
+  ["4DdrfiDHpmx55i4SPssxVzS9ZaKLb8qr45NKY9Er9nNh", "TheMisterFrog"],
+  ["57rXqaQsvgyBKwebP2StfqQeCBjBS4jsrZFJN5aU2V9b", "ramonos"],
+  ["39q2g5tTQn9n7KnuapzwS2smSx3NGYqBoea11tBjsGEt", "Walta61"],
+  ["DNfuF1L62WWyW3pNakVkyGGFzVVhj4Yr52jSmdTyeBHm", "Ga__ke"],
+  ["Bi4rd5FH5bYEN8scZ7wevxNZyNmKHdaBcvewdPFxYdLt", "theonomix"],
+  ["4BdKaxN8G6ka4GYtQQWk4G4dZRUTX2vQH9GcXdBREFUk", "jijo_exe"],
+  ["iPUp3qkm39ycMGbywWFMUyvaDhiiPGXeWXaDtmHNe6C", "ArcNikolas"],
+  ["4sAUSQFdvWRBxR8UoLBYbw8CcXuwXWxnN8pXa4mtm5nU", "XScharo"],
+  ["FqojC24nUn3x6oMQC2ypBHmtH7rFAnKS6DvwsJoCMaiv", "CoCoCookerr"],
+  ["F8WtsrLzexRkjv11b1sgA3Qj7E889RGYa1jFLGoPwKTB", "kayz_ce"],
+  ["GNrmKZCxYyNiSUsjduwwPJzhed3LATjciiKVuSGrsHEC", "Giann2K"],
+  ["4nwfXw7n98jEQn93VWY7Cuf1jnn1scHXuXCPGVYS9k6T", "FrostBallin"],
+  ["gangJEP5geDHjPVRhDS5dTF5e6GtRvtNogMEEVs91RV", "Qavecc"],
+  ["B799XD2RtgkxYRvv5Q9CFnSpVifrsJErWz6MpvBdYFdR", "guidustyy"]
+]);
 
 const ui = {
   officialTop: document.getElementById("airdropOfficialTop"),
@@ -203,6 +256,8 @@ function renderKolSeedHtml() {
         ${rows
           .map((row) => {
             const amount = kolHoldingAmount(row.wallet);
+            const xHandle = KOL_X_HANDLES.get(row.wallet);
+            const xLink = xHandle ? `https://x.com/${encodeURIComponent(xHandle)}` : "";
             return `
               <article class="airdrop-kol-tile" title="${escapeHtml(row.name || "KOL")} is holding $PUMPR">
                 <div class="airdrop-kol-avatar-wrap">
@@ -212,6 +267,11 @@ function renderKolSeedHtml() {
                 <div class="airdrop-kol-meta">
                   <strong>${escapeHtml(row.name || "KOL")}</strong>
                   <span>Holding</span>
+                  ${
+                    xHandle
+                      ? `<a class="airdrop-kol-social" href="${escapeHtml(xLink)}" target="_blank" rel="noopener noreferrer">@${escapeHtml(xHandle)}</a>`
+                      : ""
+                  }
                   <button class="airdrop-kol-wallet-copy" type="button" data-wallet="${escapeHtml(row.wallet || "")}" aria-label="Copy ${escapeHtml(row.name || "KOL")} wallet">
                     ${escapeHtml(shortAddress(row.wallet || ""))}
                   </button>
