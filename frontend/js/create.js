@@ -111,8 +111,10 @@ const ui = {
   website: document.getElementById("website"),
   twitter: document.getElementById("twitter"),
   telegram: document.getElementById("telegram"),
+  starterBuyLabel: document.getElementById("starterBuyLabel"),
   devBuyEth: document.getElementById("devBuyEth"),
   tradeTaxPct: document.getElementById("tradeTaxPct"),
+  starterMcapLabel: document.getElementById("starterMcapLabel"),
   launchMcapUsd: document.getElementById("launchMcapUsd"),
   pumpfunCreatorWalletWrap: document.getElementById("pumpfunCreatorWalletWrap"),
   launchMathCard: document.getElementById("launchMathCard"),
@@ -441,6 +443,10 @@ function isRobinhoodChainSelected() {
   return Number(state.selectedChainId || 0) === 4663 && !isPumpFunMode() && !isPumpVerseMode() && selectedQuoteMode() === "native";
 }
 
+function isRobinhoodDirectLiquidityMode() {
+  return isRobinhoodChainSelected();
+}
+
 function normalizePumpVerseChains(chains = state.selectedPumpVerseChains, { requireConfigured = true } = {}) {
   const supported = configuredChainMap();
   const unique = [];
@@ -485,6 +491,16 @@ function renderChainSelector() {
   if (ui.pumpfunCreatorWalletWrap) ui.pumpfunCreatorWalletWrap.hidden = !isPumpFunMode();
   ui.createForm?.classList.toggle("create-mode-solana", isPumpFunMode());
   ui.createForm?.classList.toggle("create-mode-evm", !isPumpFunMode());
+  if (ui.starterBuyLabel) {
+    ui.starterBuyLabel.textContent = isRobinhoodDirectLiquidityMode()
+      ? "Direct Uniswap liquidity (ETH)"
+      : "Optional starter buy (ETH)";
+  }
+  if (ui.starterMcapLabel) {
+    ui.starterMcapLabel.textContent = isRobinhoodDirectLiquidityMode()
+      ? "Direct Uniswap launch market cap estimate (USD)"
+      : "Starter buy market cap estimate (USD)";
+  }
   updateKolEstimate();
   if (ui.launchChainLabel) {
     ui.launchChainLabel.textContent = isPumpVerseMode()
@@ -941,6 +957,7 @@ function updateLaunchMath({ source = "liquidity" } = {}) {
   if (!ui.launchMathCard) return;
   const economicsFromLiquidity = getLaunchEconomics(parseNumberInput(ui.devBuyEth?.value, 0));
   const targetMcapUsdInput = parseNumberInput(ui.launchMcapUsd?.value, 0);
+  const robinhoodDirect = isRobinhoodDirectLiquidityMode();
 
   if (source === "target" && targetMcapUsdInput > 0 && economicsFromLiquidity.mcapMultiplier > 0) {
     const requiredLiquidityEthRaw = (targetMcapUsdInput / Math.max(state.ethUsd, 1)) / economicsFromLiquidity.mcapMultiplier;
@@ -963,18 +980,32 @@ function updateLaunchMath({ source = "liquidity" } = {}) {
   if (ui.launchMathPrimary) {
     ui.launchMathPrimary.textContent =
       economics.liquidityEth > 0
-        ? `Optional starter buy market cap: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ${economics.quoteSymbol})`
+        ? robinhoodDirect
+          ? `Direct Uniswap launch estimate: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ${economics.quoteSymbol} paired as starter liquidity)`
+          : `Optional starter buy market cap: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ${economics.quoteSymbol})`
+        : robinhoodDirect
+        ? "0 ETH launches as a Pump-r bonding curve first."
         : "Bonding curve starts at the configured virtual reserve price.";
   }
   if (ui.launchMathSecondary) {
-    ui.launchMathSecondary.textContent = "Launches stay on the bonding curve until the graduation target is reached.";
+    ui.launchMathSecondary.textContent = robinhoodDirect
+      ? "Enter ETH here to skip the bonding curve and launch directly on Robinhood Uniswap V2 with burned LP."
+      : "Launches stay on the bonding curve until the graduation target is reached.";
   }
   if (ui.launchMathTertiary) {
     ui.launchMathTertiary.textContent =
-      economics.liquidityEth > 0 ? "Starter buy is sent as the first pool buy after launch." : "No starter buy selected.";
+      economics.liquidityEth > 0
+        ? robinhoodDirect
+          ? "Starter liquidity is added to Uniswap and LP tokens are burned automatically."
+          : "Starter buy is sent as the first pool buy after launch."
+        : robinhoodDirect
+        ? "No direct Uniswap liquidity selected."
+        : "No starter buy selected.";
   }
   if (ui.launchMathQuaternary) {
-    ui.launchMathQuaternary.textContent = `At your settings, 1 ${economics.quoteSymbol} starter buy estimates ${formatUsd(economics.oneEthMcapUsd)} market cap`;
+    ui.launchMathQuaternary.textContent = robinhoodDirect
+      ? `At your settings, 1 ${economics.quoteSymbol} direct Uniswap liquidity estimates ${formatUsd(economics.oneEthMcapUsd)} market cap`
+      : `At your settings, 1 ${economics.quoteSymbol} starter buy estimates ${formatUsd(economics.oneEthMcapUsd)} market cap`;
   }
   if (ui.creatorAllocationPreview) {
     const symbol = String(ui.symbol?.value || "TOKEN").trim().toUpperCase() || "TOKEN";
@@ -1122,8 +1153,9 @@ async function assertLaunchBalance({ launchFeeWei, starterBuyEth }) {
   const balance = await ws.provider.getBalance(ws.address);
   const required = launchFeeWei + starterBuyEth;
   if (balance < required) {
+    const extraLabel = isRobinhoodDirectLiquidityMode() ? " and direct Uniswap liquidity" : " and starter buy";
     throw new Error(
-      `Not enough ${state.config?.chainName || "network"} ETH. Need about ${formatEthAmount(required)} for launch fee${starterBuyEth > 0n ? " and starter buy" : ""}; wallet has ${formatEthAmount(balance)}.`
+      `Not enough ${state.config?.chainName || "network"} ETH. Need about ${formatEthAmount(required)} for launch fee${starterBuyEth > 0n ? extraLabel : ""}; wallet has ${formatEthAmount(balance)}.`
     );
   }
 }
@@ -1302,7 +1334,7 @@ function renderLaunchResults(results = []) {
 function confirmRobinhoodLiquidityChoice(details = {}) {
   if (!isRobinhoodChainSelected() || BigInt(details.starterBuyEth || 0n) > 0n) return true;
   const launchAsIs = window.confirm(
-    "Robinhood Chain launch has 0 starter buy selected.\n\nChoose OK to launch as-is.\nChoose Cancel to add starter liquidity first."
+    "Robinhood Chain launch has 0 direct Uniswap liquidity selected.\n\nChoose OK to launch as a bonding curve first.\nChoose Cancel to add ETH for direct Uniswap liquidity with burned LP."
   );
   if (launchAsIs) return true;
   if (ui.advancedDetails) {
@@ -1310,7 +1342,7 @@ function confirmRobinhoodLiquidityChoice(details = {}) {
     ui.advancedDetails.open = true;
   }
   ui.devBuyEth?.focus?.();
-  setAlert(ui.alert, "Add a starter buy amount, then launch again. Leave it at 0 only if you want Robinhood Chain to launch as-is.");
+  setAlert(ui.alert, "Add direct Uniswap liquidity, then launch again. Leave it at 0 only if you want Robinhood Chain to start as a bonding curve.");
   return false;
 }
 
@@ -1459,7 +1491,7 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
   const hasDexRouter = dexRouter && dexRouter.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
   const useTaxLaunch = Number(state.selectedChainId || 0) === 4663 && selectedQuoteMode() === "native";
   if (useTaxLaunch && details.starterBuyEth > 0n && !hasDexRouter) {
-    throw new Error("Robinhood starter liquidity needs a DEX router configured first. Set starter buy to 0 to launch as-is.");
+    throw new Error("Robinhood direct Uniswap liquidity needs a DEX router configured first. Set liquidity to 0 to launch as a bonding curve.");
   }
   const useInstantLiquidity = useTaxLaunch && hasDexRouter && details.starterBuyEth > 0n;
   const totalValue = launchFeeWei + (useInstantLiquidity ? details.starterBuyEth : 0n);
@@ -1922,7 +1954,15 @@ async function onCreate(event) {
       state.selectedLaunchMode = String(state.selectedChainId);
       const result = await launchOnChain(state.selectedChainId, details, { showModal: true });
       renderLaunchResults([result]);
-      setAlert(ui.alert, details.starterBuyEth > 0n ? "Bonding-curve launch created with starter buy" : "Bonding-curve launch created");
+      const isRobinhood = Number(state.selectedChainId || 0) === 4663 && selectedQuoteMode() === "native";
+      setAlert(
+        ui.alert,
+        isRobinhood && details.starterBuyEth > 0n
+          ? "Robinhood Uniswap launch created with burned LP"
+          : details.starterBuyEth > 0n
+          ? "Bonding-curve launch created with starter buy"
+          : "Bonding-curve launch created"
+      );
     }
 
     if (!isPumpFunMode()) {
