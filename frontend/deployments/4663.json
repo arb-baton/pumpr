@@ -9,6 +9,6 @@
   "virtualEthReserve": "500000000000000000",
   "virtualTokenReserve": "1000000000000000000000000",
   "graduationTargetEth": "12000000000000000000",
-  "dexRouter": "0x0000000000000000000000000000000000000000",
+  "dexRouter": "0x89e5db8b5aa49aa85ac63f691524311aeb649eba",
   "lpRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3"
 }
