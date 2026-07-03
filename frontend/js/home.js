@@ -382,6 +382,13 @@ function chainClassForLaunch(launch) {
   return "other";
 }
 
+function launchSourceBadge(launch) {
+  if (isPumpFunLaunch(launch)) return "Pump.fun";
+  const chainId = Number(launch?.chainId || state.chainId || 1);
+  if (chainId === 4663) return "Robinhood";
+  return "PumpSwap";
+}
+
 function tokenUrl(launch) {
   const externalUrl = String(launch?.pumpfunUrl || launch?.pumpFunUrl || launch?.externalUrl || launch?.url || "").trim();
   const chainMarker = String(launch?.chainId || "").toLowerCase();
@@ -863,6 +870,7 @@ function buildExploreCard(launch) {
   const quoteSymbol = launchQuoteSymbol(launch);
   const tokenKey = getTokenId(launch);
   const pumpFunLaunch = isPumpFunLaunch(launch);
+  const sourceBadge = launchSourceBadge(launch);
   const linkAttrs = pumpFunLaunch ? 'target="_blank" rel="noopener noreferrer"' : "";
   return `
     <article class="coin-card">
@@ -871,7 +879,7 @@ function buildExploreCard(launch) {
           <img class="coin-image" src="${image}" alt="${launch.symbol} logo" onerror="this.onerror=null;this.src='${escapeHtml(fallback)}';" />
           <span class="coin-image-spark" data-explore-spark="${sparkKey}" aria-hidden="true"></span>
         </a>
-        <span class="coin-badge">${pumpFunLaunch ? "Pump.fun" : "PumpSwap"}</span>
+        <span class="coin-badge">${escapeHtml(sourceBadge)}</span>
         ${quoteSymbol ? `<span class="coin-badge quote-badge">${escapeHtml(quoteSymbol)}</span>` : ""}
         <span class="chain-badge ${chainClass}" title="${escapeHtml(chain.name)}">${escapeHtml(chain.shortName)}</span>
         <button class="watch-btn ${watched ? "active" : ""}" type="button" data-watch-token="${tokenKey}" aria-label="Toggle watchlist">

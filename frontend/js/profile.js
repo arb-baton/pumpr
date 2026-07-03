@@ -785,6 +785,12 @@ function isPumpFunProfileLaunch(item = {}) {
   return chain === "pumpfun" || source === "pumpfun" || url.includes("pump.fun/coin/");
 }
 
+function profileLaunchSourceBadge(item = {}) {
+  if (isPumpFunProfileLaunch(item)) return "Pump.fun";
+  if (Number(item?.chainId || 0) === 4663) return "Robinhood";
+  return "PumpSwap";
+}
+
 function profileTokenHref(item = {}) {
   if (isPumpFunProfileLaunch(item)) {
     const mint = String(item?.mint || item?.token || "").trim();
@@ -883,7 +889,7 @@ function renderCoinsTab(created = []) {
           const image = resolveCoinImage(item);
           const href = profileTokenHref(item);
           const linkAttrs = profileTokenLinkAttrs(item);
-          const badge = isPumpFunProfileLaunch(item) ? "Pump.fun" : "PumpSwap";
+          const badge = profileLaunchSourceBadge(item);
           return `
             <article class="coin-card">
               <a href="${href}" class="coin-image-wrap" ${linkAttrs}>
