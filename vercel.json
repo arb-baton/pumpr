@@ -60,6 +60,10 @@
       "dest": "/frontend/js/$1"
     },
     {
+      "src": "/data/(.*)",
+      "dest": "/frontend/data/$1"
+    },
+    {
       "src": "/uploads/(.*)",
       "dest": "backend/server.js"
     },
