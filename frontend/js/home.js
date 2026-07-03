@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260630homeperf";
+import { api } from "./api.js?v=20260702authsync";
 import {
   CHAIN_OPTIONS,
   defaultUsername,
@@ -18,10 +18,10 @@ import {
   shortAddress,
   walletState,
   weiToUsd
-} from "./core.js?v=20260701rh";
-import { initWalletControls, initWalletHubMenu, setAlert } from "./ui.js?v=20260630esm";
-import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260630esm";
-import { initSupportWidget } from "./support.js?v=20260630esm";
+} from "./core.js?v=20260702authsync";
+import { initWalletControls, initWalletHubMenu, setAlert } from "./ui.js?v=20260702authsync";
+import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260702authsync";
+import { initSupportWidget } from "./support.js?v=20260702authsync";
 
 const WATCHLIST_KEY = "etherpump.watchlist.v1";
 const LAUNCH_CACHE_KEY = "etherpump.launches.cache.v3";

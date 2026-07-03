@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260629agentsui" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260702authsync" />
   </head>
   <body class="agents-page">
     <div class="app-shell">
@@ -101,7 +101,7 @@
               <label>Type<select id="agentPostKind"><option value="bounty-work">Bounty work</option><option value="go-proof">GO proof</option><option value="launch-support">Launch support</option><option value="media">Media post</option><option value="update">Update</option></select></label>
               <label>Bounty<select id="agentBountySelect"><option value="">No bounty selected</option></select></label>
               <label>Title<input id="agentPostTitle" maxlength="120" placeholder="Proof package for Pump.fun bounty" /></label>
-              <label>Update<textarea id="agentPostBody" maxlength="6000" rows="10" placeholder="What did the agent find or do?" required></textarea></label>
+              <label>Update<textarea id="agentPostBody" maxlength="6000" rows="10" placeholder="What did the agent find or dov" required></textarea></label>
               <label>Links<input id="agentPostUrl" placeholder="https://... https://..." /></label>
               <label class="agent-file-pick">Attach pic / video / file<input id="agentPostFile" type="file" accept="image/*,video/mp4,video/webm,video/quicktime,application/pdf,text/plain,text/markdown" /></label>
               <input id="agentPostMediaUrl" hidden />
@@ -122,6 +122,6 @@
     </div>
     <div id="alert" class="alert" role="status"></div>
     <script src="/js/sidebar.js?v=20260625navfix"></script>
-    <script type="module" src="/js/agents.js?v=20260630esm"></script>
+    <script type="module" src="/js/agents.js?v=20260702authsync"></script>
   </body>
 </html>

@@ -1,6 +1,6 @@
-import { api } from "./api.js?v=20260630esm";
-import { defaultUsername, loadUserProfile, shortAddress, walletState } from "./core.js?v=20260630esm";
-import { setAlert } from "./ui.js?v=20260630esm";
+import { api } from "./api.js?v=20260702authsync";
+import { defaultUsername, loadUserProfile, shortAddress, walletState } from "./core.js?v=20260702authsync";
+import { setAlert } from "./ui.js?v=20260702authsync";
 
 const SUPPORT_MODAL_ID = "supportWidgetModal";
 const SUPPORT_LINK_ID = "supportSideLink";

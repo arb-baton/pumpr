@@ -1,5 +1,5 @@
-import { api } from "./api.js?v=20260630esm";
-import { defaultUsername, fetchEthUsdPrice, formatCompactUsd, hydrateUserProfiles, loadUserProfile, resolveCoinImage, weiToUsd } from "./core.js?v=20260630esm";
+import { api } from "./api.js?v=20260702authsync";
+import { defaultUsername, fetchEthUsdPrice, formatCompactUsd, hydrateUserProfiles, loadUserProfile, resolveCoinImage, weiToUsd } from "./core.js?v=20260702authsync";
 
 const RECENT_SEARCHES_KEY = "etherpump.search.recent.v1";
 const RECENT_VIEWED_KEY = "etherpump.search.viewed.v1";

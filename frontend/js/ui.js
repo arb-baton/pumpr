@@ -18,7 +18,7 @@ import {
   solanaWalletState,
   walletState,
   parseUiError
-} from "./core.js?v=20260630esm";
+} from "./core.js?v=20260702authsync";
 
 export function setAlert(el, message, isError = false) {
   if (!el) return;
@@ -587,7 +587,7 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
     if (onDisconnected) await onDisconnected();
   };
 
-  (async () => {
+  const ready = (async () => {
     try {
       const handledSocialReturn = await handleSharedSocialAuthReturn({ labelEl, alertEl, notifyConnected });
       if (handledSocialReturn) return;
@@ -703,7 +703,8 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
 
   return {
     connect: doConnect,
-    disconnect: doDisconnect
+    disconnect: doDisconnect,
+    ready
   };
 }
 

@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260630esm";
+import { api } from "./api.js?v=20260702authsync";
 import {
   defaultUsername,
   connectSocialWallet,
@@ -22,10 +22,10 @@ import {
   shortAddress,
   weiToUsd,
   walletState
-} from "./core.js?v=20260701rh";
-import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260630esm";
-import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260630esm";
-import { initSupportWidget } from "./support.js?v=20260630esm";
+} from "./core.js?v=20260702authsync";
+import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260702authsync";
+import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260702authsync";
+import { initSupportWidget } from "./support.js?v=20260702authsync";
 
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 const CLAIM_MIN_USD = 8;
@@ -1653,7 +1653,6 @@ async function init() {
   }
 
   await loadConfig();
-  await handleSocialAuthReturn();
 
   walletHub = initWalletHubMenu({
     triggerEl: ui.walletHubBtn,
@@ -1758,6 +1757,8 @@ async function init() {
   updateTabButtons();
   updateProfileIdentity();
   renderActiveTab();
+
+  await walletControls?.ready?.catch(() => null);
 
   setInterval(() => {
     refreshEthUsd(true)

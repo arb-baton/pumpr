@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260630esm";
+import { api } from "./api.js?v=20260702authsync";
 import {
   FACTORY_ABI,
   TOKEN_ABI,
@@ -21,10 +21,10 @@ import {
   shortAddress,
   solanaWalletState,
   walletState
-} from "./core.js?v=20260701rh";
-import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260630esm";
-import { initCoinSearchOverlay } from "./searchModal.js?v=20260630esm";
-import { initSupportWidget } from "./support.js?v=20260630esm";
+} from "./core.js?v=20260702authsync";
+import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260702authsync";
+import { initCoinSearchOverlay } from "./searchModal.js?v=20260702authsync";
+import { initSupportWidget } from "./support.js?v=20260702authsync";
 import { KOL_LEADERBOARD } from "./kolData.js?v=20260630kol";
 
 const MIN_INITIAL_LIQUIDITY_ETH = 0;

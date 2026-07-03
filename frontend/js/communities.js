@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260630esm";
+import { api } from "./api.js?v=20260702authsync";
 import {
   connectSocialWallet,
   defaultUsername,
@@ -7,9 +7,9 @@ import {
   resolveCoinImage,
   shortAddress,
   walletState
-} from "./core.js?v=20260630esm";
-import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260630esm";
-import { initCoinSearchOverlay } from "./searchModal.js?v=20260630esm";
+} from "./core.js?v=20260702authsync";
+import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260702authsync";
+import { initCoinSearchOverlay } from "./searchModal.js?v=20260702authsync";
 
 const X_AUTH_KEY = "Pump-r.community.xauth.v2";
 
