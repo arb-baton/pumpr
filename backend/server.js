@@ -6654,7 +6654,7 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
     if (!kolApplication?.enabled || Number(kolApplication.buySol || 0) <= 0) {
       return res.status(400).json({ error: "Token send buy is not enabled" });
     }
-    new SolanaPublicKey(kolApplication.wallet);
+    const kolWallet = new SolanaPublicKey(kolApplication.wallet);
     const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
     const connection = new SolanaConnection(rpcUrl, "confirmed");
     const [latest, globalInfo, feeConfigInfo] = await Promise.all([
@@ -6679,12 +6679,12 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
     if (!amount || amount.lte(new BN(0))) {
       return res.status(400).json({ error: "Token send buy amount is too small for the Pump.fun quote" });
     }
-    const buyerTokenAccount = splToken.getAssociatedTokenAddressSync(mint, user, true, splToken.TOKEN_2022_PROGRAM_ID);
+    const kolTokenAccount = splToken.getAssociatedTokenAddressSync(mint, kolWallet, true, splToken.TOKEN_2022_PROGRAM_ID);
     const instructions = [
       splToken.createAssociatedTokenAccountIdempotentInstruction(
         user,
-        buyerTokenAccount,
-        user,
+        kolTokenAccount,
+        kolWallet,
         mint,
         splToken.TOKEN_2022_PROGRAM_ID
       ),
@@ -6693,7 +6693,7 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
         mint,
         creator,
         user,
-        associatedUser: buyerTokenAccount,
+        associatedUser: kolTokenAccount,
         amount,
         solAmount,
         slippage: 1,
@@ -6709,9 +6709,10 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
         ...kolApplication,
         kolBuy: {
           wallet: kolApplication.wallet,
+          tokenAccount: kolTokenAccount.toBase58(),
           buySol: Number(kolApplication.buySol || 0),
           tokenAmount: amount.toString(),
-          recipientMode: "buyer_wallet",
+          recipientMode: "kol_wallet_direct",
           estimatedSupplyPct: Number(global?.tokenTotalSupply?.toString?.() || 0) > 0
             ? (Number(amount.toString()) / Number(global.tokenTotalSupply.toString())) * 100
             : Number(kolApplication.estimatedSupplyPct || 0)
@@ -6725,6 +6726,29 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
     res.status(500).json({ error: error.message || "Unable to build token send buy transaction" });
   }
 });
+
+function pickSplTokenProgramFromMintInfo(mintInfo, splToken) {
+  const owner = mintInfo?.owner?.toBase58?.() || "";
+  if (owner === splToken.TOKEN_PROGRAM_ID.toBase58()) return splToken.TOKEN_PROGRAM_ID;
+  if (owner === splToken.TOKEN_2022_PROGRAM_ID.toBase58()) return splToken.TOKEN_2022_PROGRAM_ID;
+  return splToken.TOKEN_2022_PROGRAM_ID;
+}
+
+async function waitForSolanaTokenAmount(connection, tokenAccount, options = {}) {
+  const attempts = Math.max(1, Math.min(Number(options.attempts || 12), 30));
+  const delayMs = Math.max(250, Math.min(Number(options.delayMs || 1250), 5000));
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const balance = await connection.getTokenAccountBalance(tokenAccount, "confirmed");
+      const amount = BigInt(String(balance?.value?.amount || "0"));
+      if (amount > 0n || attempt === attempts - 1) return amount;
+    } catch (error) {
+      if (attempt === attempts - 1) return 0n;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return 0n;
+}
 
 app.post("/api/pumpfun/kol-transfer", async (req, res) => {
   try {
@@ -6741,24 +6765,33 @@ app.post("/api/pumpfun/kol-transfer", async (req, res) => {
 
     const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
     const connection = new SolanaConnection(rpcUrl, "confirmed");
-    const latest = await connection.getLatestBlockhash("confirmed");
-    const userTokenAccount = splToken.getAssociatedTokenAddressSync(mint, user, true, splToken.TOKEN_2022_PROGRAM_ID);
-    const kolTokenAccount = splToken.getAssociatedTokenAddressSync(mint, kolWallet, true, splToken.TOKEN_2022_PROGRAM_ID);
+    const [latest, mintInfo] = await Promise.all([
+      connection.getLatestBlockhash("confirmed"),
+      connection.getAccountInfo(mint, "confirmed")
+    ]);
+    const tokenProgram = pickSplTokenProgramFromMintInfo(mintInfo, splToken);
+    const userTokenAccount = splToken.getAssociatedTokenAddressSync(mint, user, true, tokenProgram);
+    const kolTokenAccount = splToken.getAssociatedTokenAddressSync(mint, kolWallet, true, tokenProgram);
+    const currentBalance = await waitForSolanaTokenAmount(connection, userTokenAccount);
+    const transferAmount = currentBalance > 0n && currentBalance < tokenAmount ? currentBalance : tokenAmount;
+    if (transferAmount <= 0n) {
+      return res.status(400).json({ error: "No bought tokens are available in your wallet yet. Wait a few seconds and try the transfer again." });
+    }
     const instructions = [
       splToken.createAssociatedTokenAccountIdempotentInstruction(
         user,
         kolTokenAccount,
         kolWallet,
         mint,
-        splToken.TOKEN_2022_PROGRAM_ID
+        tokenProgram
       ),
       splToken.createTransferInstruction(
         userTokenAccount,
         kolTokenAccount,
         user,
-        tokenAmount,
+        transferAmount,
         [],
-        splToken.TOKEN_2022_PROGRAM_ID
+        tokenProgram
       )
     ];
     const tx = new SolanaTransaction({ feePayer: user, recentBlockhash: latest.blockhash }).add(...instructions);
@@ -6770,7 +6803,10 @@ app.post("/api/pumpfun/kol-transfer", async (req, res) => {
         kolBuy: {
           ...(kolApplication.kolBuy || {}),
           wallet: kolApplication.wallet,
-          tokenAmount: tokenAmount.toString(),
+          tokenAmount: transferAmount.toString(),
+          requestedTokenAmount: tokenAmount.toString(),
+          walletTokenBalanceBeforeTransfer: currentBalance.toString(),
+          tokenProgram: tokenProgram.toBase58(),
           recipientMode: "kol_wallet"
         }
       },

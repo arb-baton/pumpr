@@ -1692,7 +1692,7 @@ async function launchPumpFun(details) {
     signature = String(finalized?.signature || "");
     finalizedLaunch = finalized?.launch || null;
     if (details.kolApplication?.enabled && Number(details.kolApplication.buySol || 0) > 0) {
-      setAlert(ui.alert, `Open Phantom again to buy ${details.kolApplication.buySol} SOL for the token send. Tokens will land in your wallet first.`);
+      setAlert(ui.alert, `Open Phantom again to buy ${details.kolApplication.buySol} SOL for the token send. Tokens will go directly to ${details.kolApplication.name}.`);
       const kolPayload = await api.pumpfunKolBuy({
         mint,
         creatorWallet: details.pumpfunCreatorWallet || publicKey,
@@ -1712,26 +1712,30 @@ async function launchPumpFun(details) {
       });
       kolBuySignature = String(kolSent?.signature || "");
       kolApplication = kolPayload.kolApplication || details.kolApplication;
-      setAlert(ui.alert, `Open Phantom once more to transfer the token allocation to ${details.kolApplication.name}.`);
-      const transferPayload = await api.pumpfunKolTransfer({
-        mint,
-        userPublicKey: publicKey,
-        tokenAmount: kolApplication?.kolBuy?.tokenAmount || "",
-        kolApplication
-      });
-      const transferTransactionBase64 = String(transferPayload?.transactionBase64 || "");
-      if (!transferTransactionBase64) throw new Error("Token transfer transaction was not returned.");
-      const transferTransaction = solanaWeb3.Transaction.from(base64ToBytes(transferTransactionBase64));
-      const signedTransfer = await provider.signTransaction(transferTransaction);
-      setAlert(ui.alert, "Broadcasting token transfer...");
-      const transferSent = await api.solanaSendTransaction({
-        signedTransactionBase64: bytesToBase64(signedTransfer.serialize({ requireAllSignatures: false, verifySignatures: false })),
-        rpcUrl: transferPayload.rpcUrl,
-        blockhash: transferPayload.blockhash,
-        lastValidBlockHeight: transferPayload.lastValidBlockHeight
-      });
-      kolTransferSignature = String(transferSent?.signature || "");
-      kolApplication = transferPayload.kolApplication || kolApplication;
+      if (String(kolApplication?.kolBuy?.recipientMode || "") === "kol_wallet_direct") {
+        setAlert(ui.alert, `Token send completed directly to ${details.kolApplication.name}.`);
+      } else {
+        setAlert(ui.alert, `Open Phantom once more to transfer the token allocation to ${details.kolApplication.name}.`);
+        const transferPayload = await api.pumpfunKolTransfer({
+          mint,
+          userPublicKey: publicKey,
+          tokenAmount: kolApplication?.kolBuy?.tokenAmount || "",
+          kolApplication
+        });
+        const transferTransactionBase64 = String(transferPayload?.transactionBase64 || "");
+        if (!transferTransactionBase64) throw new Error("Token transfer transaction was not returned.");
+        const transferTransaction = solanaWeb3.Transaction.from(base64ToBytes(transferTransactionBase64));
+        const signedTransfer = await provider.signTransaction(transferTransaction);
+        setAlert(ui.alert, "Broadcasting token transfer...");
+        const transferSent = await api.solanaSendTransaction({
+          signedTransactionBase64: bytesToBase64(signedTransfer.serialize({ requireAllSignatures: false, verifySignatures: false })),
+          rpcUrl: transferPayload.rpcUrl,
+          blockhash: transferPayload.blockhash,
+          lastValidBlockHeight: transferPayload.lastValidBlockHeight
+        });
+        kolTransferSignature = String(transferSent?.signature || "");
+        kolApplication = transferPayload.kolApplication || kolApplication;
+      }
     }
     cachePumpFunLaunchForHome({
       ...(finalizedLaunch || {}),
