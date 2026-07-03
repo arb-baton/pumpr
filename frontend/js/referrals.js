@@ -15,7 +15,7 @@ const ui = {
   nameSaveBtn: document.getElementById("referralNameSaveBtn"),
   linkBtn: document.getElementById("referralLinkBtn"),
   qrWrap: document.getElementById("referralQrWrap"),
-  qrCanvas: document.getElementById("referralQrCanvas"),
+  qrImage: document.getElementById("referralQrImage"),
   qrMeta: document.getElementById("referralQrMeta"),
   status: document.getElementById("referralStatus"),
   tierName: document.getElementById("referralTierName"),
@@ -33,7 +33,6 @@ const ui = {
 let currentPayload = null;
 let walletControls = null;
 let refreshTimer = null;
-let qrLoading = null;
 
 function escapeHtml(value = "") {
   return String(value ?? "")
@@ -127,62 +126,21 @@ async function trackPendingReferral() {
   }
 }
 
-function loadQrLibrary() {
-  if (window.QRCode?.toCanvas) return Promise.resolve(window.QRCode);
-  if (qrLoading) return qrLoading;
-  qrLoading = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js";
-    script.async = true;
-    script.onload = () => resolve(window.QRCode);
-    script.onerror = () => reject(new Error("QR library unavailable"));
-    document.head.appendChild(script);
-  });
-  return qrLoading;
-}
-
-function drawFallbackQr(text = "") {
-  const canvas = ui.qrCanvas;
-  const ctx = canvas?.getContext?.("2d");
-  if (!ctx) return;
-  const size = canvas.width;
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = "#030712";
-  const cells = 25;
-  const cell = size / cells;
-  const seed = Array.from(text).reduce((sum, ch) => (sum * 33 + ch.charCodeAt(0)) >>> 0, 5381);
-  for (let y = 0; y < cells; y += 1) {
-    for (let x = 0; x < cells; x += 1) {
-      const finder = (x < 7 && y < 7) || (x > cells - 8 && y < 7) || (x < 7 && y > cells - 8);
-      const bit = finder || ((seed + x * 17 + y * 31 + x * y * 7) % 5 < 2);
-      if (bit) ctx.fillRect(Math.floor(x * cell), Math.floor(y * cell), Math.ceil(cell), Math.ceil(cell));
-    }
-  }
-}
-
-async function renderQr(link = "") {
-  if (!ui.qrCanvas) return;
+function renderQr(link = "") {
+  if (!ui.qrImage) return;
   if (ui.qrWrap) ui.qrWrap.hidden = !link;
   if (!link) {
-    const ctx = ui.qrCanvas.getContext("2d");
-    ctx?.clearRect(0, 0, ui.qrCanvas.width, ui.qrCanvas.height);
+    ui.qrImage.removeAttribute("src");
     return;
   }
-  try {
-    const qrcode = await loadQrLibrary();
-    await qrcode.toCanvas(ui.qrCanvas, link, {
-      errorCorrectionLevel: "M",
-      margin: 2,
-      width: 220,
-      color: {
-        dark: "#05070a",
-        light: "#ffffff"
-      }
-    });
-  } catch {
-    drawFallbackQr(link);
-  }
+  ui.qrImage.onload = () => {
+    if (ui.qrWrap) ui.qrWrap.hidden = false;
+  };
+  ui.qrImage.onerror = () => {
+    if (ui.qrWrap) ui.qrWrap.hidden = true;
+    setAlert(ui.status, "QR could not be generated. Use the referral link instead.", true);
+  };
+  ui.qrImage.src = `/api/referrals/qr?url=${encodeURIComponent(link)}`;
 }
 
 function renderRules(payload = currentPayload) {

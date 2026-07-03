@@ -14206,7 +14206,7 @@ button[disabled] {
   padding: 14px;
 }
 
-.referral-qr-wrap canvas {
+.referral-qr-wrap img {
   width: 220px;
   height: 220px;
   background: #ffffff;

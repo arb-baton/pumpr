@@ -5,6 +5,7 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const { ethers } = require("ethers");
+const QRCode = require("qrcode");
 const bs58 = require("bs58");
 const { ed25519 } = require("@noble/curves/ed25519");
 
@@ -7790,6 +7791,30 @@ app.get("/api/referrals/leaderboard", async (req, res) => {
     res.json({ leaderboard: publicReferralLeaderboard(store), updatedAt: store.updatedAt || 0, rules: referralRulesPayload() });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to load referral leaderboard" });
+  }
+});
+
+app.get("/api/referrals/qr", async (req, res) => {
+  try {
+    const raw = String(req.query.url || req.query.link || "").trim();
+    if (!raw || raw.length > 512) return res.status(400).json({ error: "Valid referral URL is required" });
+    const parsed = new URL(raw);
+    if (!/^https?:$/.test(parsed.protocol)) return res.status(400).json({ error: "Referral URL must be http or https" });
+    const png = await QRCode.toBuffer(parsed.toString(), {
+      type: "png",
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 320,
+      color: {
+        dark: "#05070aff",
+        light: "#ffffffff"
+      }
+    });
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
+    res.send(png);
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to generate referral QR" });
   }
 });
 
