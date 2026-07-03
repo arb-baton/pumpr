@@ -96,6 +96,10 @@ function allocationCsv(payload = lastPayload) {
 }
 
 function setStats(payload = null) {
+  if (completedAirdrop) {
+    setCompletedStats();
+    return;
+  }
   const symbol = String(payload?.symbol || "TOKEN").toUpperCase();
   if (ui.claimableStat) ui.claimableStat.textContent = payload ? `${formatTokenAmount(payload.claimableTokens)} $${symbol}` : "0";
   if (ui.holderStat) ui.holderStat.textContent = payload ? String(payload.holderCount || 0) : "0";
