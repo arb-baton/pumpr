@@ -1,5 +1,10 @@
 export const KOL_LEADERBOARD = [
   {
+    name: "Ansem",
+    wallet: "GV6UUmNxz2RpKxmNAPadYKb7uQpszwqQAu3qLJxVdC52",
+    image: "/assets/kol-ansem.jpg"
+  },
+  {
     name: "Cented",
     wallet: "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o",
     image: "https://cdn.kolscan.io/profiles/CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o.png"

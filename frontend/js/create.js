@@ -25,7 +25,7 @@ import {
 import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260703sharedauth";
 import { initCoinSearchOverlay } from "./searchModal.js?v=20260703sharedauth";
 import { initSupportWidget } from "./support.js?v=20260703sharedauth";
-import { KOL_LEADERBOARD } from "./kolData.js?v=20260630kol";
+import { KOL_LEADERBOARD } from "./kolData.js?v=20260703ansem";
 
 const MIN_INITIAL_LIQUIDITY_ETH = 0;
 const HOME_LAUNCH_CACHE_KEY = "etherpump.launches.cache.v3";
