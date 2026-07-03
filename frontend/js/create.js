@@ -496,7 +496,7 @@ function renderChainSelector() {
       : selectedQuoteMode() === "usdc"
       ? "USDC launches use a USDC-paired bonding curve. Buyers can still route from ETH through Uniswap after graduation."
       : Number(current?.chainId || state.selectedChainId) === 4663
-      ? "Robinhood Chain uses ETH for gas. Add starter liquidity to create burned LP when a DEX router is configured, or keep it at 0 to launch as-is."
+      ? "Robinhood Chain uses ETH for gas. Add starter liquidity only after a DEX router is configured; LP is burned automatically. Keep it at 0 to launch as-is."
       : monadConfigured
       ? "Wallet will switch to the selected network before launch."
       : "Monad launches are ready once the Monad factory address is configured.";
@@ -1445,6 +1445,9 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
   const dexRouter = String(state.config?.deployment?.dexRouter || ethers.ZeroAddress);
   const hasDexRouter = dexRouter && dexRouter.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
   const useTaxLaunch = Number(state.selectedChainId || 0) === 4663 && selectedQuoteMode() === "native";
+  if (useTaxLaunch && details.starterBuyEth > 0n && !hasDexRouter) {
+    throw new Error("Robinhood starter liquidity needs a DEX router configured first. Set starter buy to 0 to launch as-is.");
+  }
   const useInstantLiquidity = useTaxLaunch && hasDexRouter && details.starterBuyEth > 0n;
   const totalValue = launchFeeWei + (useInstantLiquidity ? details.starterBuyEth : 0n);
   const launchMethodName = useTaxLaunch
