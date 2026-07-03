@@ -2145,9 +2145,13 @@ async function ensureReferralProfile(wallet) {
   const normalized = normalizeSupportAddress(wallet);
   if (!normalized) throw new Error("Connect a valid wallet to create a referral link");
   const store = await readReferralDbPersistent({ refresh: true });
-  const profile = referralProfileForWallet(store, normalized, { create: true });
-  await writeReferralDbPersistent(store);
-  return { store: await readReferralDbPersistent(), profile };
+  let profile = referralProfileForWallet(store, normalized, { create: false });
+  if (!profile) {
+    profile = referralProfileForWallet(store, normalized, { create: true });
+    const saved = await writeReferralDbPersistent(store);
+    return { store: saved, profile: referralProfileForWallet(saved, normalized, { create: false }) || profile };
+  }
+  return { store, profile };
 }
 
 function emptyAlphaStore() {

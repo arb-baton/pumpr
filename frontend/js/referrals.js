@@ -33,6 +33,8 @@ const ui = {
 let currentPayload = null;
 let walletControls = null;
 let refreshTimer = null;
+let backgroundRefreshTimer = null;
+let renderedQrLink = "";
 
 function escapeHtml(value = "") {
   return String(value ?? "")
@@ -131,8 +133,14 @@ function renderQr(link = "") {
   if (ui.qrWrap) ui.qrWrap.hidden = !link;
   if (!link) {
     ui.qrImage.removeAttribute("src");
+    renderedQrLink = "";
     return;
   }
+  if (renderedQrLink === link && ui.qrImage.getAttribute("src")) {
+    if (ui.qrWrap) ui.qrWrap.hidden = false;
+    return;
+  }
+  renderedQrLink = link;
   ui.qrImage.onload = () => {
     if (ui.qrWrap) ui.qrWrap.hidden = false;
   };
@@ -243,6 +251,15 @@ function render(payload = currentPayload) {
   renderQr(link);
 }
 
+function scheduleBackgroundRefresh(delay = 900) {
+  if (backgroundRefreshTimer) return;
+  backgroundRefreshTimer = window.setTimeout(async () => {
+    backgroundRefreshTimer = null;
+    if (!connectedReferralWallet()) return;
+    await refresh({ silent: true, refresh: true, background: false });
+  }, delay);
+}
+
 async function refresh(options = {}) {
   const wallet = connectedReferralWallet();
   if (!wallet) {
@@ -250,18 +267,20 @@ async function refresh(options = {}) {
     render();
     return null;
   }
-  if (ui.refreshBtn) ui.refreshBtn.disabled = true;
+  const shouldRefreshLive = options.refresh === true;
+  if (ui.refreshBtn && !options.silent) ui.refreshBtn.disabled = true;
   try {
     await trackPendingReferral();
-    currentPayload = await api.referralMe(wallet, { refresh: options.refresh !== false });
+    currentPayload = await api.referralMe(wallet, { refresh: shouldRefreshLive });
     render(currentPayload);
-    setAlert(ui.status, options.silent ? "" : "Referral data refreshed.");
+    if (!shouldRefreshLive && options.background !== false) scheduleBackgroundRefresh();
+    setAlert(ui.status, options.silent ? "" : shouldRefreshLive ? "Referral data refreshed." : "Referral link loaded.");
     return currentPayload;
   } catch (error) {
     setAlert(ui.status, error.message || "Could not load referrals", true);
     return null;
   } finally {
-    if (ui.refreshBtn) ui.refreshBtn.disabled = false;
+    if (ui.refreshBtn && !options.silent) ui.refreshBtn.disabled = false;
   }
 }
 
@@ -317,15 +336,16 @@ async function init() {
   walletControls = initTopbarWalletProfile({
     signInBtn: ui.signInBtn,
     alertEl: ui.status,
-    onChange: () => refresh({ silent: true, refresh: true })
+    onChange: () => refresh({ silent: true, refresh: false })
   });
   await walletControls?.ready?.catch(() => null);
-  await refresh({ silent: true, refresh: true });
+  await refresh({ silent: true, refresh: false });
   refreshTimer = window.setInterval(() => refresh({ silent: true, refresh: true }), REFRESH_MS);
 }
 
 window.addEventListener("beforeunload", () => {
   if (refreshTimer) window.clearInterval(refreshTimer);
+  if (backgroundRefreshTimer) window.clearTimeout(backgroundRefreshTimer);
 });
 
 init().catch((error) => setAlert(ui.status, error.message || "Referral page failed to load", true));
