@@ -1068,6 +1068,8 @@ export async function connectSolanaWallet(options = {}) {
   }
   if (!silent) {
     saveWalletSession({ connected: true, choice: "phantom", type: "solana", address: publicKey });
+    window.dispatchEvent(new CustomEvent("etherpump:solanaWalletChanged", { detail: solanaWalletState() }));
+    window.dispatchEvent(new CustomEvent("etherpump:walletChanged", { detail: walletState() }));
   }
 
   if (!walletListenersAttached.has(provider)) {

@@ -1686,6 +1686,11 @@ async function init() {
       updateProfileIdentity();
       setProfileMenuOpen(false);
       await walletHub?.refresh();
+    },
+    onDisconnected: async () => {
+      updateProfileIdentity();
+      setProfileMenuOpen(false);
+      await walletHub?.refresh();
     }
   });
 
@@ -1709,14 +1714,17 @@ async function init() {
     }, 30);
   });
 
-  ui.signInBtn?.addEventListener("click", () => {
+  ui.signInBtn?.addEventListener("click", async () => {
     if (walletControls?.connect) {
-      walletControls.connect();
+      await walletControls.connect();
+      updateProfileIdentity();
+      await walletHub?.refresh();
       return;
     }
     ui.connectBtn?.click();
   });
 
+  await walletControls?.ready?.catch(() => null);
   updateProfileIdentity();
   setActiveFilterButton();
   setupProfileMenu();
