@@ -23,7 +23,7 @@ import {
   weiToUsd,
   walletState
 } from "./core.js?v=20260703sharedauth";
-import { initTopbarWalletProfile, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260703sharedauth";
+import { initTopbarWalletProfile, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260703profileconsistency";
 import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
 import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 
@@ -244,6 +244,25 @@ function defaultProfileUsername(address = "") {
   return defaultUsername(address);
 }
 
+function mergePayloadProfile(payload = {}, address = "") {
+  const normalized = normalizeProfileAddress(address || payload.address || "");
+  if (!normalized) return payload;
+  const saved = loadUserProfile(normalized);
+  const fallback = defaultProfileUsername(normalized);
+  const apiProfile = payload.profile || {};
+  const savedHasCustomName = String(saved.username || "") && String(saved.username || "") !== fallback;
+  return {
+    ...payload,
+    profile: {
+      ...apiProfile,
+      address: normalized,
+      username: savedHasCustomName ? saved.username : apiProfile.username || saved.username || fallback,
+      bio: String(saved.bio || "").trim() ? saved.bio : apiProfile.bio || "",
+      imageUri: String(saved.imageUri || "").trim() ? saved.imageUri : apiProfile.imageUri || ""
+    }
+  };
+}
+
 function profileHrefForAddress(value) {
   const normalized = normalizeProfileAddress(value);
   return normalized ? `/profile?address=${encodeURIComponent(normalized)}` : "/profile";
@@ -401,11 +420,12 @@ function updateProfileIdentity() {
   const social = readSocialAuthSession();
   const socialConnected = Boolean(!evmConnected && !solanaConnected && !generatedConnected && social);
   const connected = evmConnected || solanaConnected || generatedConnected || socialConnected;
-  const profile = evmConnected ? loadUserProfile(ws.address) : { username: "Guest", imageUri: "", bio: "" };
+  const profileAddress = generatedConnected ? ws.generatedWallet.address : solanaConnected && !evmConnected ? ws.solanaAddress : ws.address;
+  const profile = profileAddress ? loadUserProfile(profileAddress) : { username: "Guest", imageUri: "", bio: "" };
   const username = generatedDisplay
-    ? generatedDisplay.name
+    ? profile.username || generatedDisplay.name
     : solanaConnected && !evmConnected
-    ? `sol_${String(ws.solanaAddress).slice(0, 6)}`
+    ? profile.username || `sol_${String(ws.solanaAddress).slice(0, 6)}`
     : evmConnected
       ? profile.username || defaultUsername(ws.address)
       : socialConnected
@@ -413,8 +433,8 @@ function updateProfileIdentity() {
           ? social.name || `@${social.username}`
           : social.name || social.email
       : "Guest";
-  const avatarText = generatedDisplay ? generatedDisplay.avatarText : solanaConnected && !evmConnected ? "SOL" : socialConnected && social.type === "x" ? "X" : connected ? username.slice(0, 2).toUpperCase() : "EP";
-  const imageUri = generatedDisplay ? generatedDisplay.imageUri : evmConnected ? profile.imageUri || "" : socialConnected ? String(social.image || "") : "";
+  const avatarText = profile.imageUri ? username : generatedDisplay ? generatedDisplay.avatarText : solanaConnected && !evmConnected ? "SOL" : socialConnected && social.type === "x" ? "X" : connected ? username.slice(0, 2).toUpperCase() : "EP";
+  const imageUri = profile.imageUri || (generatedDisplay ? generatedDisplay.imageUri : socialConnected ? String(social.image || "") : "");
   const profileHref = evmConnected
     ? `/profile?address=${encodeURIComponent(ws.address)}`
     : solanaConnected || generatedConnected
@@ -461,11 +481,12 @@ function updateProfileIdentity() {
     ui.menuLogoutBtn.textContent = connected ? "Log out" : "Connect wallet";
   }
 
-  if (evmConnected) {
-    const currentAddress = String(ws.address || "");
+  if (evmConnected || solanaConnected || generatedConnected) {
+    const currentAddress = String(profileAddress || "");
     hydrateFollowerCount(currentAddress).then((followersCount) => {
       const next = walletState();
-      if (String(next.address || "").toLowerCase() !== currentAddress.toLowerCase()) return;
+      const nextAddress = next.generatedWallet?.address || next.solanaAddress || next.address || "";
+      if (String(nextAddress || "").toLowerCase() !== currentAddress.toLowerCase()) return;
       if (ui.profileMenuMeta) {
         ui.profileMenuMeta.textContent = followerMetaText(followersCount);
       }
@@ -474,7 +495,8 @@ function updateProfileIdentity() {
     });
     hydrateUserProfile(currentAddress).then(() => {
       const next = walletState();
-      if (String(next.address || "").toLowerCase() !== currentAddress.toLowerCase()) return;
+      const nextAddress = next.generatedWallet?.address || next.solanaAddress || next.address || "";
+      if (String(nextAddress || "").toLowerCase() !== currentAddress.toLowerCase()) return;
       const fresh = loadUserProfile(currentAddress);
       if (fresh.username !== username || String(fresh.imageUri || "") !== String(imageUri || "")) {
         updateProfileIdentity();
@@ -601,13 +623,14 @@ function renderProfileHeader(address) {
   const generatedDisplay = isSolana ? generatedWalletDisplayForAddress(normalized) : null;
   const profile = generatedDisplay
     ? {
-        username: generatedDisplay.name,
-        bio: generatedDisplay.meta,
-        imageUri: generatedDisplay.imageUri,
+        ...loadUserProfile(normalized),
+        username: loadUserProfile(normalized).username || generatedDisplay.name,
+        bio: loadUserProfile(normalized).bio || generatedDisplay.meta,
+        imageUri: loadUserProfile(normalized).imageUri || generatedDisplay.imageUri,
         avatarText: generatedDisplay.avatarText
       }
     : isSolana
-      ? state.payload?.profile || { username: defaultProfileUsername(normalized), bio: "", imageUri: "" }
+      ? state.payload?.profile || loadUserProfile(normalized)
       : loadUserProfile(normalized);
   const username = profile.username || defaultProfileUsername(normalized);
   ui.profileResolvedName.textContent = username;
@@ -1407,7 +1430,7 @@ async function loadProfile(address) {
   const cachedFollowers = isSolana ? 0 : loadCachedFollowerCount(normalized);
   const warmPayload = {
     address: normalized,
-    profile: isSolana ? { address: normalized, username: defaultProfileUsername(normalized), bio: "", imageUri: "" } : loadUserProfile(normalized),
+    profile: loadUserProfile(normalized),
     created: [],
     holdings: [],
     followers: [],
@@ -1436,14 +1459,13 @@ async function loadProfile(address) {
     for (const row of payload?.following || []) {
       if (row?.address) relatedAddresses.add(row.address);
     }
-    if (!isSolana) {
-      await hydrateUserProfiles([...relatedAddresses], { force: true });
-    }
+    await hydrateUserProfiles([...relatedAddresses], { force: true });
     if (requestSeq !== state.profileLoadSeq) return;
-    state.payload = payload;
+    const mergedPayload = mergePayloadProfile(payload, normalized);
+    state.payload = mergedPayload;
     state.socialLoaded = Boolean(payload.socialIncluded);
     state.socialLoading = false;
-    setSummary(payload);
+    setSummary(mergedPayload);
     renderActiveTab();
     await refreshFollowState();
   } catch (error) {
@@ -1474,10 +1496,12 @@ async function refreshLoadedProfile() {
     });
     if (requestSeq !== state.profileLoadSeq) return;
     state.address = normalized;
-    state.payload = payload;
+    await hydrateUserProfile(normalized, { force: true }).catch(() => {});
+    const mergedPayload = mergePayloadProfile(payload, normalized);
+    state.payload = mergedPayload;
     state.socialLoaded = Boolean(payload.socialIncluded);
     state.socialLoading = false;
-    setSummary(payload);
+    setSummary(mergedPayload);
     renderActiveTab();
     updateProfileIdentity();
     await refreshFollowState();

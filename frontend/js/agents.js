@@ -1,6 +1,6 @@
 import { api } from "./api.js?v=20260703sharedauth";
 import { defaultUsername, parseUiError, shortAddress, walletState } from "./core.js?v=20260703sharedauth";
-import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703sharedauth";
+import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703profileconsistency";
 import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 
 const ui = {

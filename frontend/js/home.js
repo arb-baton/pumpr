@@ -18,7 +18,7 @@ import {
   walletState,
   weiToUsd
 } from "./core.js?v=20260703sharedauth";
-import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703sharedauth";
+import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703profileconsistency";
 import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
 import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 
@@ -1200,19 +1200,20 @@ function updateProfileIdentity() {
   const generated = ws.generatedWallet || null;
   const solanaConnected = Boolean(ws.solanaAddress);
   const connected = evmConnected || solanaConnected || generatedConnected;
-  const profile = evmConnected ? loadUserProfile(ws.address) : { username: "Guest", imageUri: "", bio: "" };
+  const profileAddress = generatedConnected ? generated?.address || ws.solanaAddress : solanaConnected && !evmConnected ? ws.solanaAddress : ws.address;
+  const profile = profileAddress ? loadUserProfile(profileAddress) : { username: "Guest", imageUri: "", bio: "" };
   const generatedName = generatedConnected
     ? String(generated.name || (generated.username ? `@${generated.username}` : "") || generated.email || "")
     : "";
   const name = generatedConnected
-    ? generatedName || `sol_${String(generated.address || ws.solanaAddress).slice(0, 6)}`
+    ? profile.username || generatedName || `sol_${String(generated.address || ws.solanaAddress).slice(0, 6)}`
     : solanaConnected && !evmConnected
-    ? `sol_${String(ws.solanaAddress).slice(0, 6)}`
+    ? profile.username || `sol_${String(ws.solanaAddress).slice(0, 6)}`
     : evmConnected
       ? profile.username || defaultUsername(ws.address)
       : "Guest";
-  const avatarText = generatedConnected && generated?.type === "x" ? "X" : solanaConnected && !evmConnected ? "SOL" : connected ? name.slice(0, 2).toUpperCase() : "EP";
-  const imageUri = generatedConnected ? String(generated.image || "") : evmConnected ? profile.imageUri || "" : "";
+  const avatarText = profile.imageUri ? name : generatedConnected && generated?.type === "x" ? "X" : solanaConnected && !evmConnected ? "SOL" : connected ? name.slice(0, 2).toUpperCase() : "EP";
+  const imageUri = profile.imageUri || (generatedConnected ? String(generated.image || "") : "");
 
   if (ui.profileMenuName) ui.profileMenuName.textContent = name;
   if (ui.profileMenuNameLarge) ui.profileMenuNameLarge.textContent = name;
@@ -1265,11 +1266,12 @@ function updateProfileIdentity() {
     ui.menuLogoutBtn.textContent = connected ? "Log out" : "Connect wallet";
   }
 
-  if (evmConnected) {
-    const currentAddress = String(ws.address || "");
+  if (evmConnected || solanaConnected || generatedConnected) {
+    const currentAddress = String(profileAddress || "");
     hydrateFollowerCount(currentAddress).then((followersCount) => {
       const nextWs = walletState();
-      if (String(nextWs.address || "").toLowerCase() !== currentAddress.toLowerCase()) return;
+      const nextAddress = nextWs.generatedWallet?.address || nextWs.solanaAddress || nextWs.address || "";
+      if (String(nextAddress || "").toLowerCase() !== currentAddress.toLowerCase()) return;
       if (ui.profileMenuMeta) {
         ui.profileMenuMeta.textContent = followerMetaText(followersCount);
       }
@@ -1278,7 +1280,8 @@ function updateProfileIdentity() {
     });
     hydrateUserProfile(currentAddress).then(() => {
       const nextWs = walletState();
-      if (String(nextWs.address || "").toLowerCase() !== currentAddress.toLowerCase()) return;
+      const nextAddress = nextWs.generatedWallet?.address || nextWs.solanaAddress || nextWs.address || "";
+      if (String(nextAddress || "").toLowerCase() !== currentAddress.toLowerCase()) return;
       const fresh = loadUserProfile(currentAddress);
       if (fresh.username !== name || String(fresh.imageUri || "") !== String(imageUri || "")) {
         updateProfileIdentity();

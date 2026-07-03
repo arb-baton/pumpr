@@ -9729,15 +9729,11 @@ app.get("/api/profile/:address", async (req, res) => {
           creatorClaimedTokens: 0
         }
       }));
+      const profile = await getPersistedProfile(solanaAddress).catch(() => sanitizeProfileValue(solanaAddress, {}));
       return res.json({
         address: solanaAddress,
         chainType: "solana",
-        profile: {
-          address: solanaAddress,
-          username: `sol_${solanaAddress.slice(0, 6)}`,
-          bio: "",
-          imageUri: ""
-        },
+        profile,
         created,
         holdings: [],
         creatorRewardsTotalWei: "0",

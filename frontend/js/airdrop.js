@@ -1,6 +1,6 @@
 import { api } from "./api.js?v=20260703holdingsrefresh";
 import { parseUiError, shortAddress } from "./core.js?v=20260703sharedauth";
-import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703sharedauth";
+import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703profileconsistency";
 import { KOL_LEADERBOARD } from "./kolData.js?v=20260703kol51";
 
 const AIRDROP_HOLDER_REFRESH_MS = 30_000;

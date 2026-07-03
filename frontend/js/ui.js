@@ -12,6 +12,7 @@ import {
   getGeneratedWalletInfo,
   getSavedWalletChoice,
   getSolanaProvider,
+  hydrateUserProfile,
   loadUserProfile,
   restoreWalletFromSession,
   shortAddress,
@@ -973,28 +974,46 @@ export function initTopbarWalletProfile({
     }
     if (generatedConnected) {
       const generated = ws.generatedWallet || {};
-      const name = displayNameForGeneratedWallet(generated) || `sol_${String(generated.address || solana.address || "").slice(0, 6)}`;
+      const profileAddress = generated.address || solana.address || "";
+      const profile = loadUserProfile(profileAddress);
+      const name = profile?.username || displayNameForGeneratedWallet(generated) || `sol_${String(profileAddress).slice(0, 6)}`;
+      const imageUri = profile?.imageUri || generated.image || "";
       if (els.profileMenuName) els.profileMenuName.textContent = name;
       if (els.profileMenuNameLarge) els.profileMenuNameLarge.textContent = name;
       if (els.profileMenuMeta) els.profileMenuMeta.textContent = metaForGeneratedWallet(generated);
-      if (els.profileNav) els.profileNav.href = `/profile?address=${encodeURIComponent(generated.address || solana.address)}`;
-      setSharedAvatar(els.profileAvatar, avatarTextForGeneratedWallet(generated), generated.image || "");
-      setSharedAvatar(els.profileAvatarLarge, avatarTextForGeneratedWallet(generated), generated.image || "");
+      if (els.profileNav) els.profileNav.href = `/profile?address=${encodeURIComponent(profileAddress)}`;
+      setSharedAvatar(els.profileAvatar, imageUri ? name : avatarTextForGeneratedWallet(generated), imageUri);
+      setSharedAvatar(els.profileAvatarLarge, imageUri ? name : avatarTextForGeneratedWallet(generated), imageUri);
       walletHub?.refresh();
       connectPendingReferral(generated.address || solana.address);
+      if (profileAddress) {
+        hydrateUserProfile(profileAddress, { force: false }).then((fresh) => {
+          const next = walletState();
+          const stillCurrent = String(next.generatedWallet?.address || solanaWalletState().address || "") === String(profileAddress);
+          if (!stillCurrent) return;
+          if (fresh?.username !== name || String(fresh?.imageUri || "") !== String(imageUri || "")) update();
+        }).catch(() => {});
+      }
       if (typeof onChange === "function") await onChange();
       return;
     }
     if (solanaConnected && !evmConnected) {
-      const name = `sol_${solana.address.slice(0, 6)}`;
+      const profile = loadUserProfile(solana.address);
+      const name = profile?.username || `sol_${solana.address.slice(0, 6)}`;
+      const imageUri = profile?.imageUri || "";
       if (els.profileMenuName) els.profileMenuName.textContent = name;
       if (els.profileMenuNameLarge) els.profileMenuNameLarge.textContent = name;
       if (els.profileMenuMeta) els.profileMenuMeta.textContent = "Solana wallet connected";
       if (els.profileNav) els.profileNav.href = `/profile?address=${encodeURIComponent(solana.address)}`;
-      setSharedAvatar(els.profileAvatar, "SOL", "");
-      setSharedAvatar(els.profileAvatarLarge, "SOL", "");
+      setSharedAvatar(els.profileAvatar, imageUri ? name : "SOL", imageUri);
+      setSharedAvatar(els.profileAvatarLarge, imageUri ? name : "SOL", imageUri);
       walletHub?.setOpen(false);
       connectPendingReferral(solana.address);
+      hydrateUserProfile(solana.address, { force: false }).then((fresh) => {
+        const next = solanaWalletState();
+        if (String(next.address || "") !== String(solana.address)) return;
+        if (fresh?.username !== name || String(fresh?.imageUri || "") !== String(imageUri || "")) update();
+      }).catch(() => {});
       if (typeof onChange === "function") await onChange();
       return;
     }

@@ -10,7 +10,7 @@ import {
   shortAddress,
   walletState
 } from "./core.js?v=20260703sharedauth";
-import { initTopbarWalletProfile, setAlert, setWalletLabel } from "./ui.js?v=20260703sharedauth";
+import { initTopbarWalletProfile, setAlert, setWalletLabel } from "./ui.js?v=20260703profileconsistency";
 
 const ALPHA_X_AUTH_KEY = "etherpump.alpha.xauth.v1";
 

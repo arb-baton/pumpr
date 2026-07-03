@@ -8,7 +8,7 @@ import {
   shortAddress,
   walletState
 } from "./core.js?v=20260703sharedauth";
-import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260703sharedauth";
+import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260703profileconsistency";
 import { initCoinSearchOverlay } from "./searchModal.js?v=20260703sharedauth";
 
 const X_AUTH_KEY = "Pump-r.community.xauth.v2";
