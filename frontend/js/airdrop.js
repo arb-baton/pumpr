@@ -1,6 +1,8 @@
-import { api } from "./api.js?v=20260703sharedauth";
+import { api } from "./api.js?v=20260703holdingsrefresh";
 import { parseUiError, shortAddress } from "./core.js?v=20260703sharedauth";
 import { setAlert } from "./ui.js?v=20260703sharedauth";
+
+const AIRDROP_HOLDER_REFRESH_MS = 30_000;
 
 const ui = {
   officialTop: document.getElementById("airdropOfficialTop"),
@@ -157,29 +159,36 @@ function renderPreview(payload) {
   });
 }
 
-async function previewAirdrop() {
+async function previewAirdrop(options = {}) {
+  const silent = Boolean(options.silent);
   if (!officialAirdrop?.configured) {
     renderEmpty(
       "The official Pumpfun Remastered mint is not configured yet. After launch, set AIRDROP_TOKEN_ADDRESS and AIRDROP_CHAIN_ID so this page can show top long-term holders.",
       "Official token not configured"
     );
-    setAlert(ui.alert, "Official airdrop token is not configured yet.", true);
+    if (!silent) setAlert(ui.alert, "Official airdrop token is not configured yet.", true);
     return;
   }
   try {
-    ui.previewBtn.disabled = true;
-    ui.previewBtn.textContent = "Reading holders...";
-    ui.status.textContent = `Reading top ${officialAirdrop.chainShortName || officialAirdrop.chainName || ""} holders and updating long-term holder tracking...`;
-    const payload = await api.airdropPreview({ limit: 30 });
+    if (!silent) {
+      ui.previewBtn.disabled = true;
+      ui.previewBtn.textContent = "Reading holders...";
+      ui.status.textContent = `Reading top ${officialAirdrop.chainShortName || officialAirdrop.chainName || ""} holders and updating long-term holder tracking...`;
+    }
+    const payload = await api.airdropPreview({ limit: 30, fresh: true });
     renderPreview(payload);
-    ui.status.textContent = "Long-term holder reward preview is ready.";
+    ui.status.textContent = silent ? "Holder list refreshed." : "Long-term holder reward preview is ready.";
   } catch (err) {
-    renderEmpty(parseUiError(err), "Airdrop preview unavailable");
-    ui.status.textContent = parseUiError(err);
-    setAlert(ui.alert, parseUiError(err), true);
+    if (!silent) {
+      renderEmpty(parseUiError(err), "Airdrop preview unavailable");
+      ui.status.textContent = parseUiError(err);
+      setAlert(ui.alert, parseUiError(err), true);
+    }
   } finally {
-    ui.previewBtn.disabled = false;
-    ui.previewBtn.textContent = "Preview split";
+    if (!silent) {
+      ui.previewBtn.disabled = false;
+      ui.previewBtn.textContent = "Preview split";
+    }
   }
 }
 
@@ -218,6 +227,18 @@ async function init() {
     setAlert(ui.alert, parseUiError(err), true);
   }
   ui.previewBtn?.addEventListener("click", previewAirdrop);
+  setInterval(() => {
+    if (document.visibilityState === "hidden" || !officialAirdrop?.configured) return;
+    previewAirdrop({ silent: true }).catch(() => {
+      // ignore background holder refresh failures
+    });
+  }, AIRDROP_HOLDER_REFRESH_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !officialAirdrop?.configured) return;
+    previewAirdrop({ silent: true }).catch(() => {
+      // ignore foreground holder refresh failures
+    });
+  });
 }
 
 init();

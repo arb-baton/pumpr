@@ -2919,6 +2919,13 @@ async function init() {
   }, 2_500);
 
   setInterval(() => {
+    if (document.visibilityState === "hidden") return;
+    refreshTokenFull(true).catch(() => {
+      // ignore transient holder refresh failures
+    });
+  }, 15_000);
+
+  setInterval(() => {
     refreshEthUsd(true)
       .then(() => {
         renderOverview();

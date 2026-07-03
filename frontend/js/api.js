@@ -114,6 +114,7 @@ export const api = {
   profile: (address, options = {}) => {
     const params = new URLSearchParams();
     if (options.includeSocial) params.set("includeSocial", "1");
+    if (options.fresh) params.set("fresh", "1");
     const qs = params.toString();
     return apiGet(`/api/profile/${encodeURIComponent(String(address || ""))}${qs ? `?${qs}` : ""}`);
   },
@@ -208,6 +209,7 @@ export const api = {
     if (Number.isFinite(Number(options.chainId))) params.set("chainId", String(Math.floor(Number(options.chainId))));
     if (options.quote) params.set("quote", String(options.quote));
     if (Number.isFinite(Number(options.limit))) params.set("limit", String(Math.floor(Number(options.limit))));
+    if (options.fresh) params.set("fresh", "1");
     return apiGet(`/api/airdrop/preview?${params.toString()}`);
   },
   uploadImage: (dataUrl, options = {}) => apiPost("/api/upload-image", { dataUrl, ...options }),

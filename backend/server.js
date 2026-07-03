@@ -8879,7 +8879,8 @@ app.get("/api/profile/:address", async (req, res) => {
     const requestedChainId = resolveRequestedChainId(req, deployment);
     const ctx = await getContext(requestedChainId);
     const cacheKey = `${ctx.chainId}:${ctx.factoryAddress.toLowerCase()}:${address.toLowerCase()}:social-v2`;
-    const cachedProfile = getCachedValue(profileCache, cacheKey);
+    const forceFreshProfile = req.query.fresh === "1" || req.query.fresh === "true";
+    const cachedProfile = forceFreshProfile ? null : getCachedValue(profileCache, cacheKey);
     if (cachedProfile) {
       return res.json(cachedProfile);
     }

@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260703sharedauth";
+import { api } from "./api.js?v=20260703holdingsrefresh";
 import {
   defaultUsername,
   connectSocialWallet,
@@ -30,6 +30,7 @@ import { initSupportWidget } from "./support.js?v=20260703sharedauth";
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 const CLAIM_MIN_USD = 8;
 const SOCIAL_AUTH_KEY = "pumpr.social.session.v1";
+const PROFILE_HOLDINGS_REFRESH_MS = 15_000;
 
 async function ensurePumpRHolderPaymentAccess(address) {
   const eligibility = await api.holderEligibility({ address });
@@ -1455,6 +1456,35 @@ async function loadProfile(address) {
   }
 }
 
+async function refreshLoadedProfile() {
+  const normalized = normalizeProfileAddress(state.address || state.payload?.address || getAddressFromUrl());
+  if (!normalized || state.profileLoading || document.visibilityState === "hidden") return;
+  const requestSeq = ++state.profileLoadSeq;
+  state.profileLoading = true;
+  try {
+    const payload = await api.profile(normalized, {
+      fresh: true,
+      includeSocial: state.socialLoaded
+    });
+    if (requestSeq !== state.profileLoadSeq) return;
+    state.address = normalized;
+    state.payload = payload;
+    state.socialLoaded = Boolean(payload.socialIncluded);
+    state.socialLoading = false;
+    setSummary(payload);
+    renderActiveTab();
+    updateProfileIdentity();
+    await refreshFollowState();
+  } catch {
+    // Keep the current profile visible if a background refresh misses.
+  } finally {
+    if (requestSeq === state.profileLoadSeq) {
+      state.profileLoading = false;
+      renderActiveTab();
+    }
+  }
+}
+
 async function loadConfig() {
   const cfg = await api.config();
   state.chainId = Number(cfg.chainId || 1);
@@ -1741,6 +1771,25 @@ async function init() {
         // ignore ETH/USD polling failures
       });
   }, 60_000);
+
+  setInterval(() => {
+    refreshLoadedProfile().catch(() => {
+      // ignore background profile refresh failures
+    });
+  }, PROFILE_HOLDINGS_REFRESH_MS);
+
+  window.addEventListener("focus", () => {
+    refreshLoadedProfile().catch(() => {
+      // ignore focus refresh failures
+    });
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    refreshLoadedProfile().catch(() => {
+      // ignore foreground refresh failures
+    });
+  });
 
   const fromUrl = getAddressFromUrl();
   if (fromUrl) {
