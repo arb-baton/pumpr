@@ -318,6 +318,10 @@ async function loadCompletedAirdrop() {
     if (!response.ok) return;
     completedAirdrop = await response.json();
     setCompletedStats();
+    renderEmpty(
+      "Live holder tracking is loading. The completed Pump.fun-verified 250K holder drop is shown above.",
+      "Live holder tracking"
+    );
   } catch {
     completedAirdrop = null;
   }
