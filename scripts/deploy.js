@@ -8,6 +8,7 @@ async function main() {
   const DEFAULT_UNISWAP_V2_ROUTER_BY_CHAIN = {
     1: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
     8453: "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
+    4663: hre.ethers.ZeroAddress,
     11155111: "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3"
   };
 

@@ -4094,6 +4094,13 @@ button:disabled {
   color: #d7b7ff;
 }
 
+.chain-badge.robinhood,
+.trend-chain-badge.robinhood {
+  border-color: rgba(0, 206, 132, 0.68);
+  background: rgba(5, 34, 26, 0.92);
+  color: #79f0bd;
+}
+
 .chain-badge.sol,
 .trend-chain-badge.sol,
 .coin-chain-text.sol {
@@ -4140,6 +4147,12 @@ button:disabled {
   border-color: rgba(191, 142, 255, 0.58);
   color: #d7b7ff;
   background: rgba(43, 26, 67, 0.82);
+}
+
+.coin-chain-text.robinhood {
+  border-color: rgba(0, 206, 132, 0.58);
+  color: #79f0bd;
+  background: rgba(5, 34, 26, 0.82);
 }
 
 .watch-btn {
@@ -8241,6 +8254,42 @@ button:disabled,
   color: #b7bbc2;
 }
 
+.home-contract-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  min-height: 34px;
+  height: auto;
+  padding: 0.42rem 0.72rem;
+  flex-wrap: wrap;
+}
+
+.home-contract-strip::after {
+  content: "";
+  margin: 0;
+}
+
+.home-contract-strip > span {
+  white-space: nowrap;
+}
+
+.home-contract-strip a {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(520px, 92vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(125, 242, 170, 0.42);
+  border-radius: 999px;
+  background: rgba(12, 34, 26, 0.82);
+  color: #7df2aa;
+  padding: 0.16rem 0.55rem;
+  text-decoration: none;
+  font-size: 0.72rem;
+}
+
 .topbar,
 .home-topbar,
 .create-topbar {
@@ -9065,7 +9114,7 @@ select:focus,
 .airdrop-table-head,
 .airdrop-table-row {
   display: grid;
-  grid-template-columns: 48px minmax(120px, 1.2fr) minmax(120px, 1fr) 90px minmax(120px, 1fr);
+  grid-template-columns: 48px minmax(112px, 1.15fr) minmax(112px, 0.95fr) 78px minmax(96px, 0.8fr) minmax(112px, 0.95fr);
   gap: 0.7rem;
   align-items: center;
   padding: 0.72rem 0.85rem;

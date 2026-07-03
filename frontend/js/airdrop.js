@@ -37,6 +37,14 @@ function formatTokenAmount(value) {
   return n.toPrecision(3);
 }
 
+function formatHoldingAge(days = 0, snapshots = 0) {
+  const d = Number(days || 0);
+  const s = Math.max(0, Number(snapshots || 0));
+  if (d >= 1) return `${d.toFixed(d >= 10 ? 0 : 1)}d / ${s} reads`;
+  if (s > 1) return `${s} reads`;
+  return "tracking";
+}
+
 function allocationCsv(payload = lastPayload) {
   const symbol = String(payload?.symbol || "TOKEN").toUpperCase();
   const rows = Array.isArray(payload?.allocations) ? payload.allocations : [];
@@ -62,7 +70,7 @@ function setStats(payload = null) {
   if (ui.chainStat) ui.chainStat.textContent = payload ? String(payload.chainName || "-") : "-";
 }
 
-function renderEmpty(message = "Once the official Pump-r token launches, this page will show the top holders receiving creator-reward drops. No random token contracts are checked here.", title = "Airdrop not live yet") {
+function renderEmpty(message = "The official Pumpfun Remastered mint is locked here. Current top holders are tracked over time so loyal holders can qualify for airdrops.", title = "Long-term holder tracking") {
   if (!ui.results) return;
   ui.results.innerHTML = `
     <article class="panel-card airdrop-empty-state">
@@ -96,7 +104,7 @@ function renderPreview(payload) {
         <div>
           <small>Step 2</small>
           <h2>${escapeHtml(payload?.name || "Token")} <span>$${escapeHtml(symbol)}</span></h2>
-          <p>${escapeHtml(payload?.chainName || "Chain")} holders ranked for the official Pump-r reward drop${isSolana ? " from top Solana token accounts." : " from creator rewards."}</p>
+          <p>${escapeHtml(payload?.longTermPolicy || "Top holders who keep holding over time are prioritized for the airdrop.")}</p>
         </div>
         <div class="airdrop-plan-actions">
           <a class="btn-ghost" href="${tokenUrl}" ${isSolana ? 'target="_blank" rel="noopener noreferrer"' : ""}>Open token</a>
@@ -105,7 +113,7 @@ function renderPreview(payload) {
       </div>
       <div class="airdrop-kpi-grid">
         <span><b>${escapeHtml(claimable)} $${escapeHtml(symbol)}</b><small>${isSolana ? "Tracked rewards" : "Creator rewards"}</small></span>
-        <span><b>${escapeHtml(String(payload.holderCount || allocations.length))}</b><small>Eligible holders</small></span>
+        <span><b>${escapeHtml(String(payload.holderCount || allocations.length))}</b><small>Tracked holders</small></span>
         <span><b>${escapeHtml(shortAddress(payload.creator || ""))}</b><small>Creator</small></span>
       </div>
       <div class="airdrop-holder-table">
@@ -114,6 +122,7 @@ function renderPreview(payload) {
           <span>Holder</span>
           <span>Balance</span>
           <span>Share</span>
+          <span>Holding</span>
           <span>Airdrop</span>
         </div>
         ${allocations
@@ -121,12 +130,14 @@ function renderPreview(payload) {
             const allocation = formatTokenAmount(row.allocationTokens || 0);
             const balance = formatTokenAmount(row.balanceTokens || 0);
             const pct = Number(row.holderPct || 0).toFixed(2);
+            const holding = formatHoldingAge(row.holdingDays || 0, row.snapshotsHeld || 0);
             return `
               <div class="airdrop-table-row">
                 <span class="airdrop-rank">${index + 1}</span>
                 <span class="airdrop-holder-address">${escapeHtml(shortAddress(row.address))}</span>
                 <span>${escapeHtml(balance)} $${escapeHtml(symbol)}</span>
                 <span>${escapeHtml(pct)}%</span>
+                <span>${escapeHtml(holding)}</span>
                 <strong>${escapeHtml(allocation)} $${escapeHtml(symbol)}</strong>
               </div>
             `;
@@ -149,7 +160,7 @@ function renderPreview(payload) {
 async function previewAirdrop() {
   if (!officialAirdrop?.configured) {
     renderEmpty(
-      "The official Pump-r airdrop token is not configured yet. After launch, set AIRDROP_TOKEN_ADDRESS and AIRDROP_CHAIN_ID so this page can show the top holders.",
+      "The official Pumpfun Remastered mint is not configured yet. After launch, set AIRDROP_TOKEN_ADDRESS and AIRDROP_CHAIN_ID so this page can show top long-term holders.",
       "Official token not configured"
     );
     setAlert(ui.alert, "Official airdrop token is not configured yet.", true);
@@ -158,10 +169,10 @@ async function previewAirdrop() {
   try {
     ui.previewBtn.disabled = true;
     ui.previewBtn.textContent = "Reading holders...";
-    ui.status.textContent = `Reading top ${officialAirdrop.chainShortName || officialAirdrop.chainName || ""} holders for the official token...`;
+    ui.status.textContent = `Reading top ${officialAirdrop.chainShortName || officialAirdrop.chainName || ""} holders and updating long-term holder tracking...`;
     const payload = await api.airdropPreview({ limit: 30 });
     renderPreview(payload);
-    ui.status.textContent = "Official holder reward preview is ready.";
+    ui.status.textContent = "Long-term holder reward preview is ready.";
   } catch (err) {
     renderEmpty(parseUiError(err), "Airdrop preview unavailable");
     ui.status.textContent = parseUiError(err);
@@ -178,20 +189,20 @@ function renderOfficialAirdrop(config) {
   const symbol = String(config?.symbol || "Pump-r").replace(/^\$/, "").toUpperCase();
   const chain = String(config?.chainShortName || config?.chainName || "-").toUpperCase();
   const token = String(config?.token || "");
-  if (ui.officialTop) ui.officialTop.textContent = configured ? `$${symbol} holder rewards` : "Official holder rewards";
-  if (ui.officialName) ui.officialName.textContent = configured ? `$${symbol} official airdrop` : "Official Pump-r token";
+  if (ui.officialTop) ui.officialTop.textContent = configured ? `$${symbol} loyal holder rewards` : "Official holder rewards";
+  if (ui.officialName) ui.officialName.textContent = configured ? `${config?.name || "Pumpfun Remastered"} airdrop` : "Official Pumpfun Remastered token";
   if (ui.officialMeta) {
     ui.officialMeta.textContent = configured
-      ? `${chain} - ${shortAddress(token)} - top holders receive creator-reward drops`
-      : "Not live yet. The official token address will be locked here after launch.";
+      ? `${chain} - ${shortAddress(token)} - top long-term holders are prioritized`
+      : "The official Pump.fun mint will be locked here after launch.";
   }
   if (ui.heroCopy) ui.heroCopy.textContent = config?.message || ui.heroCopy.textContent;
-  if (ui.status) ui.status.textContent = configured ? "Official token locked. Ready to read top holders." : "Official airdrop token not configured yet.";
+  if (ui.status) ui.status.textContent = configured ? "Official mint locked. Ready to track long-term top holders." : "Official airdrop token not configured yet.";
   if (ui.previewBtn) ui.previewBtn.disabled = !configured;
   if (!configured) {
     renderEmpty(
-      "After the official Pump-r token launches, this page will automatically show the top holders eligible for creator-reward drops. Users cannot paste other contracts here.",
-      "Official token not configured"
+      "The official Pumpfun Remastered mint is locked here. Current top holders are tracked over time so loyal holders can qualify for airdrops.",
+      "Long-term holder tracking"
     );
   }
 }

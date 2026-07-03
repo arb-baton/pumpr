@@ -102,6 +102,15 @@ export const CHAIN_OPTIONS = {
     rpcUrls: ["https://rpc.monad.xyz"],
     blockExplorerUrls: ["https://monadvision.com"]
   },
+  4663: {
+    chainId: 4663,
+    chainIdHex: "0x1237",
+    name: "Robinhood Chain",
+    shortName: "RH",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://rpc.mainnet.chain.robinhood.com"],
+    blockExplorerUrls: ["https://robinhoodchain.blockscout.com"]
+  },
   101: {
     chainId: 101,
     name: "Solana",

@@ -5,6 +5,8 @@ const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL || "";
 const MAINNET_RPC_URL = process.env.MAINNET_RPC_URL || process.env.RPC_URL || "";
 const BASE_RPC_URL = process.env.BASE_RPC_URL || process.env.RPC_URL_8453 || "https://mainnet.base.org";
 const MONAD_RPC_URL = process.env.MONAD_RPC_URL || process.env.RPC_URL_143 || "https://rpc.monad.xyz";
+const ROBINHOOD_RPC_URL =
+  process.env.ROBINHOOD_RPC_URL || process.env.RH_RPC_URL || process.env.RPC_URL_4663 || "https://rpc.mainnet.chain.robinhood.com";
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "";
 const BASESCAN_API_KEY = process.env.BASESCAN_API_KEY || ETHERSCAN_API_KEY;
@@ -40,6 +42,11 @@ module.exports = {
     },
     monad: {
       url: MONAD_RPC_URL,
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : []
+    },
+    robinhood: {
+      url: ROBINHOOD_RPC_URL,
+      chainId: 4663,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : []
     }
   },

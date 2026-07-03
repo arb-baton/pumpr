@@ -9,6 +9,7 @@ const ROUTER_BY_CHAIN = {
   1: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
   8453: "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
   143: ethers.ZeroAddress,
+  4663: ethers.ZeroAddress,
   11155111: "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3",
   31337: ethers.ZeroAddress
 };
@@ -25,8 +26,9 @@ function pickRpcUrl(chainId) {
   const byChain = process.env[`RPC_URL_${chainId}`] || "";
   const base = chainId === 8453 ? process.env.BASE_RPC_URL || "https://mainnet.base.org" : "";
   const monad = chainId === 143 ? process.env.MONAD_RPC_URL || "https://rpc.monad.xyz" : "";
+  const robinhood = chainId === 4663 ? process.env.ROBINHOOD_RPC_URL || process.env.RH_RPC_URL || "https://rpc.mainnet.chain.robinhood.com" : "";
   const mainnet = chainId === 1 ? process.env.MAINNET_RPC_URL || process.env.RPC_URL || "" : "";
-  const value = process.env.TARGET_RPC_URL || byChain || base || monad || mainnet || process.env.RPC_URL || "";
+  const value = process.env.TARGET_RPC_URL || byChain || base || monad || robinhood || mainnet || process.env.RPC_URL || "";
   if (!value.trim()) throw new Error(`No RPC URL configured for chain ${chainId}.`);
   return value.trim();
 }

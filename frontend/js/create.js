@@ -21,7 +21,7 @@ import {
   shortAddress,
   solanaWalletState,
   walletState
-} from "./core.js?v=20260630esm";
+} from "./core.js?v=20260701rh";
 import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260630esm";
 import { initCoinSearchOverlay } from "./searchModal.js?v=20260630esm";
 import { initSupportWidget } from "./support.js?v=20260630esm";
@@ -166,6 +166,7 @@ const LAUNCH_CHAIN_CHOICES = [
   { chainId: 1, name: "Ethereum", shortName: "ETH", networkLabel: "Mainnet" },
   { chainId: 8453, name: "Base", shortName: "BASE", networkLabel: "Mainnet" },
   { chainId: 143, name: "Monad", shortName: "MONAD", networkLabel: "Mainnet" },
+  { chainId: 4663, name: "Robinhood Chain", shortName: "RH", networkLabel: "ETH gas" },
   {
     mode: "usdc:1",
     name: "Ethereum + USDC",
@@ -365,7 +366,7 @@ function normalizeSupportedChains(config = state.config) {
     });
   }
   const chainRank = (chainId) => {
-    const order = [1, 8453, 143, 101, 11155111, 31337];
+    const order = [1, 8453, 143, 4663, 101, 11155111, 31337];
     const index = order.indexOf(Number(chainId));
     return index >= 0 ? index : order.length + Number(chainId || 0);
   };
@@ -410,6 +411,7 @@ function chainNameForId(chainId) {
   if (n === 1) return "Ethereum";
   if (n === 8453) return "Base";
   if (n === 143) return "Monad";
+  if (n === 4663) return "Robinhood Chain";
   if (n === 101) return "Solana";
   return `Chain ${n}`;
 }
@@ -419,8 +421,13 @@ function chainShortNameForId(chainId) {
   if (n === 1) return "ETH";
   if (n === 8453) return "BASE";
   if (n === 143) return "MONAD";
+  if (n === 4663) return "RH";
   if (n === 101) return "SOL";
   return String(n);
+}
+
+function isRobinhoodChainSelected() {
+  return Number(state.selectedChainId || 0) === 4663 && !isPumpFunMode() && !isPumpVerseMode() && selectedQuoteMode() === "native";
 }
 
 function normalizePumpVerseChains(chains = state.selectedPumpVerseChains, { requireConfigured = true } = {}) {
@@ -485,6 +492,8 @@ function renderChainSelector() {
       ? `PumpVerse launches the same token details on ${pumpVerseLabel()}. MetaMask will ask for separate confirmations.`
       : selectedQuoteMode() === "usdc"
       ? "USDC launches use a USDC-paired bonding curve. Buyers can still route from ETH through Uniswap after graduation."
+      : Number(current?.chainId || state.selectedChainId) === 4663
+      ? "Robinhood Chain uses ETH for gas. Before launch, choose a starter buy to seed the curve or keep it at 0 to launch as-is."
       : monadConfigured
       ? "Wallet will switch to the selected network before launch."
       : "Monad launches are ready once the Monad factory address is configured.";
@@ -1275,6 +1284,21 @@ function renderLaunchResults(results = []) {
     .join("");
 }
 
+function confirmRobinhoodLiquidityChoice(details = {}) {
+  if (!isRobinhoodChainSelected() || BigInt(details.starterBuyEth || 0n) > 0n) return true;
+  const launchAsIs = window.confirm(
+    "Robinhood Chain launch has 0 starter buy selected.\n\nChoose OK to launch as-is.\nChoose Cancel to add starter liquidity first."
+  );
+  if (launchAsIs) return true;
+  if (ui.advancedDetails) {
+    ui.advancedDetails.hidden = false;
+    ui.advancedDetails.open = true;
+  }
+  ui.devBuyEth?.focus?.();
+  setAlert(ui.alert, "Add a starter buy amount, then launch again. Leave it at 0 only if you want Robinhood Chain to launch as-is.");
+  return false;
+}
+
 function hideCreatedModal() {
   if (!ui.createdModal) return;
   ui.createdModal.classList.remove("open");
@@ -1834,6 +1858,9 @@ async function onCreate(event) {
     const details = await prepareLaunchDetails();
     setSubmitting(true, "Checking token name and ticker...");
     await ensureLaunchIdentityAvailable(details);
+    if (!isPumpFunMode() && !isPumpVerseMode() && !confirmRobinhoodLiquidityChoice(details)) {
+      return;
+    }
     if (isPumpFunMode()) {
       await launchPumpFun(details);
     } else if (isPumpVerseMode()) {

@@ -22,7 +22,7 @@ import {
   shortAddress,
   weiToUsd,
   walletState
-} from "./core.js?v=20260630esm";
+} from "./core.js?v=20260701rh";
 import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260630esm";
 import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260630esm";
 import { initSupportWidget } from "./support.js?v=20260630esm";
@@ -753,6 +753,7 @@ function getAddressExplorerUrl(address, chainId) {
   if (!address) return "";
   if (isSolanaProfileAddress(address)) return `https://solscan.io/account/${address}`;
   if (id === 1) return `https://etherscan.io/address/${address}`;
+  if (id === 4663) return `https://robinhoodchain.blockscout.com/address/${address}`;
   if (id === 11155111) return `https://sepolia.etherscan.io/address/${address}`;
   return "";
 }

@@ -24,7 +24,7 @@ import {
   setPreferredChainId,
   shortAddress,
   walletState
-} from "./core.js?v=20260630esm";
+} from "./core.js?v=20260701rh";
 import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260630esm";
 import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260630esm";
 import { initSupportWidget } from "./support.js?v=20260630esm";
@@ -202,10 +202,12 @@ let walletControls = null;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const GECKO_NETWORK_BY_CHAIN = {
   1: "eth",
+  4663: "robinhood-chain",
   11155111: "sepolia-testnet"
 };
 const DEXSCREENER_NETWORK_BY_CHAIN = {
   1: "ethereum",
+  4663: "robinhood",
   11155111: "sepolia"
 };
 

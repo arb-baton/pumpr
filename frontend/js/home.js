@@ -18,7 +18,7 @@ import {
   shortAddress,
   walletState,
   weiToUsd
-} from "./core.js?v=20260630esm";
+} from "./core.js?v=20260701rh";
 import { initWalletControls, initWalletHubMenu, setAlert } from "./ui.js?v=20260630esm";
 import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260630esm";
 import { initSupportWidget } from "./support.js?v=20260630esm";
@@ -367,7 +367,7 @@ function chainMetaForLaunch(launch) {
   const chainId = Number(launch?.chainId || state.chainId || 1);
   const fromConfig = (state.supportedChains || []).find((row) => Number(row?.chainId || 0) === chainId);
   const fromCore = CHAIN_OPTIONS[chainId] || {};
-  const shortName = String(fromConfig?.shortName || fromCore.shortName || (chainId === 101 ? "SOL" : chainId === 143 ? "MONAD" : chainId === 8453 ? "BASE" : chainId === 1 ? "ETH" : chainId));
+  const shortName = String(fromConfig?.shortName || fromCore.shortName || (chainId === 101 ? "SOL" : chainId === 4663 ? "RH" : chainId === 143 ? "MONAD" : chainId === 8453 ? "BASE" : chainId === 1 ? "ETH" : chainId));
   const name = String(fromConfig?.name || fromCore.name || `Chain ${chainId}`);
   return { chainId, shortName, name };
 }
@@ -377,6 +377,7 @@ function chainClassForLaunch(launch) {
   const chainId = Number(launch?.chainId || state.chainId || 1);
   if (chainId === 8453) return "base";
   if (chainId === 143) return "monad";
+  if (chainId === 4663) return "robinhood";
   if (chainId === 101) return "sol";
   if (chainId === 1) return "eth";
   return "other";

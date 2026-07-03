@@ -29,7 +29,9 @@ const PUMPFUN_PREPARED_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-pu
 const PUMPFUN_SESSIONS_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-pumpfun-sessions.json") : path.join(ROOT, "cache", "pumpfun-sessions.json");
 const PUMPFUN_METADATA_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-pumpfun-metadata.json") : path.join(ROOT, "cache", "pumpfun-metadata.json");
 const PUMPFUN_LAUNCHES_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-pumpfun-launches.json") : path.join(ROOT, "cache", "pumpfun-launches.json");
+const AIRDROP_HOLDER_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-airdrop-holders.json") : path.join(ROOT, "cache", "airdrop-holders.json");
 const PUMPR_CARD_WAITLIST_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-card-waitlist.json") : path.join(ROOT, "cache", "pumpr-card-waitlist.json");
+const OFFICIAL_PUMPFUN_MINT = "C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || ""
@@ -103,6 +105,7 @@ const POOL_READ_ABI = [
 const GECKO_NETWORK_BY_CHAIN = {
   1: "eth",
   143: "monad",
+  4663: "robinhood-chain",
   8453: "base",
   11155111: "sepolia-testnet"
 };
@@ -110,6 +113,7 @@ const DEXSCREENER_CHAIN_BY_ID = {
   1: "ethereum",
   143: "monad",
   101: "solana",
+  4663: "robinhood",
   8453: "base",
   11155111: "sepolia"
 };
@@ -136,6 +140,14 @@ const CHAIN_META = {
     nativeCurrency: "MON",
     explorerBaseUrl: "https://monadvision.com",
     rpcUrls: ["https://rpc.monad.xyz"],
+    dexRouter: ethers.ZeroAddress
+  },
+  4663: {
+    name: "Robinhood Chain",
+    shortName: "RH",
+    nativeCurrency: "ETH",
+    explorerBaseUrl: "https://robinhoodchain.blockscout.com",
+    rpcUrls: ["https://rpc.mainnet.chain.robinhood.com"],
     dexRouter: ethers.ZeroAddress
   },
   101: {
@@ -593,7 +605,7 @@ function resolveSupportedChains(deployment) {
     map.set(deploymentChain, ethers.getAddress(deployment.memeLaunchFactory));
   }
   const chainRank = (chainId) => {
-    const order = [1, 8453, 143, 11155111, 31337];
+    const order = [1, 8453, 143, 4663, 11155111, 31337];
     const index = order.indexOf(Number(chainId));
     return index >= 0 ? index : order.length + Number(chainId || 0);
   };
@@ -683,6 +695,13 @@ function pickRpcUrls(chainId) {
     return urls;
   }
 
+  if (chainId === 4663) {
+    pushIf(process.env.ROBINHOOD_RPC_URL);
+    pushIf(process.env.RH_RPC_URL);
+    pushIf("https://rpc.mainnet.chain.robinhood.com");
+    return urls;
+  }
+
   if (chainId === 101) {
     pushIf(process.env.SOLANA_RPC_URL);
     pushIf(process.env.PUMPFUN_SOLANA_RPC_URL);
@@ -718,7 +737,7 @@ async function buildContext(chainId, factoryAddress, deployment = loadDeployment
   }
 
   const rpcUrls = pickRpcUrls(normalizedChainId);
-  const probeTimeoutMs = normalizedChainId === 8453 || normalizedChainId === 143 ? Math.max(RPC_PROBE_TIMEOUT_MS, 12_000) : RPC_PROBE_TIMEOUT_MS;
+  const probeTimeoutMs = [8453, 143, 4663].includes(normalizedChainId) ? Math.max(RPC_PROBE_TIMEOUT_MS, 12_000) : RPC_PROBE_TIMEOUT_MS;
   let lastError = null;
   let provider = null;
   let factory = null;
@@ -1768,11 +1787,11 @@ function defaultPumpRemasteredAlphaTip() {
     tokenAddress: "So11111111111111111111111111111111111111112",
     chainId: 101,
     minBalance: "0",
-    category: "Launchpad, Solana, Ethereum, Base, Monad",
+    category: "Launchpad, Solana, Ethereum, Base, Monad, Robinhood",
     confidence: "high",
     teaser: "Official Pump Fun Remastered account is live at @pumpr_fun.",
     body:
-      "Pump Fun Remastered is building a multi-chain launchpad flow across Solana, Ethereum, Base, and Monad. The signal to watch is the official @pumpr_fun account, upcoming PUMPR token rollout, Pump.fun launch support, PumpVerse multi-chain launches, Alpha, GO bounties, and holder reward tooling all coming together under one launch ecosystem.",
+      "Pump Fun Remastered is building a multi-chain launchpad flow across Solana, Ethereum, Base, Monad, and Robinhood Chain. The signal to watch is the official @pumpr_fun account, upcoming PUMPR token rollout, Pump.fun launch support, PumpVerse multi-chain launches, Alpha, GO bounties, and holder reward tooling all coming together under one launch ecosystem.",
     evidenceUrl: "https://x.com/pumpr_fun",
     evidenceType: "X profile",
     author: ethers.ZeroAddress,
@@ -2605,7 +2624,7 @@ function officialAirdropConfig() {
       process.env.OFFICIAL_AIRDROP_TOKEN ||
       process.env.PUMPR_AIRDROP_TOKEN ||
       process.env.ETHERPUMP_AIRDROP_TOKEN ||
-      ""
+      OFFICIAL_PUMPFUN_MINT
   ).trim();
   const chainId = parseChainId(
     process.env.PUMPR_TOKEN_CHAIN_ID ||
@@ -2630,12 +2649,12 @@ function officialAirdropConfig() {
     chainName: CHAIN_META[chainId]?.name || `Chain ${chainId}`,
     chainShortName: CHAIN_META[chainId]?.shortName || String(chainId),
     quoteMode,
-    name: String(process.env.AIRDROP_TOKEN_NAME || process.env.OFFICIAL_AIRDROP_TOKEN_NAME || "Pump-r").trim(),
+    name: String(process.env.AIRDROP_TOKEN_NAME || process.env.OFFICIAL_AIRDROP_TOKEN_NAME || "Pumpfun Remastered").trim(),
     symbol: String(process.env.AIRDROP_TOKEN_SYMBOL || process.env.OFFICIAL_AIRDROP_TOKEN_SYMBOL || "PUMPR").trim().replace(/^\$/, "").toUpperCase(),
     minHolderPct,
     message: String(
       process.env.AIRDROP_MESSAGE ||
-        "Pump-r token holders can launch from the app, receive creator payments, and qualify for later holder airdrops."
+        "Pumpfun Remastered airdrops are reserved for top holders who keep holding long term. This page tracks the official Pump.fun mint and prioritizes loyal holders over short-term flips."
     ).trim()
   };
 }
@@ -2681,6 +2700,63 @@ function buildHolderEligibilityPayload(official, row = {}) {
     eligibleToLaunch: hasBalance,
     eligibleForAirdrop: hasBalance && holderPct >= minHolderPct
   };
+}
+
+function readAirdropHolderDb() {
+  try {
+    if (!fs.existsSync(AIRDROP_HOLDER_DB_PATH)) return { tokens: {} };
+    const parsed = JSON.parse(fs.readFileSync(AIRDROP_HOLDER_DB_PATH, "utf8") || "{}");
+    return parsed && typeof parsed === "object" && parsed.tokens && typeof parsed.tokens === "object" ? parsed : { tokens: {} };
+  } catch {
+    return { tokens: {} };
+  }
+}
+
+function writeAirdropHolderDb(store = { tokens: {} }) {
+  try {
+    fs.mkdirSync(path.dirname(AIRDROP_HOLDER_DB_PATH), { recursive: true });
+    fs.writeFileSync(AIRDROP_HOLDER_DB_PATH, JSON.stringify(store, null, 2));
+  } catch {
+    // Duration tracking is best-effort.
+  }
+}
+
+function annotateLongTermAirdropHolders(token = "", holders = []) {
+  const tokenKey = String(token || "").trim();
+  if (!tokenKey || !Array.isArray(holders) || !holders.length) return holders;
+  const now = Math.floor(Date.now() / 1000);
+  const minHoldDays = Math.max(0, Number(process.env.PUMPR_AIRDROP_MIN_HOLD_DAYS || process.env.AIRDROP_MIN_HOLD_DAYS || "7") || 7);
+  const minHoldSeconds = Math.floor(minHoldDays * 86400);
+  const store = readAirdropHolderDb();
+  const tokens = store.tokens || {};
+  const tokenStore = tokens[tokenKey] && typeof tokens[tokenKey] === "object" ? tokens[tokenKey] : {};
+  const annotated = holders.map((row) => {
+    const address = String(row.address || "").trim();
+    const previous = address && tokenStore[address] && typeof tokenStore[address] === "object" ? tokenStore[address] : {};
+    const firstSeenAt = Math.max(0, Number(previous.firstSeenAt || now));
+    const snapshotsHeld = Math.max(1, Number(previous.snapshotsHeld || 0) + 1);
+    if (address) {
+      tokenStore[address] = {
+        firstSeenAt,
+        lastSeenAt: now,
+        snapshotsHeld,
+        lastBalanceWei: String(row.balanceWei || "0"),
+        lastHolderPct: Number(row.holderPct || 0)
+      };
+    }
+    return {
+      ...row,
+      firstSeenAt,
+      lastSeenAt: now,
+      snapshotsHeld,
+      holdingDays: Math.max(0, (now - firstSeenAt) / 86400),
+      longTermEligible: now - firstSeenAt >= minHoldSeconds
+    };
+  });
+  tokens[tokenKey] = tokenStore;
+  store.tokens = tokens;
+  writeAirdropHolderDb(store);
+  return annotated;
 }
 
 async function readEvmOfficialHolderEligibility(official, address) {
@@ -2789,7 +2865,7 @@ async function buildSolanaAirdropPreview(rawToken, limit = 20) {
   const supplyRaw = BigInt(String(mintParsed.supply || "0"));
   const decimals = Number(mintParsed.decimals ?? largestAccounts?.value?.[0]?.decimals ?? 6) || 6;
   const accounts = (largestAccounts?.value || []).slice(0, Math.max(3, Math.min(50, Number(limit || 20))));
-  const owners = await Promise.all(
+  const ownersRaw = await Promise.all(
     accounts.map(async (account) => {
       const info = await connection.getParsedAccountInfo(account.address).catch(() => ({ value: null }));
       const owner = info?.value?.data?.parsed?.info?.owner || account.address.toBase58();
@@ -2805,6 +2881,7 @@ async function buildSolanaAirdropPreview(rawToken, limit = 20) {
       };
     })
   );
+  const owners = annotateLongTermAirdropHolders(mint.toBase58(), ownersRaw);
 
   const totalHolderBalance = owners.reduce((sum, row) => sum + BigInt(row.balanceWei || "0"), 0n);
   return {
@@ -2812,8 +2889,8 @@ async function buildSolanaAirdropPreview(rawToken, limit = 20) {
     chainName: CHAIN_META[101]?.name || "Solana",
     token: mint.toBase58(),
     pool: "",
-    name: "Solana token",
-    symbol: "SOL",
+    name: "Pumpfun Remastered",
+    symbol: "PUMPR",
     creator: "",
     quoteMode: "native",
     claimableWei: "0",
@@ -2824,6 +2901,7 @@ async function buildSolanaAirdropPreview(rawToken, limit = 20) {
     totalHolderBalanceWei: totalHolderBalance.toString(),
     totalHolderBalanceTokens: owners.reduce((sum, row) => sum + Number(row.balanceTokens || 0), 0),
     marketCapUsd: 0,
+    longTermPolicy: "Top holders who keep holding over time are prioritized for the airdrop.",
     allocations: owners
   };
 }
@@ -6782,7 +6860,7 @@ app.get("/api/airdrop/preview", async (req, res) => {
       .slice(0, limit);
     const totalHolderBalance = holders.reduce((sum, row) => sum + BigInt(row.balance || "0"), 0n);
     const claimableWei = BigInt(feeSnapshot?.creatorClaimableWei || "0");
-    const allocations = holders.map((row) => {
+    const allocationsRaw = holders.map((row) => {
       const balanceWei = BigInt(row.balance || "0");
       const allocationWei = claimableWei > 0n && totalHolderBalance > 0n ? (claimableWei * balanceWei) / totalHolderBalance : 0n;
       return {
@@ -6795,6 +6873,7 @@ app.get("/api/airdrop/preview", async (req, res) => {
         allocationTokens: toFloat(allocationWei)
       };
     });
+    const allocations = annotateLongTermAirdropHolders(launch.token, allocationsRaw);
 
     res.json({
       chainId: ctx.chainId,
@@ -6814,6 +6893,7 @@ app.get("/api/airdrop/preview", async (req, res) => {
       totalHolderBalanceTokens: toFloat(totalHolderBalance),
       marketCapUsd: Number(poolSnapshot?.marketCapUsd || 0),
       officialAirdrop: official,
+      longTermPolicy: "Top holders who keep holding over time are prioritized for the airdrop.",
       allocations
     });
   } catch (error) {
