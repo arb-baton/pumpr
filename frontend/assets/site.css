@@ -9101,6 +9101,223 @@ select:focus,
     #141516;
 }
 
+.airdrop-kol-card {
+  display: grid;
+  gap: 1rem;
+  border-color: rgba(125, 242, 170, 0.24);
+  background:
+    radial-gradient(520px 170px at 8% 0%, rgba(117, 92, 255, 0.13), transparent 68%),
+    radial-gradient(420px 160px at 100% 0%, rgba(125, 242, 170, 0.11), transparent 72%),
+    #141516;
+}
+
+.airdrop-kol-head {
+  align-items: end;
+}
+
+.airdrop-kol-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(116px, 1fr));
+  gap: 0.55rem;
+  min-width: min(330px, 100%);
+}
+
+.airdrop-kol-summary span {
+  display: grid;
+  gap: 0.25rem;
+  border: 1px solid rgba(125, 242, 170, 0.22);
+  border-radius: 8px;
+  background: rgba(8, 9, 11, 0.48);
+  padding: 0.72rem;
+}
+
+.airdrop-kol-summary b {
+  color: #7df2aa;
+  font-size: 1rem;
+}
+
+.airdrop-kol-summary small {
+  color: #a8a8ad;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.airdrop-kol-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 0.72rem;
+}
+
+.airdrop-kol-tile {
+  min-height: 188px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: center;
+  gap: 0.62rem;
+  border: 1px solid #25262a;
+  border-radius: 8px;
+  background: rgba(9, 10, 12, 0.72);
+  padding: 0.78rem 0.62rem;
+  text-align: center;
+}
+
+.airdrop-kol-avatar-wrap {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 1px solid rgba(125, 242, 170, 0.32);
+  background: #0b0c0e;
+  padding: 3px;
+}
+
+.airdrop-kol-avatar-wrap img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.airdrop-kol-live-dot {
+  position: absolute;
+  right: 2px;
+  bottom: 5px;
+  width: 15px;
+  height: 15px;
+  border: 3px solid #141516;
+  border-radius: 999px;
+  background: #7df2aa;
+  box-shadow: 0 0 0 3px rgba(125, 242, 170, 0.16);
+}
+
+.airdrop-kol-meta {
+  display: grid;
+  gap: 0.18rem;
+  justify-items: center;
+  min-width: 0;
+}
+
+.airdrop-kol-meta strong {
+  max-width: 112px;
+  color: #fff;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.airdrop-kol-meta span {
+  color: #7df2aa;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.airdrop-kol-wallet-copy {
+  max-width: 122px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(154, 164, 186, 0.3);
+  border-radius: 999px;
+  background: rgba(21, 22, 25, 0.92);
+  color: #c9d3e7;
+  padding: 0.28rem 0.54rem;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.airdrop-kol-wallet-copy:hover {
+  border-color: rgba(125, 242, 170, 0.5);
+  color: #b9ffd1;
+}
+
+.airdrop-kol-wallet-copy.copied {
+  border-color: rgba(125, 242, 170, 0.7);
+  background: rgba(125, 242, 170, 0.18);
+  color: #7df2aa;
+}
+
+.airdrop-kol-holding {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  border: 1px solid rgba(125, 242, 170, 0.24);
+  border-radius: 999px;
+  background: rgba(125, 242, 170, 0.08);
+  color: #b9ffd1;
+  padding: 0.34rem 0.58rem;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.airdrop-kol-holding small {
+  color: #9da0a6;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.kol-wallet-copy-box {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 60;
+  width: min(460px, calc(100vw - 28px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: end;
+  border: 1px solid rgba(125, 242, 170, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 16, 18, 0.96);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+  padding: 0.8rem;
+}
+
+.kol-wallet-copy-box div {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.kol-wallet-copy-box small {
+  color: #7df2aa;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.kol-wallet-copy-box input {
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid #30333a;
+  border-radius: 7px;
+  background: #090a0c;
+  color: #fff;
+  padding: 0 0.7rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.kol-wallet-copy-box button {
+  min-height: 38px;
+  border: 1px solid rgba(125, 242, 170, 0.28);
+  border-radius: 7px;
+  background: rgba(125, 242, 170, 0.1);
+  color: #b9ffd1;
+  padding: 0 0.72rem;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .airdrop-plan-head h2 span {
   color: #7df2aa;
 }
@@ -9310,7 +9527,8 @@ select:focus,
   .airdrop-page,
   .airdrop-hero,
   .airdrop-hero-stats,
-  .airdrop-kpi-grid {
+  .airdrop-kpi-grid,
+  .airdrop-kol-summary {
     grid-template-columns: 1fr;
   }
 
@@ -9340,6 +9558,14 @@ select:focus,
   .airdrop-holder-balance,
   .airdrop-holder-row strong {
     grid-column: 2;
+  }
+
+  .airdrop-kol-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .airdrop-kol-tile {
+    min-height: 174px;
   }
 }
 

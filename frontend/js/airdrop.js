@@ -1,9 +1,17 @@
 import { api } from "./api.js?v=20260703holdingsrefresh";
 import { parseUiError, shortAddress } from "./core.js?v=20260703sharedauth";
 import { setAlert } from "./ui.js?v=20260703sharedauth";
+import { KOL_LEADERBOARD } from "./kolData.js?v=20260703kol51";
 
 const AIRDROP_HOLDER_REFRESH_MS = 30_000;
 const COMPLETED_AIRDROP_URL = "/data/pumpr-airdrop-250k.json?v=20260703drop250k";
+const KOL_SEED_AMOUNT = 5_000;
+const KOL_BOOSTED_WALLETS = new Set([
+  "GV6UUmNxz2RpKxmNAPadYKb7uQpszwqQAu3qLJxVdC52",
+  "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o",
+  "CUHBzSPSaNS3tArEtM3maSV6pNdJhHJFYZpurPPK9P7H",
+  "2fg5QD1eD7rzNNCsvnhmXFm5hqNgwTTG8p7kQ6f3rx6f"
+]);
 
 const ui = {
   officialTop: document.getElementById("airdropOfficialTop"),
@@ -165,10 +173,135 @@ function completedAirdropHtml() {
   `;
 }
 
+function kolHoldingAmount(wallet = "") {
+  return KOL_BOOSTED_WALLETS.has(wallet) ? 15_000 : KOL_SEED_AMOUNT;
+}
+
+function renderKolSeedHtml() {
+  const rows = Array.isArray(KOL_LEADERBOARD) ? KOL_LEADERBOARD : [];
+  if (!rows.length) return "";
+  const totalHolding = rows.length;
+  const totalSent = rows.reduce((sum, row) => sum + kolHoldingAmount(row.wallet), 0);
+  return `
+    <article class="panel-card airdrop-kol-card">
+      <div class="airdrop-plan-head airdrop-kol-head">
+        <div>
+          <small>KOL seeding</small>
+          <h2>PUMPR is now in KOL wallets</h2>
+          <p>Visual tracker for the latest KOL wallet seeding. Each card shows the profile image, holding status, amount, and a copyable wallet.</p>
+        </div>
+        <div class="airdrop-kol-summary" aria-label="KOL distribution summary">
+          <span><b>${escapeHtml(formatTokenAmount(totalSent))}</b><small>$PUMPR sent</small></span>
+          <span><b>${escapeHtml(String(totalHolding))}</b><small>holding</small></span>
+        </div>
+      </div>
+      <div class="airdrop-kol-grid">
+        ${rows
+          .map((row) => {
+            const amount = kolHoldingAmount(row.wallet);
+            return `
+              <article class="airdrop-kol-tile" title="${escapeHtml(row.name || "KOL")} is holding $PUMPR">
+                <div class="airdrop-kol-avatar-wrap">
+                  <img src="${escapeHtml(row.image || "/assets/pump-r-logo.png")}" alt="${escapeHtml(row.name || "KOL")}" loading="lazy" />
+                  <span class="airdrop-kol-live-dot" aria-hidden="true"></span>
+                </div>
+                <div class="airdrop-kol-meta">
+                  <strong>${escapeHtml(row.name || "KOL")}</strong>
+                  <span>Holding</span>
+                  <button class="airdrop-kol-wallet-copy" type="button" data-wallet="${escapeHtml(row.wallet || "")}" aria-label="Copy ${escapeHtml(row.name || "KOL")} wallet">
+                    ${escapeHtml(shortAddress(row.wallet || ""))}
+                  </button>
+                </div>
+                <div class="airdrop-kol-holding">
+                  <span>${escapeHtml(formatTokenAmount(amount))}</span>
+                  <small>$PUMPR</small>
+                </div>
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    </article>
+  `;
+}
+
+function flashKolCopyButton(button, label = "Copied") {
+  if (!button) return;
+  const original = button.dataset.originalLabel || button.textContent.trim();
+  button.dataset.originalLabel = original;
+  button.textContent = label;
+  button.classList.add("copied");
+  window.clearTimeout(button._kolCopyTimer);
+  button._kolCopyTimer = window.setTimeout(() => {
+    button.textContent = button.dataset.originalLabel || original;
+    button.classList.remove("copied");
+  }, 1400);
+}
+
+async function copyKolWallet(wallet = "", button = null) {
+  const value = String(wallet || "").trim();
+  if (!value) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      throw new Error("Clipboard API unavailable");
+    }
+    flashKolCopyButton(button, "Copied");
+    setAlert(ui.alert, "KOL wallet copied");
+  } catch {
+    const input = document.createElement("textarea");
+    input.value = value;
+    input.setAttribute("readonly", "");
+    input.style.position = "fixed";
+    input.style.left = "-9999px";
+    document.body.appendChild(input);
+    input.focus();
+    input.select();
+    const copied = document.execCommand("copy");
+    input.remove();
+    if (copied) {
+      flashKolCopyButton(button, "Copied");
+      setAlert(ui.alert, "KOL wallet copied");
+      return;
+    }
+    showKolWalletCopyBox(value);
+    flashKolCopyButton(button, "Copied");
+    setAlert(ui.alert, "KOL wallet copied");
+  }
+}
+
+function showKolWalletCopyBox(wallet = "") {
+  const value = String(wallet || "").trim();
+  if (!value) return;
+  let box = document.getElementById("kolWalletCopyBox");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "kolWalletCopyBox";
+    box.className = "kol-wallet-copy-box";
+    box.innerHTML = `
+      <div>
+        <small>Wallet</small>
+        <input id="kolWalletCopyInput" readonly />
+      </div>
+      <button id="kolWalletCopyClose" type="button" aria-label="Close wallet copy box">Close</button>
+    `;
+    document.body.appendChild(box);
+    box.querySelector("#kolWalletCopyClose")?.addEventListener("click", () => box.remove());
+  }
+  const input = box.querySelector("#kolWalletCopyInput");
+  if (input) {
+    input.value = value;
+    input.focus();
+    input.select();
+  }
+}
+
 function renderEmpty(message = "The official Pumpfun Remastered mint is locked here. Current top holders are tracked over time so loyal holders can qualify for airdrops.", title = "Long-term holder tracking") {
   if (!ui.results) return;
   ui.results.innerHTML = `
     ${completedAirdropHtml()}
+    ${renderKolSeedHtml()}
     <article class="panel-card airdrop-empty-state">
       <span class="airdrop-empty-icon">0x</span>
       <h2>${escapeHtml(title)}</h2>
@@ -197,6 +330,7 @@ function renderPreview(payload) {
 
   ui.results.innerHTML = `
     ${completedAirdropHtml()}
+    ${renderKolSeedHtml()}
     <article class="panel-card airdrop-plan-card">
       <div class="airdrop-plan-head">
         <div>
@@ -339,6 +473,11 @@ async function init() {
     setAlert(ui.alert, parseUiError(err), true);
   }
   ui.previewBtn?.addEventListener("click", previewAirdrop);
+  ui.results?.addEventListener("click", (event) => {
+    const button = event.target.closest?.(".airdrop-kol-wallet-copy");
+    if (!button) return;
+    copyKolWallet(button.dataset.wallet, button);
+  });
   setInterval(() => {
     if (document.visibilityState === "hidden" || !officialAirdrop?.configured) return;
     previewAirdrop({ silent: true }).catch(() => {
