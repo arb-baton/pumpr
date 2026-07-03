@@ -1,9 +1,11 @@
-import { api } from "./api.js?v=20260703sharedauth";
+import { api } from "./api.js?v=20260703adminwallet";
 import { defaultUsername, loadUserProfile, shortAddress, walletState } from "./core.js?v=20260703sharedauth";
 import { setAlert } from "./ui.js?v=20260703sharedauth";
 
 const SUPPORT_MODAL_ID = "supportWidgetModal";
 const SUPPORT_LINK_ID = "supportSideLink";
+const ADMIN_AUTH_SCOPE = "pumpr-admin";
+let adminProofCache = null;
 
 const HELP_COLLECTIONS = [
   {
@@ -182,7 +184,48 @@ function escapeHtml(value = "") {
 
 function normalizeAddress(value = "") {
   const text = String(value || "").trim();
-  return /^0x[a-fA-F0-9]{40}$/.test(text) ? text : "";
+  if (/^0x[a-fA-F0-9]{40}$/.test(text)) return text;
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text) ? text : "";
+}
+
+function addressKey(value = "") {
+  const normalized = normalizeAddress(value);
+  if (!normalized) return "";
+  return /^0x[a-fA-F0-9]{40}$/.test(normalized) ? normalized.toLowerCase() : normalized;
+}
+
+function buildAdminAuthMessage(wallet, issuedAt) {
+  return [`Pump-r admin access`, `Wallet: ${wallet}`, `Scope: ${ADMIN_AUTH_SCOPE}`, `Issued At: ${issuedAt}`].join("\n");
+}
+
+function bytesToBase64(bytes) {
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+  let out = "";
+  for (let i = 0; i < arr.length; i += 1) out += String.fromCharCode(arr[i]);
+  return btoa(out);
+}
+
+async function getAdminProof(address) {
+  const normalized = normalizeAddress(address);
+  const key = addressKey(normalized);
+  const now = Date.now();
+  if (adminProofCache?.key === key && Date.parse(adminProofCache.issuedAt || "") > now - 10 * 60 * 1000) {
+    return adminProofCache.proof;
+  }
+  const ws = walletState() || {};
+  const provider = ws.solanaProvider || ws.provider;
+  if (!normalized || !provider?.signMessage) throw new Error("Connect the admin Phantom wallet to view inbox.");
+  const issuedAt = new Date().toISOString();
+  const adminMessage = buildAdminAuthMessage(normalized, issuedAt);
+  const signed = await provider.signMessage(new TextEncoder().encode(adminMessage), "utf8");
+  const signature = signed?.signature || signed;
+  const proof = {
+    adminWallet: normalized,
+    adminMessage,
+    adminSignature: bytesToBase64(signature)
+  };
+  adminProofCache = { key, issuedAt, proof };
+  return proof;
 }
 
 function nowAgo(unixSeconds) {
@@ -198,7 +241,8 @@ function nowAgo(unixSeconds) {
 }
 
 function currentAddress() {
-  return normalizeAddress(walletState()?.address || "");
+  const ws = walletState() || {};
+  return normalizeAddress(ws.solanaAddress || ws.address || ws.publicKey || "");
 }
 
 function profileName(address) {
@@ -331,10 +375,11 @@ export function initSupportWidget({ alertEl = null } = {}) {
     }
     const address = currentAddress();
     const platformAddress = normalizeAddress(state.config?.platformAddress || "");
+    const adminWallets = Array.isArray(state.config?.adminWallets) ? state.config.adminWallets : [];
+    const currentKey = addressKey(address);
     state.isAdmin =
-      Boolean(address) &&
-      Boolean(platformAddress) &&
-      String(address).toLowerCase() === String(platformAddress).toLowerCase();
+      Boolean(currentKey) &&
+      (addressKey(platformAddress) === currentKey || adminWallets.some((wallet) => addressKey(wallet) === currentKey));
 
     if (address) {
       try {
@@ -345,7 +390,8 @@ export function initSupportWidget({ alertEl = null } = {}) {
       }
       if (state.isAdmin) {
         try {
-          const inboxPayload = await api.supportInbox(address);
+          const proof = await getAdminProof(address);
+          const inboxPayload = await api.supportInbox(address, proof);
           state.inbox = Array.isArray(inboxPayload?.messages) ? inboxPayload.messages : [];
         } catch {
           state.inbox = [];

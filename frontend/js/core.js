@@ -1264,11 +1264,19 @@ export function loadCachedFollowerCount(address) {
 }
 
 function normalizeProfileAddress(address) {
+  const text = String(address || "").trim();
   try {
-    return ethers.getAddress(String(address || "").trim());
+    return ethers.getAddress(text);
   } catch {
-    return "";
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text) ? text : "";
   }
+}
+
+function defaultProfileUsername(address) {
+  const normalized = normalizeProfileAddress(address);
+  if (!normalized) return "Guest";
+  if (/^0x[a-fA-F0-9]{40}$/.test(normalized)) return defaultUsername(normalized);
+  return `sol_${normalized.slice(0, 6)}`;
 }
 
 function normalizeProfileValue(address, value = {}) {
@@ -1278,7 +1286,7 @@ function normalizeProfileValue(address, value = {}) {
   const imageUri = String(value.imageUri || "").trim();
   return {
     address: normalized,
-    username: username || defaultUsername(normalized),
+    username: username || defaultProfileUsername(normalized),
     bio: bio.slice(0, 500),
     imageUri: imageUri.slice(0, PROFILE_IMAGE_URI_MAX_LENGTH)
   };
@@ -1362,7 +1370,7 @@ function mergeProfileValues(address, localValue = {}, remoteValue = {}) {
   const normalized = normalizeProfileAddress(address);
   const local = normalizeProfileValue(normalized, localValue || {});
   const remote = normalizeProfileValue(normalized, remoteValue || {});
-  const fallbackName = defaultUsername(normalized);
+  const fallbackName = defaultProfileUsername(normalized);
 
   const localHasCustomName = String(local.username || "") !== fallbackName;
   const remoteHasCustomName = String(remote.username || "") !== fallbackName;

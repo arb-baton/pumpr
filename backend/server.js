@@ -5,6 +5,8 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const { ethers } = require("ethers");
+const bs58 = require("bs58");
+const { ed25519 } = require("@noble/curves/ed25519");
 
 dotenv.config({ override: true });
 
@@ -32,6 +34,7 @@ const PUMPFUN_LAUNCHES_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpum
 const AIRDROP_HOLDER_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-airdrop-holders.json") : path.join(ROOT, "cache", "airdrop-holders.json");
 const PUMPR_CARD_WAITLIST_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-card-waitlist.json") : path.join(ROOT, "cache", "pumpr-card-waitlist.json");
 const OFFICIAL_PUMPFUN_MINT = "C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump";
+const DEFAULT_PUMPR_ADMIN_WALLET = "ER4KEmk3jCeNhfV7hNTNyh2XGNpbE8Pqk9CZsBe2BJiy";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || ""
@@ -288,12 +291,16 @@ const xOauthStates = new Map();
 
 function resolvePlatformSupportAddress() {
   const candidates = [
+    process.env.PUMPR_MAIN_WALLET,
+    process.env.PUMPR_MAIN_ADMIN_WALLET,
+    process.env.PUMPR_ADMIN_WALLET,
+    DEFAULT_PUMPR_ADMIN_WALLET,
     process.env.SUPPORT_WALLET,
     process.env.PLATFORM_FEE_RECIPIENT,
     process.env.FEE_RECIPIENT
   ];
   for (const candidate of candidates) {
-    const normalized = normalizeAddress(candidate || "");
+    const normalized = normalizeSupportAddress(candidate || "");
     if (normalized) return normalized;
   }
   return null;
@@ -817,10 +824,112 @@ function normalizeAddress(input) {
   }
 }
 
+function normalizeProfileAddress(input) {
+  const text = String(input || "").trim();
+  const evm = normalizeAddress(text);
+  if (evm) return evm;
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text) ? text : null;
+}
+
+function normalizeSupportAddress(input) {
+  return normalizeProfileAddress(input);
+}
+
+function supportAddressKey(input) {
+  const normalized = normalizeSupportAddress(input);
+  if (!normalized) return "";
+  return /^0x[a-fA-F0-9]{40}$/.test(normalized) ? normalized.toLowerCase() : normalized;
+}
+
+function configuredAdminWallets() {
+  const values = [
+    DEFAULT_PUMPR_ADMIN_WALLET,
+    process.env.PUMPR_MAIN_WALLET,
+    process.env.PUMPR_MAIN_ADMIN_WALLET,
+    process.env.PUMPR_ADMIN_WALLET,
+    process.env.SUPPORT_WALLET,
+    ...(String(process.env.PUMPR_ADMIN_WALLETS || "")
+      .split(",")
+      .map((row) => row.trim())
+      .filter(Boolean))
+  ];
+  const seen = new Set();
+  const wallets = [];
+  for (const value of values) {
+    const normalized = normalizeSupportAddress(value);
+    const key = supportAddressKey(normalized);
+    if (!normalized || !key || seen.has(key)) continue;
+    seen.add(key);
+    wallets.push(normalized);
+  }
+  return wallets;
+}
+
+function isAdminSupportWallet(input) {
+  const key = supportAddressKey(input);
+  if (!key) return false;
+  return configuredAdminWallets().some((wallet) => supportAddressKey(wallet) === key);
+}
+
+function buildAdminAuthMessage(wallet, scope, issuedAt) {
+  return [
+    "Pump-r admin access",
+    `Wallet: ${wallet}`,
+    `Scope: ${scope}`,
+    `Issued At: ${issuedAt}`
+  ].join("\n");
+}
+
+function decodeAdminSignature(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  try {
+    return Buffer.from(text, "base64");
+  } catch {
+    return null;
+  }
+}
+
+function verifyAdminWalletProof(req, scope = "pumpr-admin") {
+  const wallet = normalizeSupportAddress(req.query.adminWallet || req.query.wallet || req.query.address || req.get("x-admin-wallet") || "");
+  const message = String(req.query.adminMessage || req.get("x-admin-message") || "");
+  const signature = decodeAdminSignature(req.query.adminSignature || req.get("x-admin-signature") || "");
+  if (!wallet || !message || !signature || !isAdminSupportWallet(wallet)) return false;
+
+  const issuedMatch = message.match(/^Issued At:\s*(.+)$/m);
+  const issuedAt = String(issuedMatch?.[1] || "").trim();
+  const issuedMs = Date.parse(issuedAt);
+  const now = Date.now();
+  if (!Number.isFinite(issuedMs) || issuedMs < now - 15 * 60 * 1000 || issuedMs > now + 2 * 60 * 1000) return false;
+  if (message !== buildAdminAuthMessage(wallet, scope, issuedAt)) return false;
+
+  try {
+    const publicKeyBytes = bs58.decode(wallet);
+    if (publicKeyBytes.length !== 32 || signature.length !== 64) return false;
+    return ed25519.verify(signature, Buffer.from(message, "utf8"), publicKeyBytes);
+  } catch {
+    return false;
+  }
+}
+
+function hasAdminRequestAccess(req, scope = "pumpr-admin") {
+  const configuredKey = String(process.env.PUMPR_CARD_WAITLIST_ADMIN_KEY || process.env.PUMPR_ADMIN_KEY || "").trim();
+  const providedKey = String(req.query.key || req.get("x-admin-key") || "").trim();
+  if (configuredKey && providedKey === configuredKey) return true;
+  return verifyAdminWalletProof(req, scope);
+}
+
 function defaultUsername(address) {
   const normalized = normalizeAddress(address);
   if (!normalized) return "Guest";
   return `eth_${normalized.slice(2, 8).toLowerCase()}`;
+}
+
+function defaultProfileUsername(address) {
+  const normalized = normalizeProfileAddress(address);
+  if (!normalized) return "Guest";
+  if (normalizeAddress(normalized)) return defaultUsername(normalized);
+  return `sol_${normalized.slice(0, 6)}`;
 }
 
 function sanitizePersistedImageUri(rawImageURI = "") {
@@ -863,24 +972,24 @@ function sanitizePersistedImageUri(rawImageURI = "") {
 }
 
 function sanitizeProfileValue(address, value = {}) {
-  const normalized = normalizeAddress(address);
+  const normalized = normalizeProfileAddress(address);
   const safeAddress = normalized || "";
   const usernameRaw = String(value.username || "").trim();
   const bioRaw = String(value.bio || "").trim();
   const imageRaw = sanitizePersistedImageUri(String(value.imageUri || "").trim());
   return {
     address: safeAddress,
-    username: usernameRaw || defaultUsername(safeAddress),
+    username: usernameRaw || defaultProfileUsername(safeAddress),
     bio: bioRaw.slice(0, 500),
     imageUri: imageRaw.slice(0, PROFILE_IMAGE_URI_MAX_LENGTH)
   };
 }
 
 function mergeProfileValues(address, localValue = {}, remoteValue = {}) {
-  const normalized = normalizeAddress(address);
+  const normalized = normalizeProfileAddress(address);
   const local = sanitizeProfileValue(normalized, localValue || {});
   const remote = sanitizeProfileValue(normalized, remoteValue || {});
-  const fallbackName = defaultUsername(normalized);
+  const fallbackName = defaultProfileUsername(normalized);
 
   const localHasCustomName = String(local.username || "") !== fallbackName;
   const remoteHasCustomName = String(remote.username || "") !== fallbackName;
@@ -893,13 +1002,13 @@ function mergeProfileValues(address, localValue = {}, remoteValue = {}) {
 }
 
 function cacheProfileRow(address, value = {}) {
-  const normalized = normalizeAddress(address);
+  const normalized = normalizeProfileAddress(address);
   if (!normalized) return;
   profileLastKnownCache.set(normalized.toLowerCase(), sanitizeProfileValue(normalized, value));
 }
 
 function getCachedProfile(address) {
-  const normalized = normalizeAddress(address);
+  const normalized = normalizeProfileAddress(address);
   if (!normalized) return null;
   return profileLastKnownCache.get(normalized.toLowerCase()) || null;
 }
@@ -933,7 +1042,7 @@ function writeProfileDb(store) {
 }
 
 function getPersistedProfileSync(address) {
-  const normalized = normalizeAddress(address);
+  const normalized = normalizeProfileAddress(address);
   if (!normalized) {
     return sanitizeProfileValue("", {});
   }
@@ -946,7 +1055,7 @@ function getPersistedProfileSync(address) {
 function getPersistedProfilesSync(addresses = []) {
   const out = {};
   for (const raw of addresses) {
-    const normalized = normalizeAddress(raw);
+    const normalized = normalizeProfileAddress(raw);
     if (!normalized) continue;
     const key = normalized.toLowerCase();
     out[key] = getPersistedProfileSync(normalized);
@@ -955,7 +1064,7 @@ function getPersistedProfilesSync(addresses = []) {
 }
 
 function setPersistedProfileSync(address, value = {}) {
-  const normalized = normalizeAddress(address);
+  const normalized = normalizeProfileAddress(address);
   if (!normalized) {
     throw new Error("Invalid address");
   }
@@ -1191,7 +1300,7 @@ function assertProfileStoreConfigured() {
 }
 
 async function getPersistedProfile(address) {
-  const normalized = normalizeAddress(address);
+  const normalized = normalizeProfileAddress(address);
   if (!normalized) return sanitizeProfileValue("", {});
 
   assertProfileStoreConfigured();
@@ -1232,7 +1341,7 @@ async function getPersistedProfile(address) {
 }
 
 async function getPersistedProfiles(addresses = []) {
-  const normalized = [...new Set((Array.isArray(addresses) ? addresses : []).map((row) => normalizeAddress(row)).filter(Boolean))];
+  const normalized = [...new Set((Array.isArray(addresses) ? addresses : []).map((row) => normalizeProfileAddress(row)).filter(Boolean))];
   if (!normalized.length) return {};
 
   assertProfileStoreConfigured();
@@ -1289,7 +1398,7 @@ async function getPersistedProfiles(addresses = []) {
 }
 
 async function setPersistedProfile(address, value = {}) {
-  const normalized = normalizeAddress(address);
+  const normalized = normalizeProfileAddress(address);
   if (!normalized) throw new Error("Invalid address");
   const key = normalized.toLowerCase();
   const next = sanitizeProfileValue(normalized, value);
@@ -4259,12 +4368,12 @@ function writeSupportDb(store) {
 
 function normalizeSupportMessage(row = {}) {
   const id = String(row.id || "").trim();
-  const fromAddress = normalizeAddress(row.fromAddress || row.from || "");
-  const toAddress = normalizeAddress(row.toAddress || row.to || "");
+  const fromAddress = normalizeSupportAddress(row.fromAddress || row.from || "");
+  const toAddress = normalizeSupportAddress(row.toAddress || row.to || "");
   const subject = String(row.subject || "").trim().slice(0, 120);
   const body = String(row.body || "").trim().slice(0, 4000);
   const category = String(row.category || "").trim().slice(0, 64);
-  const tokenAddress = normalizeAddress(row.tokenAddress || row.token || "");
+  const tokenAddress = normalizeProfileAddress(row.tokenAddress || row.token || "");
   const createdAt = parseUnixTimestamp(row.createdAt || row.created_at || row.ts);
   if (!id || !fromAddress || !toAddress || !body || createdAt <= 0) return null;
   return {
@@ -4281,32 +4390,33 @@ function normalizeSupportMessage(row = {}) {
 }
 
 function listSupportMessagesForAddress(address) {
-  const normalized = normalizeAddress(address);
-  if (!normalized) return [];
-  const key = normalized.toLowerCase();
+  const key = supportAddressKey(address);
+  if (!key) return [];
   const store = readSupportDb();
   const rows = (Array.isArray(store.messages) ? store.messages : [])
     .map((row) => normalizeSupportMessage(row))
     .filter(Boolean)
-    .filter((row) => row.fromAddress.toLowerCase() === key || row.toAddress.toLowerCase() === key)
+    .filter((row) => supportAddressKey(row.fromAddress) === key || supportAddressKey(row.toAddress) === key)
     .sort((a, b) => b.createdAt - a.createdAt);
   return rows;
 }
 
-function listSupportInbox(platformAddress) {
-  const normalized = normalizeAddress(platformAddress);
-  if (!normalized) return [];
-  const key = normalized.toLowerCase();
+function listAllSupportMessages() {
   const store = readSupportDb();
   return (Array.isArray(store.messages) ? store.messages : [])
     .map((row) => normalizeSupportMessage(row))
     .filter(Boolean)
-    .filter((row) => row.toAddress.toLowerCase() === key)
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
+function listSupportInbox(platformAddress) {
+  const key = supportAddressKey(platformAddress);
+  if (!key) return [];
+  return listAllSupportMessages().filter((row) => supportAddressKey(row.toAddress) === key);
+}
+
 function createSupportMessage(payload = {}) {
-  const fromAddress = normalizeAddress(payload.fromAddress || payload.from || "");
+  const fromAddress = normalizeSupportAddress(payload.fromAddress || payload.from || "");
   const platformAddress = resolvePlatformSupportAddress();
   if (!fromAddress) throw new Error("fromAddress is required");
   if (!platformAddress) throw new Error("Support wallet is not configured");
@@ -4317,17 +4427,17 @@ function createSupportMessage(payload = {}) {
 
   const subjectRaw = String(payload.subject || "").trim();
   const categoryRaw = String(payload.category || "").trim();
-  const tokenAddress = normalizeAddress(payload.tokenAddress || "");
+  const tokenAddress = normalizeProfileAddress(payload.tokenAddress || "");
 
   const store = readSupportDb();
   const next = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
-    fromAddress: fromAddress.toLowerCase(),
-    toAddress: platformAddress.toLowerCase(),
+    fromAddress,
+    toAddress: platformAddress,
     subject: (subjectRaw || "Support request").slice(0, 120),
     body: body.slice(0, 4000),
     category: (categoryRaw || "general").slice(0, 64).toLowerCase(),
-    tokenAddress: tokenAddress ? tokenAddress.toLowerCase() : "",
+    tokenAddress: tokenAddress || "",
     status: "open",
     createdAt: Math.floor(Date.now() / 1000)
   };
@@ -8395,6 +8505,7 @@ app.get("/api/support/config", async (_req, res) => {
     const platformAddress = resolvePlatformSupportAddress();
     res.json({
       platformAddress: platformAddress || "",
+      adminWallets: configuredAdminWallets(),
       quickActions: [
         { key: "coin_details", label: "Coin Details" },
         { key: "trading_problems", label: "Trading Problems" },
@@ -8435,11 +8546,8 @@ app.post("/api/pumpr-card/waitlist", async (req, res) => {
 
 app.get("/api/pumpr-card/waitlist", async (req, res) => {
   try {
-    const configuredKey = String(process.env.PUMPR_CARD_WAITLIST_ADMIN_KEY || "").trim();
-    const providedKey = String(req.query.key || req.get("x-admin-key") || "").trim();
-    if (configuredKey && providedKey !== configuredKey) return res.status(403).json({ error: "Forbidden" });
-    if (!configuredKey && IS_VERCEL_RUNTIME) {
-      return res.status(403).json({ error: "Set PUMPR_CARD_WAITLIST_ADMIN_KEY to view waitlist entries" });
+    if (!hasAdminRequestAccess(req, "pumpr-admin")) {
+      return res.status(403).json({ error: "Only the platform admin wallet can view waitlist entries" });
     }
     const store = await readPumprCardWaitlistPersistent({ refresh: true });
     res.json({ entries: store.entries || [] });
@@ -8450,7 +8558,7 @@ app.get("/api/pumpr-card/waitlist", async (req, res) => {
 
 app.get("/api/support/messages", async (req, res) => {
   try {
-    const address = normalizeAddress(req.query.address || "");
+    const address = normalizeSupportAddress(req.query.address || "");
     if (!address) return res.status(400).json({ error: "address is required" });
     const rows = listSupportMessagesForAddress(address).slice(0, 200);
     res.json({ messages: rows });
@@ -8461,13 +8569,12 @@ app.get("/api/support/messages", async (req, res) => {
 
 app.get("/api/support/inbox", async (req, res) => {
   try {
-    const viewer = normalizeAddress(req.query.address || "");
-    const platformAddress = resolvePlatformSupportAddress();
+    const viewer = normalizeSupportAddress(req.query.address || "");
     if (!viewer) return res.status(400).json({ error: "address is required" });
-    if (!platformAddress || viewer.toLowerCase() !== platformAddress.toLowerCase()) {
+    if (!hasAdminRequestAccess(req, "pumpr-admin")) {
       return res.status(403).json({ error: "Only platform support wallet can view inbox" });
     }
-    const rows = listSupportInbox(platformAddress).slice(0, 500);
+    const rows = listAllSupportMessages().slice(0, 500);
     res.json({ messages: rows });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to load support inbox" });

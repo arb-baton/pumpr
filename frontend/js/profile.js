@@ -25,7 +25,7 @@ import {
 } from "./core.js?v=20260703sharedauth";
 import { initTopbarWalletProfile, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260703sharedauth";
 import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
-import { initSupportWidget } from "./support.js?v=20260703sharedauth";
+import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 const CLAIM_MIN_USD = 8;

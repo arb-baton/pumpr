@@ -7,6 +7,16 @@ function withPreferredChain(path) {
   return `${path}${path.includes("?") ? "&" : "?"}chainId=${chainId}`;
 }
 
+function appendAdminProof(path, proof = {}) {
+  const params = new URLSearchParams();
+  if (proof.adminWallet) params.set("adminWallet", String(proof.adminWallet));
+  if (proof.adminMessage) params.set("adminMessage", String(proof.adminMessage));
+  if (proof.adminSignature) params.set("adminSignature", String(proof.adminSignature));
+  const qs = params.toString();
+  if (!qs) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}${qs}`;
+}
+
 export async function apiGet(path) {
   const target = withPreferredChain(path);
   const ctrl = new AbortController();
@@ -173,9 +183,11 @@ export const api = {
   commentAlphaTip: (id, body = {}) => apiPost(`/api/alpha/${encodeURIComponent(String(id || ""))}/comment`, body),
   recordAlphaTip: (id, body = {}) => apiPost(`/api/alpha/${encodeURIComponent(String(id || ""))}/tip`, body),
   pumprCardWaitlist: (body = {}) => apiPost("/api/pumpr-card/waitlist", body),
+  pumprCardWaitlistEntries: (address, proof = {}) =>
+    apiGet(appendAdminProof(`/api/pumpr-card/waitlist?address=${encodeURIComponent(String(address || ""))}`, proof)),
   supportConfig: () => apiGet("/api/support/config"),
   supportMessages: (address) => apiGet(`/api/support/messages?address=${encodeURIComponent(String(address || ""))}`),
-  supportInbox: (address) => apiGet(`/api/support/inbox?address=${encodeURIComponent(String(address || ""))}`),
+  supportInbox: (address, proof = {}) => apiGet(appendAdminProof(`/api/support/inbox?address=${encodeURIComponent(String(address || ""))}`, proof)),
   sendSupportMessage: (body = {}) => apiPost("/api/support/message", body),
   pumpfunCoin: (mint) => apiGet(`/api/pumpfun/coin/${encodeURIComponent(String(mint || ""))}`),
   launchAvailability: (options = {}) => {

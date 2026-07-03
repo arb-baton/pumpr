@@ -13824,6 +13824,140 @@ button[disabled] {
   color: #ff8fa5;
 }
 
+.pumpr-card-admin-panel {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 3vw, 2.3rem) 3rem;
+}
+
+.pumpr-card-admin-head {
+  border: 1px solid rgba(125, 255, 199, 0.24);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(88, 229, 149, 0.12), rgba(18, 23, 34, 0.92));
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.pumpr-card-admin-head small {
+  display: inline-flex;
+  color: #7dffc7;
+  font-weight: 900;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.pumpr-card-admin-head h2 {
+  margin: 0.35rem 0 0.25rem;
+  color: #f8fbff;
+  font-size: 1.65rem;
+  letter-spacing: 0;
+}
+
+.pumpr-card-admin-head p {
+  margin: 0;
+  color: #aebbd4;
+  line-height: 1.45;
+}
+
+.pumpr-card-admin-grid {
+  margin-top: 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.pumpr-card-admin-card {
+  min-width: 0;
+  border: 1px solid rgba(143, 159, 197, 0.24);
+  border-radius: 8px;
+  background: rgba(18, 23, 34, 0.9);
+  overflow: hidden;
+}
+
+.pumpr-card-admin-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid rgba(143, 159, 197, 0.16);
+}
+
+.pumpr-card-admin-card-head h3 {
+  margin: 0;
+  color: #f8fbff;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.pumpr-card-admin-card-head span {
+  display: inline-flex;
+  min-width: 2.1rem;
+  justify-content: center;
+  border: 1px solid rgba(125, 255, 199, 0.3);
+  border-radius: 999px;
+  color: #7dffc7;
+  font-weight: 900;
+  padding: 0.22rem 0.5rem;
+}
+
+.pumpr-card-admin-list {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.pumpr-card-admin-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(143, 159, 197, 0.12);
+}
+
+.pumpr-card-admin-row:last-child {
+  border-bottom: 0;
+}
+
+.pumpr-card-admin-row strong,
+.pumpr-card-admin-row span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pumpr-card-admin-row strong {
+  color: #f8fbff;
+  font-size: 0.92rem;
+}
+
+.pumpr-card-admin-row span {
+  margin-top: 0.18rem;
+  color: #aebbd4;
+  font-size: 0.8rem;
+}
+
+.pumpr-card-admin-row em {
+  color: #7dffc7;
+  font-style: normal;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.pumpr-card-admin-list .muted {
+  margin: 0;
+  padding: 1rem;
+  color: #aebbd4;
+}
+
+.pumpr-card-admin-list .muted.error {
+  color: #ff8fa5;
+}
+
 @media (max-width: 980px) {
   .pumpr-card-hero,
   .pumpr-card-waitlist-band {
@@ -13837,6 +13971,10 @@ button[disabled] {
   .pumpr-card-grid {
     grid-template-columns: 1fr;
   }
+
+  .pumpr-card-admin-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 560px) {
@@ -13846,6 +13984,15 @@ button[disabled] {
 
   .pumpr-card-input-row {
     grid-template-columns: 1fr;
+  }
+
+  .pumpr-card-admin-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pumpr-card-admin-head {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

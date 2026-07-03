@@ -27,7 +27,7 @@ import {
 } from "./core.js?v=20260703sharedauth";
 import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260703sharedauth";
 import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
-import { initSupportWidget } from "./support.js?v=20260703sharedauth";
+import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 
 const RANGE_MS = {
   "5m": 5 * 60 * 1000,

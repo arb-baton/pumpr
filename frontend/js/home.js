@@ -20,7 +20,7 @@ import {
 } from "./core.js?v=20260703sharedauth";
 import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703sharedauth";
 import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
-import { initSupportWidget } from "./support.js?v=20260703sharedauth";
+import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 
 const WATCHLIST_KEY = "etherpump.watchlist.v1";
 const LAUNCH_CACHE_KEY = "etherpump.launches.cache.v3";

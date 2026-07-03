@@ -7,3 +7,5 @@ frontend/.DS_Store
 *.out.log
 *.err.log
 tmp*.log
+
+.vercel
