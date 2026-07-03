@@ -1,0 +1,14 @@
+{
+  "chainId": 4663,
+  "deployedAt": "2026-07-03T17:27:41.957Z",
+  "memeLaunchFactory": "0x82766D87a1C47fDd568Fe6053738164429eF340c",
+  "feeRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3",
+  "platformFeeRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3",
+  "feeBps": 50,
+  "launchFeeWei": "1500000000000000",
+  "virtualEthReserve": "500000000000000000",
+  "virtualTokenReserve": "1000000000000000000000000",
+  "graduationTargetEth": "12000000000000000000",
+  "dexRouter": "0x0000000000000000000000000000000000000000",
+  "lpRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3"
+}
