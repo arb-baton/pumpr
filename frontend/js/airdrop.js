@@ -1,6 +1,6 @@
 import { api } from "./api.js?v=20260703holdingsrefresh";
 import { parseUiError, shortAddress } from "./core.js?v=20260703sharedauth";
-import { setAlert } from "./ui.js?v=20260703sharedauth";
+import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703sharedauth";
 import { KOL_LEADERBOARD } from "./kolData.js?v=20260703kol51";
 
 const AIRDROP_HOLDER_REFRESH_MS = 30_000;
@@ -78,6 +78,7 @@ const ui = {
   claimableStat: document.getElementById("airdropClaimableStat"),
   holderStat: document.getElementById("airdropHolderStat"),
   chainStat: document.getElementById("airdropChainStat"),
+  signInBtn: document.getElementById("signInBtn"),
   alert: document.getElementById("alert")
 };
 
@@ -611,6 +612,12 @@ async function loadCompletedAirdrop() {
 }
 
 async function init() {
+  const walletControls = initTopbarWalletProfile({
+    signInBtn: ui.signInBtn,
+    alertEl: ui.alert
+  });
+  await walletControls?.ready?.catch(() => null);
+
   await loadCompletedAirdrop();
   try {
     const config = await api.officialAirdrop();
