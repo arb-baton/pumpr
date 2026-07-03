@@ -6679,25 +6679,27 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
     if (!amount || amount.lte(new BN(0))) {
       return res.status(400).json({ error: "Token send buy amount is too small for the Pump.fun quote" });
     }
-    const kolTokenAccount = splToken.getAssociatedTokenAddressSync(mint, kolWallet, true, splToken.TOKEN_2022_PROGRAM_ID);
+    const tokenProgram = splToken.TOKEN_2022_PROGRAM_ID;
+    const userTokenAccount = splToken.getAssociatedTokenAddressSync(mint, user, true, tokenProgram);
+    const kolTokenAccount = splToken.getAssociatedTokenAddressSync(mint, kolWallet, true, tokenProgram);
     const instructions = [
       splToken.createAssociatedTokenAccountIdempotentInstruction(
         user,
-        kolTokenAccount,
-        kolWallet,
+        userTokenAccount,
+        user,
         mint,
-        splToken.TOKEN_2022_PROGRAM_ID
+        tokenProgram
       ),
       await PUMP_SDK.buyInstruction({
         global,
         mint,
         creator,
         user,
-        associatedUser: kolTokenAccount,
+        associatedUser: userTokenAccount,
         amount,
         solAmount,
         slippage: 1,
-        tokenProgram: splToken.TOKEN_2022_PROGRAM_ID,
+        tokenProgram,
         mayhemMode: false
       })
     ];
@@ -6709,10 +6711,13 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
         ...kolApplication,
         kolBuy: {
           wallet: kolApplication.wallet,
-          tokenAccount: kolTokenAccount.toBase58(),
+          tokenAccount: userTokenAccount.toBase58(),
+          userTokenAccount: userTokenAccount.toBase58(),
+          kolTokenAccount: kolTokenAccount.toBase58(),
           buySol: Number(kolApplication.buySol || 0),
           tokenAmount: amount.toString(),
-          recipientMode: "kol_wallet_direct",
+          tokenProgram: tokenProgram.toBase58(),
+          recipientMode: "user_wallet_pending_transfer",
           estimatedSupplyPct: Number(global?.tokenTotalSupply?.toString?.() || 0) > 0
             ? (Number(amount.toString()) / Number(global.tokenTotalSupply.toString())) * 100
             : Number(kolApplication.estimatedSupplyPct || 0)

@@ -1692,7 +1692,7 @@ async function launchPumpFun(details) {
     signature = String(finalized?.signature || "");
     finalizedLaunch = finalized?.launch || null;
     if (details.kolApplication?.enabled && Number(details.kolApplication.buySol || 0) > 0) {
-      setAlert(ui.alert, `Open Phantom again to buy ${details.kolApplication.buySol} SOL for the token send. Tokens will go directly to ${details.kolApplication.name}.`);
+      setAlert(ui.alert, `Open Phantom again to buy ${details.kolApplication.buySol} SOL for the token send. Pump-r will transfer those tokens to ${details.kolApplication.name} next.`);
       const kolPayload = await api.pumpfunKolBuy({
         mint,
         creatorWallet: details.pumpfunCreatorWallet || publicKey,
@@ -1703,7 +1703,7 @@ async function launchPumpFun(details) {
       if (!kolTransactionBase64) throw new Error("Token send buy transaction was not returned.");
       const kolTransaction = solanaWeb3.Transaction.from(base64ToBytes(kolTransactionBase64));
       const signedKol = await provider.signTransaction(kolTransaction);
-      setAlert(ui.alert, "Broadcasting token buy to your wallet...");
+      setAlert(ui.alert, "Broadcasting token buy before the KOL transfer...");
       const kolSent = await api.solanaSendTransaction({
         signedTransactionBase64: bytesToBase64(signedKol.serialize({ requireAllSignatures: false, verifySignatures: false })),
         rpcUrl: kolPayload.rpcUrl,
