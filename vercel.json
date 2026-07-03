@@ -61,7 +61,7 @@
     },
     {
       "src": "/data/(.*)",
-      "dest": "/frontend/data/$1"
+      "dest": "backend/server.js"
     },
     {
       "src": "/uploads/(.*)",
