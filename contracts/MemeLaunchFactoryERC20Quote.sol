@@ -8,6 +8,7 @@ import "./MemePoolERC20Quote.sol";
 /// @notice Launches meme tokens with bonding curves quoted in an ERC-20 asset such as USDC.
 contract MemeLaunchFactoryERC20Quote {
     uint256 public constant BPS_DENOMINATOR = 10_000;
+    uint256 public constant DEFAULT_TOKEN_TRADE_FEE_BPS = 50;
 
     struct LaunchInfo {
         address token;
@@ -185,7 +186,15 @@ contract MemeLaunchFactoryERC20Quote {
         require(totalSupply > 0, "supply required");
         require(creatorAllocationBps <= 2_000, "allocation too high");
 
-        MemeToken token = new MemeToken(name, symbol, totalSupply, address(this), msg.sender, platformFeeRecipient);
+        MemeToken token = new MemeToken(
+            name,
+            symbol,
+            totalSupply,
+            address(this),
+            msg.sender,
+            platformFeeRecipient,
+            DEFAULT_TOKEN_TRADE_FEE_BPS
+        );
         bool isPlatformCreator = msg.sender == platformFeeRecipient;
         address launchLpRecipient = isPlatformCreator ? platformFeeRecipient : defaultLpRecipient;
         if (defaultDexRouter != address(0)) {

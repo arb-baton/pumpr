@@ -5,7 +5,9 @@ export { ethers };
 export const FACTORY_ABI = [
   "event LaunchCreated(uint256 indexed launchId,address indexed creator,address indexed token,address pool,uint256 totalSupply,uint256 creatorAllocation,uint256 feeBps,uint256 graduationTargetEth,address dexRouter,address lpRecipient)",
   "function createLaunch(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps) payable returns (uint256 launchId,address tokenAddress,address poolAddress)",
+  "function createLaunchWithTax(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps,uint256 tokenTradeFeeBps) payable returns (uint256 launchId,address tokenAddress,address poolAddress)",
   "function createLaunchInstant(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps) payable returns (uint256 launchId,address tokenAddress,address poolAddress)",
+  "function createLaunchInstantWithTax(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps,uint256 tokenTradeFeeBps) payable returns (uint256 launchId,address tokenAddress,address poolAddress)",
   "function getLaunchCount() view returns (uint256)",
   "function getLaunch(uint256 launchId) view returns ((address token,address pool,address creator,string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocation,uint256 createdAt))"
 ];

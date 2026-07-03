@@ -28,6 +28,8 @@ import { initSupportWidget } from "./support.js?v=20260703sharedauth";
 import { KOL_LEADERBOARD } from "./kolData.js?v=20260703ansem";
 
 const MIN_INITIAL_LIQUIDITY_ETH = 0;
+const DEFAULT_TOKEN_TRADE_TAX_PCT = 0.5;
+const MAX_TOKEN_TRADE_TAX_PCT = 10;
 const HOME_LAUNCH_CACHE_KEY = "etherpump.launches.cache.v3";
 const HOME_LAUNCH_CACHE_MAX_ITEMS = 120;
 const DEFAULT_PUMPFUN_SUPPLY = 1_000_000_000;
@@ -110,6 +112,7 @@ const ui = {
   twitter: document.getElementById("twitter"),
   telegram: document.getElementById("telegram"),
   devBuyEth: document.getElementById("devBuyEth"),
+  tradeTaxPct: document.getElementById("tradeTaxPct"),
   launchMcapUsd: document.getElementById("launchMcapUsd"),
   launchMathCard: document.getElementById("launchMathCard"),
   launchMathPrimary: document.getElementById("launchMathPrimary"),
@@ -493,7 +496,7 @@ function renderChainSelector() {
       : selectedQuoteMode() === "usdc"
       ? "USDC launches use a USDC-paired bonding curve. Buyers can still route from ETH through Uniswap after graduation."
       : Number(current?.chainId || state.selectedChainId) === 4663
-      ? "Robinhood Chain uses ETH for gas. Before launch, choose a starter buy to seed the curve or keep it at 0 to launch as-is."
+      ? "Robinhood Chain uses ETH for gas. Add starter liquidity to create burned LP when a DEX router is configured, or keep it at 0 to launch as-is."
       : monadConfigured
       ? "Wallet will switch to the selected network before launch."
       : "Monad launches are ready once the Monad factory address is configured.";
@@ -1169,6 +1172,7 @@ function setupFormEnhancements() {
   ui.supply?.addEventListener("input", () => updateLaunchMath({ source: "liquidity" }));
   ui.creatorBuyEth?.addEventListener("input", () => updateLaunchMath({ source: "liquidity" }));
   ui.devBuyEth?.addEventListener("input", () => updateLaunchMath({ source: "liquidity" }));
+  ui.tradeTaxPct?.addEventListener("input", () => updateLaunchMath({ source: "liquidity" }));
   ui.launchMcapUsd?.addEventListener("input", () => updateLaunchMath({ source: "target" }));
   ui.pickFileBtn?.addEventListener("click", () => {
     ui.imageFile?.click();
@@ -1341,6 +1345,7 @@ async function prepareLaunchDetails() {
   let imageUri = ui.image.value.trim();
   const description = composeDescription();
   const initialLiquidityEthInput = ui.devBuyEth.value.trim();
+  const tokenTradeTaxPct = parseNumberInput(ui.tradeTaxPct?.value, DEFAULT_TOKEN_TRADE_TAX_PCT);
   const pumpfunDevBuySol = parseNumberInput(ui.pumpfunDevBuySol?.value, 0);
   const kolApplication = isPumpFunMode() ? readKolApplication() : null;
 
@@ -1369,6 +1374,9 @@ async function prepareLaunchDetails() {
   }
   if (creatorAllocationPct > 20) {
     throw new Error("Creator allocation must be 20% or lower.");
+  }
+  if (!Number.isFinite(tokenTradeTaxPct) || tokenTradeTaxPct < 0 || tokenTradeTaxPct > MAX_TOKEN_TRADE_TAX_PCT) {
+    throw new Error(`Token trade tax must be between 0% and ${MAX_TOKEN_TRADE_TAX_PCT}%.`);
   }
 
   if (!imageUri) {
@@ -1400,6 +1408,7 @@ async function prepareLaunchDetails() {
     description,
     totalSupply: ethers.parseUnits(totalSupplyInput, 18),
     creatorBps: BigInt(Math.round(creatorAllocationPct * 100)),
+    tokenTradeFeeBps: BigInt(Math.round(tokenTradeTaxPct * 100)),
     starterBuyEth: ethers.parseUnits(initialLiquidityEthInput || "0", selectedQuoteAsset().decimals || 18),
     pumpfunDevBuySol,
     pumpfunDevBuyLamports: ethers.parseUnits(String(pumpfunDevBuySol || 0), 9),
@@ -1433,42 +1442,56 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
 
   const factory = makeFactoryContract(state.config.factoryAddress);
   const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
-  const totalValue = launchFeeWei;
+  const dexRouter = String(state.config?.deployment?.dexRouter || ethers.ZeroAddress);
+  const hasDexRouter = dexRouter && dexRouter.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
+  const useTaxLaunch = Number(state.selectedChainId || 0) === 4663 && selectedQuoteMode() === "native";
+  const useInstantLiquidity = useTaxLaunch && hasDexRouter && details.starterBuyEth > 0n;
+  const totalValue = launchFeeWei + (useInstantLiquidity ? details.starterBuyEth : 0n);
+  const launchMethodName = useTaxLaunch
+    ? useInstantLiquidity
+      ? "createLaunchInstantWithTax"
+      : "createLaunchWithTax"
+    : "createLaunch";
+  const launchMethod = factory[launchMethodName];
+  const launchArgs = useTaxLaunch
+    ? [
+        details.name,
+        details.symbol,
+        details.imageUri,
+        details.description,
+        details.totalSupply,
+        details.creatorBps,
+        details.tokenTradeFeeBps
+      ]
+    : [
+        details.name,
+        details.symbol,
+        details.imageUri,
+        details.description,
+        details.totalSupply,
+        details.creatorBps
+      ];
   await assertLaunchBalance({ launchFeeWei, starterBuyEth: selectedQuoteMode() === "usdc" ? 0n : details.starterBuyEth });
 
-  const simulated = await factory.createLaunch.staticCall(
-    details.name,
-    details.symbol,
-    details.imageUri,
-    details.description,
-    details.totalSupply,
-    details.creatorBps,
-    { value: totalValue }
-  );
+  const simulated = await launchMethod.staticCall(...launchArgs, { value: totalValue });
 
   const chainName = selectedQuoteMode() === "usdc" ? "Ethereum + USDC" : state.config.chainName || chainLabel(state.selectedChainId);
   if (launchFeeWei > 0n) {
     const launchFeeEth = Number(ethers.formatEther(launchFeeWei)).toFixed(6);
-    setAlert(ui.alert, `Creating bonding-curve launch on ${chainName} (launch fee ${launchFeeEth} ETH)...`);
+    setAlert(
+      ui.alert,
+      useInstantLiquidity
+        ? `Creating ${chainName} launch with burned starter LP (launch fee ${launchFeeEth} ETH)...`
+        : `Creating bonding-curve launch on ${chainName} (launch fee ${launchFeeEth} ETH)...`
+    );
   } else {
-    setAlert(ui.alert, `Creating bonding-curve launch on ${chainName}...`);
+    setAlert(ui.alert, useInstantLiquidity ? `Creating ${chainName} launch with burned starter LP...` : `Creating bonding-curve launch on ${chainName}...`);
   }
 
   const tx = await sendTxWithFallback({
-    label: `Create ${chainName} Bonding Launch`,
-    populatedTx: factory.createLaunch.populateTransaction(
-      details.name,
-      details.symbol,
-      details.imageUri,
-      details.description,
-      details.totalSupply,
-      details.creatorBps,
-      { value: totalValue }
-    ),
-    walletNativeSend: () =>
-      factory.createLaunch(details.name, details.symbol, details.imageUri, details.description, details.totalSupply, details.creatorBps, {
-        value: totalValue
-      })
+    label: useInstantLiquidity ? `Create ${chainName} Burned LP Launch` : `Create ${chainName} Bonding Launch`,
+    populatedTx: launchMethod.populateTransaction(...launchArgs, { value: totalValue }),
+    walletNativeSend: () => launchMethod(...launchArgs, { value: totalValue })
   });
 
   const receipt = await tx.wait();
@@ -1478,7 +1501,7 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
     pool: simulated?.[2]
   };
 
-  if (details.starterBuyEth > 0n && launchInfo?.pool) {
+  if (!useInstantLiquidity && details.starterBuyEth > 0n && launchInfo?.pool) {
     setAlert(ui.alert, `${chainName} launch created. Sending starter buy on bonding curve...`);
     const pool = makePoolContract(launchInfo.pool);
     const quoted = await pool.quoteBuy(details.starterBuyEth);

@@ -8,6 +8,9 @@ import "./MemePool.sol";
 /// @notice Launches meme tokens with bonding-curve pools and auto DEX graduation.
 contract MemeLaunchFactory {
     uint256 public constant BPS_DENOMINATOR = 10_000;
+    uint256 public constant DEFAULT_TOKEN_TRADE_FEE_BPS = 50;
+    uint256 public constant MAX_TOKEN_TRADE_FEE_BPS = 1_000;
+    uint256 public constant ROBINHOOD_CHAIN_ID = 4663;
     address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
 
     struct LaunchInfo {
@@ -67,6 +70,13 @@ contract MemeLaunchFactory {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event InstantLaunchRequested(address indexed creator, uint256 ethLiquidity);
     event LaunchFeePaid(address indexed payer, address indexed recipient, uint256 amountWei);
+    event TokenTaxConfigured(
+        uint256 indexed launchId,
+        address indexed token,
+        uint256 tradeFeeBps,
+        uint256 creatorFeeBps,
+        uint256 platformFeeBps
+    );
 
     modifier onlyOwner() {
         require(msg.sender == owner, "only owner");
@@ -176,6 +186,31 @@ contract MemeLaunchFactory {
             description,
             totalSupply,
             creatorAllocationBps,
+            DEFAULT_TOKEN_TRADE_FEE_BPS,
+            0,
+            false
+        );
+    }
+
+    function createLaunchWithTax(
+        string calldata name,
+        string calldata symbol,
+        string calldata imageURI,
+        string calldata description,
+        uint256 totalSupply,
+        uint256 creatorAllocationBps,
+        uint256 tokenTradeFeeBps
+    ) external payable returns (uint256 launchId, address tokenAddress, address poolAddress) {
+        require(msg.value == launchFeeWei, "launch fee mismatch");
+        _collectLaunchFee();
+        (launchId, tokenAddress, poolAddress) = _createLaunch(
+            name,
+            symbol,
+            imageURI,
+            description,
+            totalSupply,
+            creatorAllocationBps,
+            tokenTradeFeeBps,
             0,
             false
         );
@@ -206,6 +241,38 @@ contract MemeLaunchFactory {
             description,
             totalSupply,
             creatorAllocationBps,
+            DEFAULT_TOKEN_TRADE_FEE_BPS,
+            initialLiquidity,
+            true
+        );
+    }
+
+    function createLaunchInstantWithTax(
+        string calldata name,
+        string calldata symbol,
+        string calldata imageURI,
+        string calldata description,
+        uint256 totalSupply,
+        uint256 creatorAllocationBps,
+        uint256 tokenTradeFeeBps
+    ) external payable returns (uint256 launchId, address tokenAddress, address poolAddress) {
+        require(defaultDexRouter != address(0), "dex router not set");
+        require(defaultLpRecipient != address(0), "lp recipient not set");
+        require(msg.value > launchFeeWei, "insufficient eth for fee+liquidity");
+
+        uint256 initialLiquidity = msg.value - launchFeeWei;
+        _collectLaunchFee();
+
+        emit InstantLaunchRequested(msg.sender, initialLiquidity);
+
+        (launchId, tokenAddress, poolAddress) = _createLaunch(
+            name,
+            symbol,
+            imageURI,
+            description,
+            totalSupply,
+            creatorAllocationBps,
+            tokenTradeFeeBps,
             initialLiquidity,
             true
         );
@@ -218,6 +285,7 @@ contract MemeLaunchFactory {
         string calldata description,
         uint256 totalSupply,
         uint256 creatorAllocationBps,
+        uint256 tokenTradeFeeBps,
         uint256 initialEthLiquidity,
         bool graduateNow
     ) internal returns (uint256 launchId, address tokenAddress, address poolAddress) {
@@ -225,8 +293,9 @@ contract MemeLaunchFactory {
         require(bytes(symbol).length > 0, "symbol required");
         require(totalSupply > 0, "supply required");
         require(creatorAllocationBps <= 2_000, "allocation too high");
+        require(tokenTradeFeeBps <= MAX_TOKEN_TRADE_FEE_BPS, "trade fee too high");
 
-        MemeToken token = new MemeToken(name, symbol, totalSupply, address(this), msg.sender, platformFeeRecipient);
+        MemeToken token = new MemeToken(name, symbol, totalSupply, address(this), msg.sender, platformFeeRecipient, tokenTradeFeeBps);
         bool isPlatformCreator = msg.sender == platformFeeRecipient;
         address launchLpRecipient = _resolveLaunchLpRecipient(isPlatformCreator);
 
@@ -258,7 +327,7 @@ contract MemeLaunchFactory {
             if (pair != address(0)) {
                 token.setDexPair(pair);
             }
-            if (!isPlatformCreator) {
+            if (!isPlatformCreator || block.chainid == ROBINHOOD_CHAIN_ID) {
                 token.renounceFactoryControl();
             }
         }
@@ -295,11 +364,21 @@ contract MemeLaunchFactory {
             defaultDexRouter,
             launchLpRecipient
         );
+        emit TokenTaxConfigured(
+            launchId,
+            tokenAddress,
+            tokenTradeFeeBps,
+            token.creatorFeeBps(),
+            token.platformFeeBps()
+        );
     }
 
     function _resolveLaunchLpRecipient(bool isPlatformCreator) internal view returns (address) {
         if (defaultDexRouter == address(0)) {
             return defaultLpRecipient;
+        }
+        if (block.chainid == ROBINHOOD_CHAIN_ID) {
+            return BURN_ADDRESS;
         }
         if (isPlatformCreator) {
             return defaultLpRecipient;

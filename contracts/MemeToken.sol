@@ -5,9 +5,9 @@ pragma solidity ^0.8.24;
 /// @notice Minimal ERC20 used by the meme launcher factory.
 contract MemeToken {
     uint256 public constant BPS_DENOMINATOR = 10_000;
-    uint256 public constant TRADE_FEE_BPS = 50; // 0.5%
-    uint256 public constant CREATOR_FEE_BPS = 30; // 0.3%
-    uint256 public constant PLATFORM_FEE_BPS = 20; // 0.2%
+    uint256 public constant DEFAULT_TRADE_FEE_BPS = 50; // 0.5%
+    uint256 public constant MAX_TRADE_FEE_BPS = 1_000; // 10%
+    uint256 public constant PLATFORM_FEE_SHARE_BPS = 4_000; // 40% of token tax
 
     string public name;
     string public symbol;
@@ -16,6 +16,9 @@ contract MemeToken {
     address public immutable factory;
     address public immutable creator;
     address public immutable platformFeeRecipient;
+    uint256 public immutable tradeFeeBps;
+    uint256 public immutable creatorFeeBps;
+    uint256 public immutable platformFeeBps;
     address public dexPair;
     bool public factoryControlRenounced;
 
@@ -44,7 +47,8 @@ contract MemeToken {
         uint256 _totalSupply,
         address _factory,
         address _creator,
-        address _platformFeeRecipient
+        address _platformFeeRecipient,
+        uint256 _tradeFeeBps
     ) {
         require(bytes(_name).length > 0, "name required");
         require(bytes(_symbol).length > 0, "symbol required");
@@ -52,7 +56,7 @@ contract MemeToken {
         require(_factory != address(0), "factory required");
         require(_creator != address(0), "creator required");
         require(_platformFeeRecipient != address(0), "platform required");
-        require(CREATOR_FEE_BPS + PLATFORM_FEE_BPS == TRADE_FEE_BPS, "invalid fee split");
+        require(_tradeFeeBps <= MAX_TRADE_FEE_BPS, "trade fee too high");
 
         name = _name;
         symbol = _symbol;
@@ -60,6 +64,9 @@ contract MemeToken {
         factory = _factory;
         creator = _creator;
         platformFeeRecipient = _platformFeeRecipient;
+        tradeFeeBps = _tradeFeeBps;
+        platformFeeBps = (_tradeFeeBps * PLATFORM_FEE_SHARE_BPS) / BPS_DENOMINATOR;
+        creatorFeeBps = _tradeFeeBps - platformFeeBps;
         balanceOf[_factory] = _totalSupply;
 
         emit Transfer(address(0), _factory, _totalSupply);
@@ -129,9 +136,9 @@ contract MemeToken {
 
         uint256 sendAmount = amount;
         if (_isDexTrade(from, to) && amount > 0) {
-            uint256 feeAmount = (amount * TRADE_FEE_BPS) / BPS_DENOMINATOR;
+            uint256 feeAmount = (amount * tradeFeeBps) / BPS_DENOMINATOR;
             if (feeAmount > 0) {
-                uint256 creatorFee = (amount * CREATOR_FEE_BPS) / BPS_DENOMINATOR;
+                uint256 creatorFee = (amount * creatorFeeBps) / BPS_DENOMINATOR;
                 uint256 platformFee = feeAmount - creatorFee;
                 sendAmount = amount - feeAmount;
 

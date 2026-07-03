@@ -210,6 +210,49 @@ describe("MemeLaunchFactory", function () {
     expect(await token.balanceOf(trader.address)).to.equal(0n);
   });
 
+  it("allows launches to choose a custom token trade tax", async function () {
+    const { creator, platformRecipient, factory } = await deployFixture({ withDex: true, targetEth: "1" });
+
+    await factory
+      .connect(creator)
+      .createLaunchInstantWithTax("Custom Tax", "CTAX", "", "custom fees", ethers.parseUnits("1000000", 18), 1000, 250, {
+        value: ethers.parseEther("0.1")
+      });
+
+    const launch = await factory.getLaunch(0);
+    const token = await ethers.getContractAt("MemeToken", launch.token);
+    const pairAddress = await (await ethers.getContractAt("MemePool", launch.pool)).migratedPair();
+
+    expect(await token.tradeFeeBps()).to.equal(250n);
+    expect(await token.creatorFeeBps()).to.equal(150n);
+    expect(await token.platformFeeBps()).to.equal(100n);
+
+    const transferAmount = ethers.parseUnits("1000", 18);
+    const pairBefore = await token.balanceOf(pairAddress);
+    await token.connect(creator).transfer(pairAddress, transferAmount);
+    const pairAfter = await token.balanceOf(pairAddress);
+
+    expect(await token.creatorClaimable()).to.equal((transferAmount * 150n) / 10_000n);
+    expect(await token.platformClaimable()).to.equal((transferAmount * 100n) / 10_000n);
+    expect(await token.balanceOf(token.target)).to.equal((transferAmount * 250n) / 10_000n);
+    expect(pairAfter - pairBefore).to.equal((transferAmount * 9750n) / 10_000n);
+
+    const platformSigner = await ethers.getSigner(platformRecipient.address);
+    await token.connect(creator).claimCreatorFees();
+    await token.connect(platformSigner).claimPlatformFees();
+    expect(await token.balanceOf(token.target)).to.equal(0n);
+  });
+
+  it("rejects token trade tax over 10%", async function () {
+    const { creator, factory } = await deployFixture();
+
+    await expect(
+      factory
+        .connect(creator)
+        .createLaunchWithTax("Too Much Tax", "TAXED", "", "cap", ethers.parseUnits("1000000", 18), 0, 1001)
+    ).to.be.revertedWith("trade fee too high");
+  });
+
   it("burns LP and renounces factory control for non-platform instant launches", async function () {
     const { creator, factory } = await deployFixture({ withDex: true, targetEth: "1" });
 
