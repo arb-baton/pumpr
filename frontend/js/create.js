@@ -251,9 +251,9 @@ function ensureKolSendOptions() {
   panel.innerHTML = `
     <div class="kol-application-head">
       <div>
-        <p class="kol-eyebrow">Token send</p>
-        <h3>Send tokens after launch</h3>
-        <p class="kol-subcopy">Optional buy and transfer to a selected Solana wallet after the Pump.fun token is live.</p>
+        <p class="kol-eyebrow">Pump.fun add-on</p>
+        <h3>Manlet Mode</h3>
+        <p class="kol-subcopy">Optional buy and transfer to a selected Solana wallet after the Pump.fun token is live. Named Manlet Mode in honor of Ansem.</p>
       </div>
       <label class="kol-toggle">
         <input id="kolSendEnabled" type="checkbox" />
@@ -287,7 +287,7 @@ function ensureKolSendOptions() {
           <strong id="kolSupplyEstimate">0%</strong>
         </article>
       </div>
-      <p id="kolRouteStatus" class="kol-route-status">Token send is off.</p>
+      <p id="kolRouteStatus" class="kol-route-status">Manlet Mode is off.</p>
     </div>
   `;
   ui.pumpfunOptions.insertAdjacentElement("afterend", panel);
@@ -1106,7 +1106,7 @@ function updateKolEstimate() {
   if (ui.kolRouteStatus) {
     ui.kolRouteStatus.textContent = enabled
       ? `Launch will buy ${quote.solAmount.toFixed(3)} SOL and send about ${formatTokenAmount(quote.tokens)} tokens to ${kol?.name || "the selected wallet"}.`
-      : "Token send is off.";
+      : "Manlet Mode is off.";
   }
 }
 
@@ -1405,10 +1405,10 @@ async function prepareLaunchDetails() {
     }
     if (ui.kolSendEnabled?.checked) {
       if (!kolApplication?.wallet) {
-        throw new Error("Select a valid Solana wallet before enabling token send.");
+        throw new Error("Select a valid Solana wallet before enabling Manlet Mode.");
       }
       if (!Number.isFinite(Number(kolApplication.buySol)) || Number(kolApplication.buySol) <= 0) {
-        throw new Error("Token send needs a SOL buy amount above 0.");
+        throw new Error("Manlet Mode needs a SOL buy amount above 0.");
       }
     }
   }
@@ -1725,7 +1725,7 @@ async function launchPumpFun(details) {
   setAlert(
     ui.alert,
     details.kolApplication?.enabled
-      ? `Preparing Pump.fun launch with token send for ${details.kolApplication.name}.`
+      ? `Preparing Pump.fun launch with Manlet Mode for ${details.kolApplication.name}.`
       : "Preparing official Pump.fun SDK transaction..."
   );
   const payload = await api.pumpfunLaunch({
@@ -1765,7 +1765,7 @@ async function launchPumpFun(details) {
     signature = String(finalized?.signature || "");
     finalizedLaunch = finalized?.launch || null;
     if (details.kolApplication?.enabled && Number(details.kolApplication.buySol || 0) > 0) {
-      setAlert(ui.alert, `Open Phantom again to buy ${details.kolApplication.buySol} SOL for the token send. Pump-r will transfer those tokens to ${details.kolApplication.name} next.`);
+      setAlert(ui.alert, `Open Phantom again to buy ${details.kolApplication.buySol} SOL for Manlet Mode. Pump-r will transfer those tokens to ${details.kolApplication.name} next.`);
       const kolPayload = await api.pumpfunKolBuy({
         mint,
         creatorWallet: details.pumpfunCreatorWallet || publicKey,
@@ -1773,7 +1773,7 @@ async function launchPumpFun(details) {
         kolApplication: details.kolApplication
       });
       const kolTransactionBase64 = String(kolPayload?.transactionBase64 || "");
-      if (!kolTransactionBase64) throw new Error("Token send buy transaction was not returned.");
+      if (!kolTransactionBase64) throw new Error("Manlet Mode buy transaction was not returned.");
       const kolTransaction = solanaWeb3.Transaction.from(base64ToBytes(kolTransactionBase64));
       const signedKol = await provider.signTransaction(kolTransaction);
       setAlert(ui.alert, "Broadcasting token buy before the KOL transfer...");
@@ -1786,7 +1786,7 @@ async function launchPumpFun(details) {
       kolBuySignature = String(kolSent?.signature || "");
       kolApplication = kolPayload.kolApplication || details.kolApplication;
       if (String(kolApplication?.kolBuy?.recipientMode || "") === "kol_wallet_direct") {
-        setAlert(ui.alert, `Token send completed directly to ${details.kolApplication.name}.`);
+        setAlert(ui.alert, `Manlet Mode completed directly to ${details.kolApplication.name}.`);
       } else {
         setAlert(ui.alert, `Open Phantom once more to transfer the token allocation to ${details.kolApplication.name}.`);
         const transferPayload = await api.pumpfunKolTransfer({

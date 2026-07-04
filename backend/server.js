@@ -7301,7 +7301,7 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
     const creator = new SolanaPublicKey(String(req.body?.creatorWallet || req.body?.userPublicKey || "").trim());
     const kolApplication = sanitizeKolApplication(req.body?.kolApplication);
     if (!kolApplication?.enabled || Number(kolApplication.buySol || 0) <= 0) {
-      return res.status(400).json({ error: "Token send buy is not enabled" });
+      return res.status(400).json({ error: "Manlet Mode buy is not enabled" });
     }
     const kolWallet = new SolanaPublicKey(kolApplication.wallet);
     const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
@@ -7326,7 +7326,7 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
       quoteMint: SolanaPublicKey.default
     });
     if (!amount || amount.lte(new BN(0))) {
-      return res.status(400).json({ error: "Token send buy amount is too small for the Pump.fun quote" });
+      return res.status(400).json({ error: "Manlet Mode buy amount is too small for the Pump.fun quote" });
     }
     const tokenProgram = splToken.TOKEN_2022_PROGRAM_ID;
     const userTokenAccount = splToken.getAssociatedTokenAddressSync(mint, user, true, tokenProgram);
@@ -7377,7 +7377,7 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
       lastValidBlockHeight: latest.lastValidBlockHeight
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Unable to build token send buy transaction" });
+    res.status(500).json({ error: error.message || "Unable to build Manlet Mode buy transaction" });
   }
 });
 
@@ -7411,11 +7411,11 @@ app.post("/api/pumpfun/kol-transfer", async (req, res) => {
     const mint = new SolanaPublicKey(String(req.body?.mint || req.body?.tokenAddress || "").trim());
     const user = new SolanaPublicKey(String(req.body?.userPublicKey || "").trim());
     const kolApplication = sanitizeKolApplication(req.body?.kolApplication);
-    if (!kolApplication?.enabled) return res.status(400).json({ error: "Token send transfer is not enabled" });
+    if (!kolApplication?.enabled) return res.status(400).json({ error: "Manlet Mode transfer is not enabled" });
     const kolWallet = new SolanaPublicKey(kolApplication.wallet);
     const tokenAmountRaw = String(req.body?.tokenAmount || kolApplication?.kolBuy?.tokenAmount || "").replace(/[^0-9]/g, "");
     const tokenAmount = BigInt(tokenAmountRaw || "0");
-    if (tokenAmount <= 0n) return res.status(400).json({ error: "Token send amount is missing" });
+    if (tokenAmount <= 0n) return res.status(400).json({ error: "Manlet Mode amount is missing" });
 
     const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
     const connection = new SolanaConnection(rpcUrl, "confirmed");
