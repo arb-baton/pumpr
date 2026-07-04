@@ -1713,6 +1713,13 @@ function cachePumpFunLaunchForHome(row = {}) {
   }
 }
 
+function isSolanaBlockhashExpiredError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return message.includes("block height exceeded") ||
+    message.includes("blockhash not found") ||
+    message.includes("signature") && message.includes("expired");
+}
+
 async function launchPumpFun(details) {
   const { provider, publicKey } = await connectSolanaWallet();
   await ensurePumpRHolderAccess({
@@ -1722,52 +1729,65 @@ async function launchPumpFun(details) {
     targetChainId: 101
   });
   const solanaWeb3 = await loadSolanaWeb3();
-  setAlert(
-    ui.alert,
-    details.kolApplication?.enabled
-      ? `Preparing Pump.fun launch with Manlet Mode for ${details.kolApplication.name}. Finding a Pump-r mint ending in pr...`
-      : "Preparing official Pump.fun SDK transaction and finding a Pump-r mint ending in pr..."
-  );
-  const payload = await api.pumpfunLaunch({
-    name: details.name,
-    symbol: details.symbol,
-    description: details.description,
-    imageUri: details.imageUri,
-    totalSupply: details.totalSupply?.toString?.() || String(details.totalSupply || ""),
-    creatorBps: details.creatorBps?.toString?.() || String(details.creatorBps || "0"),
-    starterBuy: details.pumpfunDevBuyLamports?.toString?.() || "0",
-    starterBuySol: String(details.pumpfunDevBuySol || 0),
-    creatorWallet: details.pumpfunCreatorWallet || publicKey,
-    userPublicKey: publicKey,
-    source: "Pump-r",
-    kolApplication: details.kolApplication || null
-  });
-  const mint = String(payload?.mint || payload?.tokenAddress || payload?.token || "");
-  const pumpfunUrl = String(payload?.pumpfunUrl || payload?.url || (mint ? `https://pump.fun/coin/${mint}` : ""));
-  const transactionBase64 = String(payload?.transactionBase64 || "");
-  const signingToken = String(payload?.signingToken || "");
-  if (!mint || !pumpfunUrl || !transactionBase64 || !signingToken) throw new Error("Pump.fun SDK did not return a complete transaction.");
-
-  const suffix = String(payload?.mintSuffix || "");
-  const suffixText = suffix
-    ? ` Mint ${shortAddress(mint)} ends with ${suffix}.`
-    : "";
-  setAlert(ui.alert, `Open Phantom to sign first.${suffixText} Pump-r will add the mint signature after your approval, simulate the transaction, then broadcast through the configured Solana RPC.`);
-  const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
   let signature = "";
   let kolBuySignature = "";
   let kolTransferSignature = "";
   let kolApplication = details.kolApplication || null;
   let finalizedLaunch = null;
+  let payload = null;
+  let mint = "";
+  let pumpfunUrl = "";
   if (typeof provider.signTransaction === "function") {
-    const signed = await provider.signTransaction(transaction);
-    setAlert(ui.alert, "Finalizing Pump.fun launch with the mint signature...");
-    const finalized = await api.pumpfunFinalize({
-      signingToken,
-      signedTransactionBase64: bytesToBase64(signed.serialize({ requireAllSignatures: false, verifySignatures: false }))
-    });
-    signature = String(finalized?.signature || "");
-    finalizedLaunch = finalized?.launch || null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      setAlert(
+        ui.alert,
+        attempt > 0
+          ? "The previous Solana blockhash expired. Rebuilding a fresh Pump.fun transaction for Phantom..."
+          : details.kolApplication?.enabled
+            ? `Preparing Pump.fun launch with Manlet Mode for ${details.kolApplication.name}. Finding a Pump-r mint ending in pr...`
+            : "Preparing official Pump.fun SDK transaction and finding a Pump-r mint ending in pr..."
+      );
+      payload = await api.pumpfunLaunch({
+        name: details.name,
+        symbol: details.symbol,
+        description: details.description,
+        imageUri: details.imageUri,
+        totalSupply: details.totalSupply?.toString?.() || String(details.totalSupply || ""),
+        creatorBps: details.creatorBps?.toString?.() || String(details.creatorBps || "0"),
+        starterBuy: details.pumpfunDevBuyLamports?.toString?.() || "0",
+        starterBuySol: String(details.pumpfunDevBuySol || 0),
+        creatorWallet: details.pumpfunCreatorWallet || publicKey,
+        userPublicKey: publicKey,
+        source: "Pump-r",
+        kolApplication: details.kolApplication || null
+      });
+      mint = String(payload?.mint || payload?.tokenAddress || payload?.token || "");
+      pumpfunUrl = String(payload?.pumpfunUrl || payload?.url || (mint ? `https://pump.fun/coin/${mint}` : ""));
+      const transactionBase64 = String(payload?.transactionBase64 || "");
+      const signingToken = String(payload?.signingToken || "");
+      if (!mint || !pumpfunUrl || !transactionBase64 || !signingToken) throw new Error("Pump.fun SDK did not return a complete transaction.");
+
+      const suffix = String(payload?.mintSuffix || "");
+      const suffixText = suffix
+        ? ` Mint ${shortAddress(mint)} ends with ${suffix}.`
+        : "";
+      setAlert(ui.alert, `Open Phantom to sign${attempt > 0 ? " again" : ""}.${suffixText} Pump-r will add the mint signature after your approval, simulate the transaction, then broadcast through the configured Solana RPC.`);
+      const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
+      const signed = await provider.signTransaction(transaction);
+      setAlert(ui.alert, "Finalizing Pump.fun launch with the mint signature...");
+      try {
+        const finalized = await api.pumpfunFinalize({
+          signingToken,
+          signedTransactionBase64: bytesToBase64(signed.serialize({ requireAllSignatures: false, verifySignatures: false }))
+        });
+        signature = String(finalized?.signature || "");
+        finalizedLaunch = finalized?.launch || null;
+        break;
+      } catch (error) {
+        if (attempt === 0 && isSolanaBlockhashExpiredError(error)) continue;
+        throw error;
+      }
+    }
     if (details.kolApplication?.enabled && Number(details.kolApplication.buySol || 0) > 0) {
       setAlert(ui.alert, `Open Phantom again to buy ${details.kolApplication.buySol} SOL for Manlet Mode. Pump-r will transfer those tokens to ${details.kolApplication.name} next.`);
       const kolPayload = await api.pumpfunKolBuy({
