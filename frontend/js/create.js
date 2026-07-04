@@ -1725,8 +1725,8 @@ async function launchPumpFun(details) {
   setAlert(
     ui.alert,
     details.kolApplication?.enabled
-      ? `Preparing Pump.fun launch with Manlet Mode for ${details.kolApplication.name}.`
-      : "Preparing official Pump.fun SDK transaction..."
+      ? `Preparing Pump.fun launch with Manlet Mode for ${details.kolApplication.name}. Finding a Pump-r mint ending in pr...`
+      : "Preparing official Pump.fun SDK transaction and finding a Pump-r mint ending in pr..."
   );
   const payload = await api.pumpfunLaunch({
     name: details.name,
@@ -1748,7 +1748,11 @@ async function launchPumpFun(details) {
   const signingToken = String(payload?.signingToken || "");
   if (!mint || !pumpfunUrl || !transactionBase64 || !signingToken) throw new Error("Pump.fun SDK did not return a complete transaction.");
 
-  setAlert(ui.alert, "Open Phantom to sign first. Pump-r will add the mint signature after your approval, simulate the transaction, then broadcast through the configured Solana RPC.");
+  const suffix = String(payload?.mintSuffix || "");
+  const suffixText = suffix
+    ? ` Mint ${shortAddress(mint)} ends with ${suffix}.`
+    : "";
+  setAlert(ui.alert, `Open Phantom to sign first.${suffixText} Pump-r will add the mint signature after your approval, simulate the transaction, then broadcast through the configured Solana RPC.`);
   const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
   let signature = "";
   let kolBuySignature = "";

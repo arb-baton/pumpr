@@ -36,6 +36,8 @@ const AIRDROP_HOLDER_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-aird
 const PUMPR_CARD_WAITLIST_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-card-waitlist.json") : path.join(ROOT, "cache", "pumpr-card-waitlist.json");
 const REFERRAL_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-referrals.json") : path.join(ROOT, "cache", "referrals.json");
 const OFFICIAL_PUMPFUN_MINT = "C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump";
+const PUMPFUN_MINT_SUFFIX = String(process.env.PUMPFUN_MINT_SUFFIX || "pr").trim();
+const PUMPFUN_MINT_SUFFIX_MAX_ATTEMPTS = Math.max(1_000, Math.min(1_000_000, Number(process.env.PUMPFUN_MINT_SUFFIX_MAX_ATTEMPTS || 25_000)));
 const DEFAULT_PUMPR_ADMIN_WALLET = "ER4KEmk3jCeNhfV7hNTNyh2XGNpbE8Pqk9CZsBe2BJiy";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(
@@ -6448,6 +6450,43 @@ async function assertLaunchIdentityAvailable({ name = "", symbol = "" } = {}) {
   throw error;
 }
 
+function normalizePumpFunMintSuffix(value = PUMPFUN_MINT_SUFFIX) {
+  const suffix = String(value || "").trim();
+  if (!suffix) return "";
+  if (!/^[1-9A-HJ-NP-Za-km-z]{1,6}$/.test(suffix)) {
+    throw new Error("Pump.fun mint suffix must be 1-6 base58 characters.");
+  }
+  return suffix;
+}
+
+function generatePumpFunMintKeypair(SolanaKeypair) {
+  const suffix = normalizePumpFunMintSuffix();
+  if (!suffix) {
+    return {
+      keypair: SolanaKeypair.generate(),
+      suffix: "",
+      attempts: 1,
+      durationMs: 0
+    };
+  }
+
+  const startedAt = Date.now();
+  for (let attempts = 1; attempts <= PUMPFUN_MINT_SUFFIX_MAX_ATTEMPTS; attempts += 1) {
+    const keypair = SolanaKeypair.generate();
+    const mint = keypair.publicKey.toBase58();
+    if (mint.endsWith(suffix)) {
+      return {
+        keypair,
+        suffix,
+        attempts,
+        durationMs: Date.now() - startedAt
+      };
+    }
+  }
+
+  throw new Error(`Could not find a Pump.fun mint ending in ${suffix} after ${PUMPFUN_MINT_SUFFIX_MAX_ATTEMPTS.toLocaleString()} attempts. Try launching again.`);
+}
+
 function pumpFunSigningSecretKey() {
   const seed = String(
     process.env.PUMPFUN_SIGNING_SECRET ||
@@ -7091,7 +7130,8 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       return res.status(500).json({ error: "Pump.fun metadata URI is missing or too long" });
     }
 
-    const mintKeypair = SolanaKeypair.generate();
+    const vanityMint = generatePumpFunMintKeypair(SolanaKeypair);
+    const mintKeypair = vanityMint.keypair;
     const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
     let latest = {
       blockhash: String(req.body?.blockhash || "").trim(),
@@ -7187,6 +7227,9 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       description: String(req.body?.description || "").trim(),
       imageUri: String(req.body?.imageUri || "").trim(),
       metadataUri,
+      mintSuffix: vanityMint.suffix,
+      mintSuffixAttempts: vanityMint.attempts,
+      mintSuffixDurationMs: vanityMint.durationMs,
       mintSecretKey: Buffer.from(mintKeypair.secretKey).toString("base64"),
       kolApplication,
       rpcUrl,
@@ -7201,6 +7244,9 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       tokenAddress: mint,
       pumpfunUrl: pickPumpFunUrl({}, mint),
       metadataUri,
+      mintSuffix: vanityMint.suffix,
+      mintSuffixAttempts: vanityMint.attempts,
+      mintSuffixDurationMs: vanityMint.durationMs,
       transactionBase64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
       signingToken,
       kolApplication,
