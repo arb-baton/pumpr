@@ -4,7 +4,7 @@ import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703profilecons
 import { KOL_LEADERBOARD } from "./kolData.js?v=20260703kol51";
 
 const AIRDROP_HOLDER_REFRESH_MS = 30_000;
-const AIRDROP_HISTORY_URL = "/data/pumpr-airdrops.json?v=20260703tiered1pct";
+const AIRDROP_HISTORY_URL = "/data/pumpr-airdrops.json?v=20260704weighted1m";
 const COMPLETED_AIRDROP_URL = "/data/pumpr-airdrop-250k.json?v=20260703drop250k";
 const KOL_SEED_AMOUNT = 5_000;
 const KOL_BOOSTED_WALLETS = new Set([
@@ -135,6 +135,7 @@ function completedStatusLabel(status = "") {
 
 function completedDropTag(drop = completedAirdrop) {
   if (!drop) return "";
+  if (drop.badge) return String(drop.badge);
   if (Array.isArray(drop.tiers) && drop.tiers.length) return "Tiered";
   const amount = Number(drop.amountPerHolderPumpr || 0);
   return amount > 0 ? `${formatTokenAmount(amount)} each` : "Completed";
@@ -211,10 +212,13 @@ function completedAirdropHtml() {
   const maxTierAmount = Array.isArray(completedAirdrop.tiers)
     ? Math.max(0, ...completedAirdrop.tiers.map((tier) => Number(tier.amountPumpr || 0)))
     : 0;
-  const amount = completedAirdrop.amountPerHolderPumpr
-    ? formatTokenAmount(completedAirdrop.amountPerHolderPumpr)
-    : formatTokenAmount(maxTierAmount);
-  const perHolderLabel = completedAirdrop.amountPerHolderPumpr ? "Per holder" : "Max per holder";
+  const weightedSummaryAmount = Number(completedAirdrop.summaryAmountPumpr || 0);
+  const amount = weightedSummaryAmount
+    ? formatTokenAmount(weightedSummaryAmount)
+    : completedAirdrop.amountPerHolderPumpr
+      ? formatTokenAmount(completedAirdrop.amountPerHolderPumpr)
+      : formatTokenAmount(maxTierAmount);
+  const perHolderLabel = completedAirdrop.summaryAmountLabel || (completedAirdrop.amountPerHolderPumpr ? "Per holder" : "Max per holder");
   const total = formatTokenAmount(completedAirdrop.totalAllocatedPumpr);
   const source = completedAirdrop.source || {};
   const txLinks = (completedAirdrop.txSignatures || [])
@@ -224,7 +228,10 @@ function completedAirdropHtml() {
     ? `
       <div class="airdrop-tier-row">
         ${completedAirdrop.tiers
-          .map((tier) => `<span><b>${escapeHtml(tier.label || "")}</b>${escapeHtml(formatTokenAmount(tier.amountPumpr || 0))} $PUMPR x ${escapeHtml(String(tier.holderCount || 0))}</span>`)
+          .map((tier) => {
+            const tierAmount = tier.amountLabel || `${formatTokenAmount(tier.amountPumpr || 0)} $PUMPR`;
+            return `<span><b>${escapeHtml(tier.label || "")}</b>${escapeHtml(tierAmount)} x ${escapeHtml(String(tier.holderCount || 0))}</span>`;
+          })
           .join("")}
       </div>
     `
