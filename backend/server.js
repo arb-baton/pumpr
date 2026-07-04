@@ -720,9 +720,13 @@ function pickRpcUrls(chainId) {
   }
 
   if (chainId === 101) {
-    pushIf(process.env.SOLANA_RPC_URL);
     pushIf(process.env.PUMPFUN_SOLANA_RPC_URL);
+    pushIf(process.env.ALCHEMY_SOLANA_RPC_URL);
+    pushIf(process.env.HELIUS_SOLANA_RPC_URL);
+    pushIf(process.env.SOLANA_RPC_URL);
     pushIf("https://sparkling-blue-sponge.solana-mainnet.quiknode.pro/1a7f99d93cb6940285e9a095de8fc546c3c76d35/");
+    pushIf("https://solana-rpc.publicnode.com");
+    pushIf("https://api.mainnet-beta.solana.com");
     return urls;
   }
 
@@ -740,6 +744,59 @@ function pickRpcUrls(chainId) {
   }
 
   return urls;
+}
+
+function pickPumpFunSolanaRpcUrls(preferred = "") {
+  const urls = [];
+  const pushIf = (value) => {
+    const text = String(value || "").trim();
+    if (!text) return;
+    if (!urls.includes(text)) urls.push(text);
+  };
+  pushIf(preferred);
+  pushIf(process.env.PUMPFUN_SOLANA_RPC_URL);
+  pushIf(process.env.ALCHEMY_SOLANA_RPC_URL);
+  pushIf(process.env.HELIUS_SOLANA_RPC_URL);
+  const extra = String(process.env.SOLANA_RPC_URLS || "").split(/[,\s]+/).filter(Boolean);
+  for (const row of extra) pushIf(row);
+  pushIf(process.env.SOLANA_RPC_URL);
+  for (const row of pickRpcUrls(101)) pushIf(row);
+  return urls;
+}
+
+function isRetryableSolanaRpcError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return (
+    message.includes("429") ||
+    message.includes("too many requests") ||
+    message.includes("daily request limit") ||
+    message.includes("rate limit") ||
+    message.includes("timeout") ||
+    message.includes("timed out") ||
+    message.includes("fetch failed") ||
+    message.includes("econnreset") ||
+    message.includes("econnrefused") ||
+    message.includes("enotfound") ||
+    error?.code === -32003
+  );
+}
+
+async function withPumpFunSolanaRpc(SolanaConnection, label, worker, options = {}) {
+  const urls = pickPumpFunSolanaRpcUrls(options.preferredRpcUrl);
+  let lastError = null;
+  for (let index = 0; index < urls.length; index += 1) {
+    const rpcUrl = urls[index];
+    const connection = new SolanaConnection(rpcUrl, "confirmed");
+    try {
+      return await worker(connection, rpcUrl);
+    } catch (error) {
+      lastError = error;
+      const retryable = isRetryableSolanaRpcError(error) || options.retryAll === true;
+      if (!retryable || index === urls.length - 1) break;
+      console.warn(`${label} Solana RPC failed, trying fallback ${index + 2}/${urls.length}: ${error?.message || error}`);
+    }
+  }
+  throw lastError || new Error(`${label} failed: no Solana RPC configured`);
 }
 
 async function buildContext(chainId, factoryAddress, deployment = loadDeploymentConfig(), options = {}) {
@@ -3344,12 +3401,18 @@ async function readSolanaOfficialHolderEligibility(official, solanaAddress) {
     throw new Error("Valid Solana wallet and Pump-r mint are required.");
   }
 
-  const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
-  const connection = new SolanaConnection(rpcUrl, "confirmed");
-  const [accounts, mintInfo] = await Promise.all([
-    connection.getParsedTokenAccountsByOwner(owner, { mint }).catch(() => ({ value: [] })),
-    connection.getParsedAccountInfo(mint).catch(() => ({ value: null }))
-  ]);
+  const { accounts, mintInfo } = await withPumpFunSolanaRpc(
+    SolanaConnection,
+    "Pump-r holder gate",
+    async (connection) => {
+      const [accounts, mintInfo] = await Promise.all([
+        connection.getParsedTokenAccountsByOwner(owner, { mint }).catch(() => ({ value: [] })),
+        connection.getParsedAccountInfo(mint).catch(() => ({ value: null }))
+      ]);
+      return { accounts, mintInfo };
+    },
+    { retryAll: true }
+  );
   let balanceRaw = 0n;
   let balanceTokens = 0;
   for (const account of accounts?.value || []) {
@@ -3431,12 +3494,18 @@ async function buildSolanaAirdropPreview(rawToken, limit = 20) {
     throw new Error("Valid Solana token mint is required");
   }
 
-  const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
-  const connection = new SolanaConnection(rpcUrl, "confirmed");
-  const [largestAccounts, mintInfo] = await Promise.all([
-    connection.getTokenLargestAccounts(mint),
-    connection.getParsedAccountInfo(mint).catch(() => ({ value: null }))
-  ]);
+  const { connection, largestAccounts, mintInfo } = await withPumpFunSolanaRpc(
+    SolanaConnection,
+    "Solana airdrop preview",
+    async (connection) => {
+      const [largestAccounts, mintInfo] = await Promise.all([
+        connection.getTokenLargestAccounts(mint),
+        connection.getParsedAccountInfo(mint).catch(() => ({ value: null }))
+      ]);
+      return { connection, largestAccounts, mintInfo };
+    },
+    { retryAll: true }
+  );
   const mintParsed = mintInfo?.value?.data?.parsed?.info || {};
   const supplyRaw = BigInt(String(mintParsed.supply || "0"));
   const decimals = Number(mintParsed.decimals ?? largestAccounts?.value?.[0]?.decimals ?? 6) || 6;
@@ -6934,10 +7003,21 @@ async function buildPumpFunSubmissionFeeTransaction({ bounty, submissionId, user
     submissionCommitment,
     encodeAnchorString(submissionIdText)
   ]);
-  const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
-  const connection = new SolanaConnection(rpcUrl, "confirmed");
+  const rpcState = await withPumpFunSolanaRpc(
+    SolanaConnection,
+    "Pump.fun bounty fee prep",
+    async (connection, rpcUrl) => {
+      const [configAccount, latest, existingReceipt] = await Promise.all([
+        connection.getAccountInfo(configPda, "confirmed"),
+        connection.getLatestBlockhash("confirmed"),
+        connection.getAccountInfo(submissionFeeReceiptPda, "confirmed").catch(() => null)
+      ]);
+      return { connection, rpcUrl, configAccount, latest, existingReceipt };
+    },
+    { retryAll: true }
+  );
+  const { rpcUrl, configAccount, latest, existingReceipt } = rpcState;
   let submissionFeeVaultText = "";
-  const configAccount = await connection.getAccountInfo(configPda, "confirmed");
   if (!configAccount?.data || configAccount.data.length < 201) {
     throw new Error("Pump.fun bounty config account is unavailable from the configured Solana RPC");
   }
@@ -6958,9 +7038,7 @@ async function buildPumpFunSubmissionFeeTransaction({ bounty, submissionId, user
     ],
     data
   });
-  const latest = await connection.getLatestBlockhash("confirmed");
   const tx = new SolanaTransaction({ feePayer: payer, recentBlockhash: latest.blockhash }).add(instruction);
-  const existingReceipt = await connection.getAccountInfo(submissionFeeReceiptPda, "confirmed").catch(() => null);
   return {
     existingReceipt: Boolean(existingReceipt),
     pumpFunSessionAddress: session.sessionAddress,
@@ -7132,16 +7210,6 @@ app.post("/api/pumpfun/launch", async (req, res) => {
 
     const vanityMint = generatePumpFunMintKeypair(SolanaKeypair);
     const mintKeypair = vanityMint.keypair;
-    const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
-    let latest = {
-      blockhash: String(req.body?.blockhash || "").trim(),
-      lastValidBlockHeight: Number(req.body?.lastValidBlockHeight || 0)
-    };
-    if (!latest.blockhash) {
-      const connection = new SolanaConnection(rpcUrl, "confirmed");
-      latest = await connection.getLatestBlockhash("confirmed");
-    }
-    const connection = new SolanaConnection(rpcUrl, "confirmed");
     const requestedDevBuyLamports = (() => {
       const decimalSol = String(req.body?.starterBuySol || req.body?.devBuySol || "").trim();
       if (decimalSol) return parseAmountToWei(decimalSol, 9);
@@ -7152,21 +7220,39 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       }
     })();
     const devBuyLamports = requestedDevBuyLamports > 0n ? requestedDevBuyLamports : 0n;
+    const requestedLatest = {
+      blockhash: String(req.body?.blockhash || "").trim(),
+      lastValidBlockHeight: Number(req.body?.lastValidBlockHeight || 0)
+    };
+    const rpcState = await withPumpFunSolanaRpc(
+      SolanaConnection,
+      "Pump.fun launch prep",
+      async (connection, rpcUrl) => {
+        const latest = requestedLatest.blockhash ? requestedLatest : await connection.getLatestBlockhash("confirmed");
+        let globalInfo = null;
+        let feeConfigInfo = null;
+        if (devBuyLamports > 0n) {
+          [globalInfo, feeConfigInfo] = await Promise.all([
+            connection.getAccountInfo(PUMP_MOD.GLOBAL_PDA),
+            connection.getAccountInfo(PUMP_MOD.PUMP_FEE_CONFIG_PDA)
+          ]);
+          if (!globalInfo || !feeConfigInfo) {
+            throw new Error("Pump.fun global pricing accounts are unavailable from this Solana RPC.");
+          }
+        }
+        return { connection, rpcUrl, latest, globalInfo, feeConfigInfo };
+      },
+      { retryAll: devBuyLamports > 0n }
+    );
+    const { connection, rpcUrl, latest } = rpcState;
     let instructions = [];
     if (devBuyLamports > 0n) {
       if (!PUMP_SDK?.createV2AndBuyInstructions || !PUMP_MOD?.getBuyTokenAmountFromSolAmount) {
         throw new Error("Pump.fun SDK create-and-buy is not available in this runtime. Set dev wallet buy to 0 SOL or update the SDK.");
       } else {
         const BN = require("bn.js");
-        const [globalInfo, feeConfigInfo] = await Promise.all([
-          connection.getAccountInfo(PUMP_MOD.GLOBAL_PDA),
-          connection.getAccountInfo(PUMP_MOD.PUMP_FEE_CONFIG_PDA)
-        ]);
-        if (!globalInfo || !feeConfigInfo) {
-          throw new Error("Pump.fun global pricing accounts are unavailable from the configured Solana RPC.");
-        }
-        const global = PUMP_SDK.decodeGlobal(globalInfo);
-        const feeConfig = PUMP_SDK.decodeFeeConfig(feeConfigInfo);
+        const global = PUMP_SDK.decodeGlobal(rpcState.globalInfo);
+        const feeConfig = PUMP_SDK.decodeFeeConfig(rpcState.feeConfigInfo);
         const quoteAmount = new BN(devBuyLamports.toString());
         const amount = PUMP_MOD.getBuyTokenAmountFromSolAmount({
           global,
@@ -7291,18 +7377,25 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
     }
     tx.partialSign(mintKeypair);
 
-    const rpcUrl = String(pending.rpcUrl || process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
-    const connection = new SolanaConnection(rpcUrl, "confirmed");
-    await simulateSolanaTransaction(connection, tx, "Signed Pump.fun create");
-    const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
-    await connection.confirmTransaction(
-      {
-        signature,
-        blockhash: String(pending.blockhash || ""),
-        lastValidBlockHeight: Number(pending.lastValidBlockHeight || 0)
+    const sent = await withPumpFunSolanaRpc(
+      SolanaConnection,
+      "Pump.fun signed create broadcast",
+      async (connection, rpcUrl) => {
+        await simulateSolanaTransaction(connection, tx, "Signed Pump.fun create");
+        const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
+        await connection.confirmTransaction(
+          {
+            signature,
+            blockhash: String(pending.blockhash || ""),
+            lastValidBlockHeight: Number(pending.lastValidBlockHeight || 0)
+          },
+          "confirmed"
+        );
+        return { signature, rpcUrl };
       },
-      "confirmed"
+      { preferredRpcUrl: pending.rpcUrl }
     );
+    const { signature, rpcUrl } = sent;
 
     const recordedLaunch = await recordPumpFunLaunch({
       mint,
@@ -7350,13 +7443,21 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
       return res.status(400).json({ error: "Manlet Mode buy is not enabled" });
     }
     const kolWallet = new SolanaPublicKey(kolApplication.wallet);
-    const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
-    const connection = new SolanaConnection(rpcUrl, "confirmed");
-    const [latest, globalInfo, feeConfigInfo] = await Promise.all([
-      connection.getLatestBlockhash("confirmed"),
-      connection.getAccountInfo(PUMP_MOD.GLOBAL_PDA, "confirmed"),
-      PUMP_MOD.PUMP_FEE_CONFIG_PDA ? connection.getAccountInfo(PUMP_MOD.PUMP_FEE_CONFIG_PDA, "confirmed") : Promise.resolve(null)
-    ]);
+    const rpcState = await withPumpFunSolanaRpc(
+      SolanaConnection,
+      "Manlet Mode buy prep",
+      async (connection, rpcUrl) => {
+        const [latest, globalInfo, feeConfigInfo] = await Promise.all([
+          connection.getLatestBlockhash("confirmed"),
+          connection.getAccountInfo(PUMP_MOD.GLOBAL_PDA, "confirmed"),
+          PUMP_MOD.PUMP_FEE_CONFIG_PDA ? connection.getAccountInfo(PUMP_MOD.PUMP_FEE_CONFIG_PDA, "confirmed") : Promise.resolve(null)
+        ]);
+        if (!globalInfo) throw new Error("Pump.fun global account is unavailable from this Solana RPC");
+        return { connection, rpcUrl, latest, globalInfo, feeConfigInfo };
+      },
+      { retryAll: true }
+    );
+    const { rpcUrl, latest, globalInfo, feeConfigInfo } = rpcState;
     if (!globalInfo) {
       return res.status(500).json({ error: "Pump.fun global account is unavailable from the configured Solana RPC" });
     }
@@ -7463,12 +7564,19 @@ app.post("/api/pumpfun/kol-transfer", async (req, res) => {
     const tokenAmount = BigInt(tokenAmountRaw || "0");
     if (tokenAmount <= 0n) return res.status(400).json({ error: "Manlet Mode amount is missing" });
 
-    const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
-    const connection = new SolanaConnection(rpcUrl, "confirmed");
-    const [latest, mintInfo] = await Promise.all([
-      connection.getLatestBlockhash("confirmed"),
-      connection.getAccountInfo(mint, "confirmed")
-    ]);
+    const rpcState = await withPumpFunSolanaRpc(
+      SolanaConnection,
+      "Manlet Mode transfer prep",
+      async (connection, rpcUrl) => {
+        const [latest, mintInfo] = await Promise.all([
+          connection.getLatestBlockhash("confirmed"),
+          connection.getAccountInfo(mint, "confirmed")
+        ]);
+        return { connection, rpcUrl, latest, mintInfo };
+      },
+      { retryAll: true }
+    );
+    const { connection, rpcUrl, latest, mintInfo } = rpcState;
     const tokenProgram = pickSplTokenProgramFromMintInfo(mintInfo, splToken);
     const userTokenAccount = splToken.getAssociatedTokenAddressSync(mint, user, true, tokenProgram);
     const kolTokenAccount = splToken.getAssociatedTokenAddressSync(mint, kolWallet, true, tokenProgram);
@@ -7525,22 +7633,29 @@ app.post("/api/solana/send-transaction", async (req, res) => {
     const signedTransactionBase64 = String(req.body?.signedTransactionBase64 || req.body?.transactionBase64 || "").trim();
     if (!signedTransactionBase64) return res.status(400).json({ error: "Signed transaction is required" });
     const tx = SolanaTransaction.from(Buffer.from(signedTransactionBase64, "base64"));
-    const rpcUrl = String(req.body?.rpcUrl || process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
-    const connection = new SolanaConnection(rpcUrl, "confirmed");
-    await simulateSolanaTransaction(connection, tx, "Signed Solana transaction");
-    const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
-    if (req.body?.blockhash && Number(req.body?.lastValidBlockHeight || 0) > 0) {
-      await connection.confirmTransaction(
-        {
-          signature,
-          blockhash: String(req.body.blockhash),
-          lastValidBlockHeight: Number(req.body.lastValidBlockHeight)
-        },
-        "confirmed"
-      );
-    } else {
-      await connection.confirmTransaction(signature, "confirmed");
-    }
+    const sent = await withPumpFunSolanaRpc(
+      SolanaConnection,
+      "Signed Solana transaction broadcast",
+      async (connection, rpcUrl) => {
+        await simulateSolanaTransaction(connection, tx, "Signed Solana transaction");
+        const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
+        if (req.body?.blockhash && Number(req.body?.lastValidBlockHeight || 0) > 0) {
+          await connection.confirmTransaction(
+            {
+              signature,
+              blockhash: String(req.body.blockhash),
+              lastValidBlockHeight: Number(req.body.lastValidBlockHeight)
+            },
+            "confirmed"
+          );
+        } else {
+          await connection.confirmTransaction(signature, "confirmed");
+        }
+        return { signature, rpcUrl };
+      },
+      { preferredRpcUrl: req.body?.rpcUrl }
+    );
+    const { signature, rpcUrl } = sent;
     res.json({ ok: true, signature, rpcUrl });
   } catch (error) {
     res.status(500).json({ error: error.message || "Unable to broadcast Solana transaction" });
