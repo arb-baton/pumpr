@@ -222,7 +222,8 @@ async function fetchLaunchPages(options = {}) {
 
   for (let pageIndex = 0; pageIndex < maxPages; pageIndex++) {
     const page = await api.launches(pageSize, offset, options);
-    const rows = filterHomeLaunchRows(Array.isArray(page?.launches) ? page.launches.filter((row) => Boolean(row && row.token)) : []);
+    const rawRows = Array.isArray(page?.launches) ? page.launches.filter((row) => Boolean(row && row.token)) : [];
+    const rows = filterHomeLaunchRows(rawRows);
     if (total === null) total = Number(page?.total || 0);
     for (const row of rows) {
       const token = getTokenId(row);
@@ -230,11 +231,24 @@ async function fetchLaunchPages(options = {}) {
       seen.add(token);
       launches.push(row);
     }
-    offset += rows.length;
-    if (!rows.length || rows.length < pageSize || (Number.isFinite(total) && launches.length >= total)) break;
+    offset += rawRows.length || pageSize;
+    if (!rawRows.length || rawRows.length < pageSize || (Number.isFinite(total) && offset >= total)) break;
   }
 
   return { total: Number(total || launches.length), launches };
+}
+
+async function fetchPumpFunLaunchPages(options = {}) {
+  return fetchLaunchPages({
+    pageSize: Math.max(1, Math.min(120, Number(options.pageSize || 60))),
+    maxPages: Math.max(1, Math.min(8, Number(options.maxPages || 5))),
+    lite: options.lite !== false,
+    home: options.home !== false,
+    includeDex: false,
+    pumpFunOnly: true,
+    allChains: true,
+    fresh: Boolean(options.fresh)
+  });
 }
 
 async function fetchRecentLaunchPage(options = {}) {
@@ -245,7 +259,7 @@ async function fetchRecentLaunchPage(options = {}) {
 
 async function fetchFastHomeLaunchPage(options = {}) {
   return fetchRecentLaunchPage({
-    limit: 36,
+    limit: 80,
     lite: true,
     home: true,
     includeDex: false,
@@ -284,12 +298,9 @@ function configuredFeedTargets() {
 
 async function fetchLaunchesAcrossChainsProgressive(fetcher, options = {}, onBatch = () => {}) {
   const targets = configuredFeedTargets();
-  let pumpFunFeedRequested = false;
   const results = await Promise.allSettled(
     targets.map(async ({ chainId, quote }) => {
-      const includePumpFun = quote === "native" && !pumpFunFeedRequested;
-      if (includePumpFun) pumpFunFeedRequested = true;
-      const payload = await fetcher({ ...options, chainId, quote, includePumpFun });
+      const payload = await fetcher({ ...options, chainId, quote, includePumpFun: false, pumpFunOnly: false });
       const normalized = {
         total: Number(payload?.total || 0),
         launches: (Array.isArray(payload?.launches) ? payload.launches : []).map((row) => ({
@@ -1571,11 +1582,24 @@ async function refreshLaunches(options = {}) {
     for (const delayMs of retryDelays) {
       if (delayMs > 0) await sleep(delayMs);
       try {
-        launchesRes = await fetchLaunchesAcrossChainsProgressive(
-          fetchLaunchPages,
-          { pageSize: 24, includeDex: true },
-          renderProgressiveBatch
-        );
+        const [pumpFunResult, chainResult] = await Promise.allSettled([
+          fetchPumpFunLaunchPages({ pageSize: 80, maxPages: 5, lite: true, home: true }),
+          fetchLaunchesAcrossChainsProgressive(
+            fetchLaunchPages,
+            { pageSize: 24, includeDex: true },
+            renderProgressiveBatch
+          )
+        ]);
+        const pumpFunLaunches = pumpFunResult.status === "fulfilled" ? pumpFunResult.value : { total: 0, launches: [] };
+        const chainLaunches = chainResult.status === "fulfilled" ? chainResult.value : { total: 0, launches: [] };
+        if (pumpFunLaunches.launches?.length) renderProgressiveBatch(pumpFunLaunches);
+        if (pumpFunResult.status !== "fulfilled" && chainResult.status !== "fulfilled") {
+          throw chainResult.reason || pumpFunResult.reason || new Error("Unable to load launches");
+        }
+        launchesRes = {
+          total: Number(pumpFunLaunches.total || 0) + Number(chainLaunches.total || 0),
+          launches: mergeLaunchRows(pumpFunLaunches.launches || [], chainLaunches.launches || [])
+        };
         break;
       } catch (error) {
         lastError = error;

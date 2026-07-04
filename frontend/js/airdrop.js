@@ -6,6 +6,7 @@ import { KOL_LEADERBOARD } from "./kolData.js?v=20260703kol51";
 const AIRDROP_HOLDER_REFRESH_MS = 30_000;
 const AIRDROP_HISTORY_URL = "/data/pumpr-airdrops.json?v=20260704weighted1m";
 const COMPLETED_AIRDROP_URL = "/data/pumpr-airdrop-250k.json?v=20260703drop250k";
+const OUTREACH_AIRDROP_URL = "/data/pumpr-outreach-airdrops.json?v=20260704ansemoutreach";
 const KOL_SEED_AMOUNT = 5_000;
 const KOL_BOOSTED_WALLETS = new Set([
   "GV6UUmNxz2RpKxmNAPadYKb7uQpszwqQAu3qLJxVdC52",
@@ -86,6 +87,7 @@ let lastPayload = null;
 let officialAirdrop = null;
 let completedAirdrop = null;
 let airdropHistory = [];
+let outreachDrops = [];
 
 function escapeHtml(value = "") {
   return String(value ?? "")
@@ -295,6 +297,82 @@ function completedAirdropHtml() {
   `;
 }
 
+function outreachAirdropsHtml() {
+  const drops = Array.isArray(outreachDrops) ? outreachDrops : [];
+  if (!drops.length) return "";
+  return drops
+    .map((drop) => {
+      const rows = Array.isArray(drop.recipients) ? drop.recipients : [];
+      if (!rows.length) return "";
+      const executed = formatDateTime(drop.executedAt);
+      const token = drop.sourceToken || {};
+      const tokenSymbol = String(token.symbol || "TOKEN").toUpperCase();
+      const total = formatTokenAmount(drop.totalAllocatedPumpr || 0);
+      const each = formatTokenAmount(drop.amountPerHolderPumpr || 0);
+      const txLinks = (drop.txSignatures || [])
+        .map((signature, index) => `<a href="${solscanTxUrl(signature)}" target="_blank" rel="noopener noreferrer">Batch ${index + 1}</a>`)
+        .join("");
+      const excludedCount = Array.isArray(drop.excluded) ? drop.excluded.length : 0;
+      return `
+        <article class="panel-card airdrop-plan-card airdrop-outreach-card">
+          <div class="airdrop-plan-head">
+            <div>
+              <small>Community outreach</small>
+              <h2>${escapeHtml(drop.title || "Holder outreach")} <span>${escapeHtml(drop.badge || tokenSymbol)}</span></h2>
+              <p>${escapeHtml(drop.source?.rule || "Small PUMPR outreach drop sent to an external holder list.")} Executed ${escapeHtml(executed)}.</p>
+            </div>
+            <div class="airdrop-plan-actions">
+              ${drop.source?.primaryUrl ? `<a href="${escapeHtml(drop.source.primaryUrl)}" target="_blank" rel="noopener noreferrer">Open ${escapeHtml(tokenSymbol)}</a>` : ""}
+              <details class="airdrop-proof-menu">
+                <summary>Proof txs</summary>
+                <div class="airdrop-tx-links">${txLinks}</div>
+              </details>
+            </div>
+          </div>
+          <div class="airdrop-kpi-grid">
+            <span><b>${escapeHtml(total)} $PUMPR</b><small>Total sent</small></span>
+            <span><b>${escapeHtml(String(drop.eligibleHolderCount || rows.length))}</b><small>Wallets paid</small></span>
+            <span><b>${escapeHtml(each)} $PUMPR</b><small>Each wallet</small></span>
+          </div>
+          <div class="airdrop-source-note airdrop-outreach-note">
+            <strong>${escapeHtml(drop.source?.primary || `${tokenSymbol} holder list`)}</strong>
+            <span>${escapeHtml(drop.source?.crossCheck || "Finalized Solscan proof is attached.")}</span>
+            ${excludedCount ? `<em>${escapeHtml(String(excludedCount))} off-curve addresses excluded</em>` : ""}
+          </div>
+          <div class="airdrop-holder-table airdrop-outreach-table">
+            <div class="airdrop-table-head">
+              <span>#</span>
+              <span>Holder</span>
+              <span>${escapeHtml(tokenSymbol)} held</span>
+              <span>Share</span>
+              <span>Received</span>
+              <span>Proof</span>
+            </div>
+            ${rows
+              .map((row, index) => {
+                const tx = row.signature
+                  ? `<a href="${solscanTxUrl(row.signature)}" target="_blank" rel="noopener noreferrer">Solscan</a>`
+                  : `<span>${escapeHtml(completedStatusLabel(row.status))}</span>`;
+                const pct = Number(row.ansemPct || 0).toFixed(Number(row.ansemPct || 0) >= 1 ? 2 : 3);
+                return `
+                  <div class="airdrop-table-row">
+                    <span class="airdrop-rank">${escapeHtml(String(row.sourceRank || index + 1))}</span>
+                    <span class="airdrop-holder-address">${escapeHtml(shortAddress(row.address))}</span>
+                    <span>${escapeHtml(formatTokenAmount(row.ansemAmount || 0))} $${escapeHtml(tokenSymbol)}</span>
+                    <span>${escapeHtml(pct)}%</span>
+                    <strong>${escapeHtml(formatTokenAmount(row.amountPumpr || 0))} $PUMPR</strong>
+                    <span>${tx}</span>
+                  </div>
+                `;
+              })
+              .join("")}
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
 function kolHoldingAmount(wallet = "") {
   return KOL_BOOSTED_WALLETS.has(wallet) ? 15_000 : KOL_SEED_AMOUNT;
 }
@@ -446,6 +524,7 @@ function renderEmpty(message = "The official Pumpfun Remastered mint is locked h
   if (!ui.results) return;
   ui.results.innerHTML = `
     ${completedAirdropHtml()}
+    ${outreachAirdropsHtml()}
     ${renderKolSeedHtml()}
     <article class="panel-card airdrop-empty-state">
       <span class="airdrop-empty-icon">0x</span>
@@ -476,6 +555,7 @@ function renderPreview(payload) {
 
   ui.results.innerHTML = `
     ${completedAirdropHtml()}
+    ${outreachAirdropsHtml()}
     ${renderKolSeedHtml()}
     <article class="panel-card airdrop-plan-card">
       <div class="airdrop-plan-head">
@@ -595,6 +675,15 @@ function renderOfficialAirdrop(config) {
 
 async function loadCompletedAirdrop() {
   try {
+    try {
+      const outreachResponse = await fetch(OUTREACH_AIRDROP_URL, { cache: "no-store" });
+      if (outreachResponse.ok) {
+        const outreach = await outreachResponse.json();
+        outreachDrops = Array.isArray(outreach?.drops) ? outreach.drops.filter((drop) => Array.isArray(drop?.recipients) && drop.recipients.length) : [];
+      }
+    } catch {
+      outreachDrops = [];
+    }
     const response = await fetch(AIRDROP_HISTORY_URL, { cache: "no-store" });
     if (response.ok) {
       const history = await response.json();

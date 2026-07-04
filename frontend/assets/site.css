@@ -9134,6 +9134,31 @@ select:focus,
     #141516;
 }
 
+.airdrop-outreach-card {
+  border-color: rgba(99, 179, 255, 0.28);
+  background:
+    radial-gradient(520px 170px at 0% 0%, rgba(99, 179, 255, 0.12), transparent 70%),
+    radial-gradient(420px 150px at 100% 0%, rgba(125, 242, 170, 0.08), transparent 72%),
+    #141516;
+}
+
+.airdrop-outreach-note {
+  border-color: rgba(99, 179, 255, 0.22);
+  background: rgba(99, 179, 255, 0.06);
+}
+
+.airdrop-outreach-note em {
+  color: #9fb9ff;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.airdrop-outreach-table .airdrop-rank {
+  background: rgba(99, 179, 255, 0.16);
+  color: #c8ddff;
+}
+
 .airdrop-kol-card {
   display: grid;
   gap: 1rem;
