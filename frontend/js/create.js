@@ -1744,8 +1744,8 @@ async function launchPumpFun(details) {
         attempt > 0
           ? "The previous Solana blockhash expired. Rebuilding a fresh Pump.fun transaction for Phantom..."
           : details.kolApplication?.enabled
-            ? `Preparing Pump.fun launch with Manlet Mode for ${details.kolApplication.name}. Finding a Pump-r mint ending in pr...`
-            : "Preparing official Pump.fun SDK transaction and finding a Pump-r mint ending in pr..."
+            ? `Preparing Pump.fun launch with Manlet Mode for ${details.kolApplication.name}...`
+            : "Preparing official Pump.fun SDK transaction..."
       );
       payload = await api.pumpfunLaunch({
         name: details.name,
