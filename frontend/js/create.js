@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260703launchmode";
+import { api } from "./api.js?v=20260705launchsync";
 import {
   FACTORY_ABI,
   TOKEN_ABI,
@@ -1713,6 +1713,15 @@ function cachePumpFunLaunchForHome(row = {}) {
   }
 }
 
+function syncPumpFunLaunchRecord(row = {}) {
+  if (typeof api.pumpfunRecordLaunch !== "function") return;
+  const normalized = normalizePumpFunHomeLaunch(row);
+  if (!normalized) return;
+  api.pumpfunRecordLaunch(normalized).catch(() => {
+    // Home will retry this cached launch if Supabase or Pump.fun is still catching up.
+  });
+}
+
 function isSolanaBlockhashExpiredError(error) {
   const message = String(error?.message || error || "").toLowerCase();
   return message.includes("block height exceeded") ||
@@ -1825,6 +1834,26 @@ async function launchPumpFun(details) {
         throw error;
       }
     }
+    const pumpFunHomeLaunchRow = () => ({
+      ...(finalizedLaunch || {}),
+      mint,
+      name: details.name,
+      symbol: details.symbol,
+      description: details.description,
+      imageUri: details.imageUri,
+      creator: publicKey,
+      kolApplication,
+      devBuySignature,
+      kolBuySignature,
+      kolTransferSignature,
+      pumpfunUrl,
+      signature,
+      metadataUri: payload?.metadataUri,
+      createdAt: Number(finalizedLaunch?.createdAt || Math.floor(Date.now() / 1000))
+    });
+    cachePumpFunLaunchForHome(pumpFunHomeLaunchRow());
+    syncPumpFunLaunchRecord(pumpFunHomeLaunchRow());
+
     if (Number(details.pumpfunDevBuySol || 0) > 0) {
       setAlert(ui.alert, `Token is live. Open Phantom again to buy ${details.pumpfunDevBuySol} SOL from the dev wallet.`);
       const devBuyPayload = await api.pumpfunDevBuy({
@@ -1892,23 +1921,8 @@ async function launchPumpFun(details) {
         kolApplication = transferPayload.kolApplication || kolApplication;
       }
     }
-    cachePumpFunLaunchForHome({
-      ...(finalizedLaunch || {}),
-      mint,
-      name: details.name,
-      symbol: details.symbol,
-      description: details.description,
-      imageUri: details.imageUri,
-      creator: publicKey,
-      kolApplication,
-      devBuySignature,
-      kolBuySignature,
-      kolTransferSignature,
-      pumpfunUrl,
-      signature,
-      metadataUri: payload?.metadataUri,
-      createdAt: Math.floor(Date.now() / 1000)
-    });
+    cachePumpFunLaunchForHome(pumpFunHomeLaunchRow());
+    syncPumpFunLaunchRecord(pumpFunHomeLaunchRow());
   } else {
     throw new Error("Your Solana wallet does not support transaction signing in this browser.");
   }
