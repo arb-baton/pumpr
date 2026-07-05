@@ -1771,7 +1771,7 @@ async function launchPumpFun(details) {
       const suffixText = suffix
         ? ` Mint ${shortAddress(mint)} ends with ${suffix}.`
         : "";
-      setAlert(ui.alert, `Open Phantom to sign${attempt > 0 ? " again" : ""}.${suffixText} Pump-r pre-signed the mint, then will verify and broadcast through the configured Solana RPC.`);
+      setAlert(ui.alert, `Open Phantom to sign${attempt > 0 ? " again" : ""}.${suffixText} Pump-r will add the mint signature after your approval, then verify and broadcast through the configured Solana RPC.`);
       const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
       const signed = await provider.signTransaction(transaction);
       setAlert(ui.alert, "Finalizing Pump.fun launch with the mint signature...");
