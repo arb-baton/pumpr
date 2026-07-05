@@ -34,7 +34,7 @@
     { key: "agents", href: "/agents", label: "Agents" },
     { key: "airdrop", href: "/airdrop", label: "Airdrop" },
     { key: "referral", href: "/referrals", label: "Referrals", pill: "beta", match: (path) => path === "/referrals" || path.startsWith("/r/") },
-    { key: "card", href: "/pumpr-card", label: "PUMPR Card" },
+    { key: "card", href: "/pumpr-card", label: "PUMPR Card", pill: "waitlist" },
     { key: "profile", href: "/profile", label: "Profile", id: "profileNavSide" },
     { key: "communities", href: "/communities", label: "Communities" },
     { key: "support", href: "#", label: "Support", id: "supportSideLink", className: "side-link-support", findByLabel: true },
