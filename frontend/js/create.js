@@ -1797,7 +1797,7 @@ async function launchPumpFun(details) {
         ? ` Mint ${shortAddress(mint)} ends with ${suffix}.`
         : "";
       const useWalletBroadcast = Boolean(payload?.walletBroadcast) && typeof provider.signAndSendTransaction === "function";
-      setAlert(ui.alert, `Open Phantom to ${useWalletBroadcast ? "sign and send" : "sign"}${attempt > 0 ? " again" : ""}.${suffixText} ${useWalletBroadcast ? "Phantom will broadcast the Pump.fun create transaction directly." : "Pump-r will verify and broadcast the create transaction through the configured Solana RPC."}`);
+      setAlert(ui.alert, `Open Phantom to ${useWalletBroadcast ? "sign and send" : "sign"}${attempt > 0 ? " again" : ""}.${suffixText} This is a create-only Pump.fun transaction; any dev buy opens as a separate second prompt after launch.`);
       const transaction = deserializeSolanaTransaction(solanaWeb3, transactionBase64, Boolean(payload?.versionedTransaction));
       const signedOrSent = useWalletBroadcast
         ? await provider.signAndSendTransaction(transaction)

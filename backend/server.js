@@ -7260,8 +7260,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       Keypair: SolanaKeypair,
       PublicKey: SolanaPublicKey,
       TransactionMessage: SolanaTransactionMessage,
-      VersionedTransaction: SolanaVersionedTransaction,
-      ComputeBudgetProgram: SolanaComputeBudgetProgram
+      VersionedTransaction: SolanaVersionedTransaction
     } = await loadSolanaWeb3();
     const PUMP_MOD = await loadPumpFunSdkModule();
     const PUMP_SDK = PUMP_MOD.PUMP_SDK || PUMP_MOD.default?.PUMP_SDK || PUMP_MOD.default;
@@ -7328,65 +7327,21 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       "Pump.fun launch prep",
       async (connection, rpcUrl) => {
         const latest = requestedLatest.blockhash ? requestedLatest : await connection.getLatestBlockhash("confirmed");
-        let globalInfo = null;
-        let feeConfigInfo = null;
-        if (devBuyLamports > 0n) {
-          [globalInfo, feeConfigInfo] = await Promise.all([
-            connection.getAccountInfo(PUMP_MOD.GLOBAL_PDA, "confirmed"),
-            PUMP_MOD.PUMP_FEE_CONFIG_PDA ? connection.getAccountInfo(PUMP_MOD.PUMP_FEE_CONFIG_PDA, "confirmed") : Promise.resolve(null)
-          ]);
-          if (!globalInfo) {
-            throw new Error("Pump.fun global pricing account is unavailable from this Solana RPC.");
-          }
-        }
-        return { connection, rpcUrl, latest, globalInfo, feeConfigInfo };
+        return { connection, rpcUrl, latest };
       },
-      { retryAll: devBuyLamports > 0n }
+      { retryAll: false }
     );
     const { connection, rpcUrl, latest } = rpcState;
-    let instructions = [];
-    if (devBuyLamports > 0n && PUMP_SDK?.createV2AndBuyV2Instructions && PUMP_MOD?.getBuyTokenAmountFromSolAmount) {
-      const BN = require("bn.js");
-      const splToken = require("@solana/spl-token");
-      const global = PUMP_SDK.decodeGlobal(rpcState.globalInfo);
-      const feeConfig = rpcState.feeConfigInfo && PUMP_SDK.decodeFeeConfig ? PUMP_SDK.decodeFeeConfig(rpcState.feeConfigInfo) : null;
-      const quoteAmount = new BN(devBuyLamports.toString());
-      const amount = PUMP_MOD.getBuyTokenAmountFromSolAmount({
-        global,
-        feeConfig,
-        mintSupply: null,
-        bondingCurve: null,
-        amount: quoteAmount
-      });
-      instructions = await PUMP_SDK.createV2AndBuyV2Instructions({
-        global,
-        mint: mintKeypair.publicKey,
-        name,
-        symbol,
-        uri: metadataUri,
-        creator,
-        user,
-        amount,
-        quoteAmount,
-        mayhemMode: false,
-        cashback: false,
-        quoteMint: splToken.NATIVE_MINT,
-        quoteTokenProgram: splToken.TOKEN_PROGRAM_ID
-      });
-    }
-    if (!instructions.length) {
-      instructions = [await PUMP_SDK.createV2Instruction({
-        mint: mintKeypair.publicKey,
-        name,
-        symbol,
-        uri: metadataUri,
-        creator,
-        user,
-        mayhemMode: false,
-        cashback: false
-      })];
-    }
-    const computeUnits = devBuyLamports > 0n ? 600_000 : 270_000;
+    const instructions = [await PUMP_SDK.createV2Instruction({
+      mint: mintKeypair.publicKey,
+      name,
+      symbol,
+      uri: metadataUri,
+      creator,
+      user,
+      mayhemMode: false,
+      cashback: false
+    })];
     const pumpFunLookupTable = await connection
       .getAddressLookupTable(new SolanaPublicKey("Hyif6eWb8x88RVrvjPfabsgRYnwkVnyByEXTVTXbUcyP"))
       .then((row) => row?.value ? [row.value] : [])
@@ -7395,14 +7350,9 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       new SolanaTransactionMessage({
         payerKey: user,
         recentBlockhash: latest.blockhash,
-        instructions: [
-          SolanaComputeBudgetProgram.setComputeUnitLimit({ units: computeUnits }),
-          SolanaComputeBudgetProgram.setComputeUnitPrice({ microLamports: 10_000 }),
-          ...instructions
-        ]
+        instructions
       }).compileToV0Message(pumpFunLookupTable)
     );
-    tx.sign([mintKeypair]);
     let presignSimulationWarning = "";
     try {
       await simulateSolanaTransaction(connection, tx, "Pump.fun create");
@@ -7444,7 +7394,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       mintSuffixDurationMs: vanityMint.durationMs,
       transactionBase64: Buffer.from(tx.serialize()).toString("base64"),
       versionedTransaction: true,
-      mintPresigned: true,
+      mintPresigned: false,
       signingToken,
       kolApplication,
       holderEligibility,
