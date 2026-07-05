@@ -36,8 +36,8 @@ const AIRDROP_HOLDER_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-aird
 const PUMPR_CARD_WAITLIST_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-card-waitlist.json") : path.join(ROOT, "cache", "pumpr-card-waitlist.json");
 const REFERRAL_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-referrals.json") : path.join(ROOT, "cache", "referrals.json");
 const OFFICIAL_PUMPFUN_MINT = "C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump";
-const PUMPFUN_MINT_SUFFIX_ENABLED = String(process.env.PUMPFUN_MINT_SUFFIX_ENABLED || "").trim() === "1";
-const PUMPFUN_MINT_SUFFIX = PUMPFUN_MINT_SUFFIX_ENABLED ? String(process.env.PUMPFUN_MINT_SUFFIX || "").trim() : "";
+const PUMPFUN_MINT_SUFFIX_ENABLED = !["0", "false", "no", "off"].includes(String(process.env.PUMPFUN_MINT_SUFFIX_ENABLED || "1").trim().toLowerCase());
+const PUMPFUN_MINT_SUFFIX = PUMPFUN_MINT_SUFFIX_ENABLED ? String(process.env.PUMPFUN_MINT_SUFFIX || "pr").trim() : "";
 const PUMPFUN_MINT_SUFFIX_MAX_ATTEMPTS = Math.max(1_000, Math.min(1_000_000, Number(process.env.PUMPFUN_MINT_SUFFIX_MAX_ATTEMPTS || 25_000)));
 const DEFAULT_PUMPR_ADMIN_WALLET = "ER4KEmk3jCeNhfV7hNTNyh2XGNpbE8Pqk9CZsBe2BJiy";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
