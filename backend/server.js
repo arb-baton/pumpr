@@ -7345,8 +7345,6 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       // create simulation can fail before the browser wallet signature exists.
       presignSimulationWarning = error.message || "Unsigned Pump.fun create simulation skipped";
     }
-    tx.partialSign(mintKeypair);
-
     const mint = mintKeypair.publicKey.toBase58();
     const signingToken = encryptPumpFunSigningPayload({
       mint,
