@@ -139,6 +139,26 @@ export const api = {
       target,
       follow: Boolean(follow)
     }),
+  socialFeed: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.tab) params.set("tab", String(options.tab));
+    if (options.viewer) params.set("viewer", String(options.viewer));
+    if (options.query) params.set("q", String(options.query));
+    if (options.fresh) params.set("fresh", "1");
+    if (options.limit) params.set("limit", String(options.limit));
+    const qs = params.toString();
+    return apiGet(`/api/social${qs ? `?${qs}` : ""}`);
+  },
+  socialProfile: (wallet, options = {}) => {
+    const params = new URLSearchParams();
+    if (options.fresh) params.set("fresh", "1");
+    const qs = params.toString();
+    return apiGet(`/api/social/profile/${encodeURIComponent(String(wallet || ""))}${qs ? `?${qs}` : ""}`);
+  },
+  saveSocialProfile: (body = {}) => apiPost("/api/social/profile", body),
+  socialPost: (body = {}) => apiPost("/api/social/posts", body),
+  socialReact: (postId, body = {}) => apiPost(`/api/social/posts/${encodeURIComponent(String(postId || ""))}/react`, body),
+  socialReply: (postId, body = {}) => apiPost(`/api/social/posts/${encodeURIComponent(String(postId || ""))}/replies`, body),
   communities: (limit = 80) => apiGet(`/api/communities?limit=${encodeURIComponent(String(limit || 80))}`),
   community: (token, limit = 60) =>
     apiGet(`/api/community/${encodeURIComponent(String(token || ""))}?limit=${encodeURIComponent(String(limit || 60))}`),

@@ -35,6 +35,7 @@ const PUMPFUN_LAUNCHES_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpum
 const AIRDROP_HOLDER_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-airdrop-holders.json") : path.join(ROOT, "cache", "airdrop-holders.json");
 const PUMPR_CARD_WAITLIST_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-card-waitlist.json") : path.join(ROOT, "cache", "pumpr-card-waitlist.json");
 const REFERRAL_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-referrals.json") : path.join(ROOT, "cache", "referrals.json");
+const SOCIAL_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-social.json") : path.join(ROOT, "cache", "social.json");
 const OFFICIAL_PUMPFUN_MINT = "C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump";
 const PUMPFUN_MINT_SUFFIX_ENABLED = !["0", "false", "no", "off"].includes(String(process.env.PUMPFUN_MINT_SUFFIX_ENABLED || "1").trim().toLowerCase());
 const PUMPFUN_MINT_SUFFIX = PUMPFUN_MINT_SUFFIX_ENABLED ? String(process.env.PUMPFUN_MINT_SUFFIX || "pr").trim() : "";
@@ -58,6 +59,7 @@ const SUPABASE_PUMPFUN_METADATA_OBJECT = String(process.env.SUPABASE_PUMPFUN_MET
 const SUPABASE_SUPPORT_OBJECT = String(process.env.SUPABASE_SUPPORT_OBJECT || "support/messages.json").trim();
 const SUPABASE_PUMPR_CARD_WAITLIST_OBJECT = String(process.env.SUPABASE_PUMPR_CARD_WAITLIST_OBJECT || "pumpr-card/waitlist.json").trim();
 const SUPABASE_REFERRAL_OBJECT = String(process.env.SUPABASE_REFERRAL_OBJECT || "referrals/referrals.json").trim();
+const SUPABASE_SOCIAL_OBJECT = String(process.env.SUPABASE_SOCIAL_OBJECT || "social/social.json").trim();
 const COMMUNITY_RESET_BEFORE_UNIX = Math.max(0, Number(process.env.COMMUNITY_RESET_BEFORE_UNIX || "1782413298"));
 const PROFILE_IMAGE_URI_MAX_LENGTH = 2 * 1024 * 1024;
 const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || (IS_VERCEL_RUNTIME ? "1" : "0")) === "1";
@@ -297,6 +299,8 @@ let agentsDbCache = null;
 let agentsDbRemoteLoaded = false;
 let referralDbCache = null;
 let referralDbRemoteLoaded = false;
+let socialDbCache = null;
+let socialDbRemoteLoaded = false;
 let pumpFunBountiesCache = { rows: [], fetchedAt: 0, error: "" };
 const pumpFunBountyDetailCache = new Map();
 let pumpFunLaunchesDbCache = null;
@@ -2086,6 +2090,446 @@ function findReferralProfileByRef(store, ref = "") {
   const wallet = normalizeSupportAddress(text);
   const key = referralWalletKey(wallet);
   return key ? (store.profiles || []).find((row) => row.key === key) || normalizeReferralProfile({ wallet, name: "" }) : null;
+}
+
+function emptySocialStore() {
+  return {
+    profiles: [
+      {
+        wallet: DEFAULT_PUMPR_ADMIN_WALLET,
+        handle: "pumpr_social",
+        displayName: "Pump-r Social",
+        bio: "Official Pump-r Social beta account.",
+        imageUri: "/assets/pump-r-logo.png?v=20260609brand",
+        source: "official",
+        xUsername: "pf_remastered",
+        createdAt: 1783305600,
+        updatedAt: 1783305600,
+        xp: 25
+      }
+    ],
+    posts: [
+      {
+        id: "seed-pumpr-social",
+        authorWallet: DEFAULT_PUMPR_ADMIN_WALLET,
+        body: "Pump-r Social beta is live. Post useful crypto takes, follow creators, build your profile, and earn social XP while rewards are tested.",
+        token: "$PUMPR",
+        chain: "SOL",
+        category: "announcement",
+        createdAt: 1783305600,
+        likes: [],
+        reposts: [],
+        replies: []
+      },
+      {
+        id: "seed-launch-radar",
+        authorWallet: DEFAULT_PUMPR_ADMIN_WALLET,
+        body: "Launch radar is for contract posts, new Pump-r launches, creator updates, and mint links. Drop the CA when the token is live.",
+        token: "$PUMPR",
+        chain: "SOL",
+        category: "launch",
+        createdAt: 1783303800,
+        likes: [],
+        reposts: [],
+        replies: []
+      },
+      {
+        id: "seed-alpha-desk",
+        authorWallet: DEFAULT_PUMPR_ADMIN_WALLET,
+        body: "Alpha desk is for actual signals: wallet flow, chart context, watchlists, launch support, and theses people can act on.",
+        token: "$PUMPR",
+        chain: "SOL",
+        category: "alpha",
+        createdAt: 1783303000,
+        likes: [],
+        reposts: [],
+        replies: []
+      },
+      {
+        id: "seed-builder-rewards",
+        authorWallet: DEFAULT_PUMPR_ADMIN_WALLET,
+        body: "Rewards feed tracks social XP, holder rewards, referral bonuses, creator rewards, and airdrop-related updates.",
+        token: "$PUMPR",
+        chain: "SOL",
+        category: "rewards",
+        createdAt: 1783302000,
+        likes: [],
+        reposts: [],
+        replies: []
+      }
+    ],
+    updatedAt: Math.floor(Date.now() / 1000)
+  };
+}
+
+function normalizeSocialHandle(value = "") {
+  const text = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, "")
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 24);
+  return /^[a-z0-9][a-z0-9_]{2,23}$/.test(text) ? text : "";
+}
+
+function reservedSocialHandles() {
+  return new Set([
+    "admin",
+    "airdrop",
+    "alpha",
+    "api",
+    "card",
+    "communities",
+    "create",
+    "go",
+    "home",
+    "official",
+    "profile",
+    "pump",
+    "pumpr",
+    "pumpfun",
+    "referrals",
+    "social",
+    "support",
+    "token"
+  ]);
+}
+
+function sanitizeSocialText(value = "", max = 280) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function normalizeSocialMediaUrl(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  try {
+    const url = new URL(text);
+    if (!["http:", "https:"].includes(url.protocol)) return "";
+    return url.toString().slice(0, 1024);
+  } catch {
+    return "";
+  }
+}
+
+function defaultSocialHandle(wallet = "", existing = new Set()) {
+  const seed = String(wallet || "pumpr").replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toLowerCase() || "holder";
+  const base = normalizeSocialHandle(`pumpr_${seed}`) || "pumpr_holder";
+  if (!existing.has(base) && !reservedSocialHandles().has(base)) return base;
+  for (let i = 2; i < 5000; i += 1) {
+    const candidate = normalizeSocialHandle(`${base}_${i}`);
+    if (candidate && !existing.has(candidate) && !reservedSocialHandles().has(candidate)) return candidate;
+  }
+  return `pumpr_${crypto.randomBytes(3).toString("hex")}`;
+}
+
+function normalizeSocialProfile(row = {}, existingHandles = new Set()) {
+  const wallet = normalizeSupportAddress(row.wallet || row.address || "");
+  const key = supportAddressKey(wallet);
+  if (!wallet || !key) return null;
+  let handle = normalizeSocialHandle(row.handle || row.username || row.name || "");
+  if (!handle || reservedSocialHandles().has(handle) || existingHandles.has(handle)) {
+    handle = defaultSocialHandle(wallet, existingHandles);
+  }
+  return {
+    wallet,
+    key,
+    handle,
+    displayName: sanitizeSocialText(row.displayName || row.name || row.username || handle, 60),
+    bio: sanitizeSocialText(row.bio || "", 180),
+    imageUri: normalizeSocialMediaUrl(row.imageUri || row.image || row.profileImageUrl || ""),
+    source: sanitizeSocialText(row.source || row.type || "wallet", 40),
+    xUsername: normalizeSocialHandle(row.xUsername || row.x_username || ""),
+    createdAt: parseUnixTimestamp(row.createdAt || row.created_at || row.ts) || Math.floor(Date.now() / 1000),
+    updatedAt: parseUnixTimestamp(row.updatedAt || row.updated_at || row.ts) || Math.floor(Date.now() / 1000),
+    xp: Math.max(0, Math.floor(Number(row.xp || 0) || 0))
+  };
+}
+
+function extractCryptoTags(text = "") {
+  const body = String(text || "");
+  const cashtags = [...new Set((body.match(/\$[A-Za-z][A-Za-z0-9_]{1,20}/g) || []).map((row) => row.toUpperCase()))].slice(0, 8);
+  const contracts = [...new Set(body.match(/\b(?:0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})\b/g) || [])].slice(0, 4);
+  return { cashtags, contracts };
+}
+
+function normalizeSocialReply(row = {}) {
+  const authorWallet = normalizeSupportAddress(row.authorWallet || row.wallet || row.address || "");
+  const authorKey = supportAddressKey(authorWallet);
+  const body = sanitizeSocialText(row.body || row.text || "", 360);
+  if (!authorWallet || !authorKey || !body) return null;
+  return {
+    id: String(row.id || `reply-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`).slice(0, 80),
+    authorWallet,
+    authorKey,
+    body,
+    createdAt: parseUnixTimestamp(row.createdAt || row.created_at || row.ts) || Math.floor(Date.now() / 1000)
+  };
+}
+
+function normalizeSocialPost(row = {}) {
+  const authorWallet = normalizeSupportAddress(row.authorWallet || row.wallet || row.address || "");
+  const authorKey = supportAddressKey(authorWallet);
+  const body = sanitizeSocialText(row.body || row.text || row.content || "", 1200);
+  if (!authorWallet || !authorKey || !body) return null;
+  const tags = extractCryptoTags(body);
+  return {
+    id: String(row.id || `post-${Date.now()}-${crypto.randomBytes(5).toString("hex")}`).slice(0, 90),
+    authorWallet,
+    authorKey,
+    body,
+    token: sanitizeSocialText(row.token || row.cashtag || tags.cashtags[0] || "", 32),
+    chain: sanitizeSocialText(row.chain || "SOL", 24).toUpperCase(),
+    category: sanitizeSocialText(row.category || "post", 40),
+    mediaUrl: normalizeSocialMediaUrl(row.mediaUrl || row.media || ""),
+    createdAt: parseUnixTimestamp(row.createdAt || row.created_at || row.ts) || Math.floor(Date.now() / 1000),
+    tags,
+    likes: [...new Set((Array.isArray(row.likes) ? row.likes : []).map((value) => supportAddressKey(value)).filter(Boolean))].slice(0, 5000),
+    reposts: [...new Set((Array.isArray(row.reposts) ? row.reposts : []).map((value) => supportAddressKey(value)).filter(Boolean))].slice(0, 5000),
+    replies: (Array.isArray(row.replies) ? row.replies : []).map((reply) => normalizeSocialReply(reply)).filter(Boolean).slice(0, 300)
+  };
+}
+
+function sanitizeSocialStore(store = {}) {
+  const handles = new Set();
+  const profilesByKey = new Map();
+  for (const row of Array.isArray(store?.profiles) ? store.profiles : []) {
+    const profile = normalizeSocialProfile(row, handles);
+    if (!profile) continue;
+    handles.add(profile.handle);
+    profilesByKey.set(profile.key, profile);
+  }
+
+  const postsById = new Map();
+  for (const row of Array.isArray(store?.posts) ? store.posts : []) {
+    const post = normalizeSocialPost(row);
+    if (!post) continue;
+    postsById.set(post.id, post);
+    if (!profilesByKey.has(post.authorKey)) {
+      const profile = normalizeSocialProfile(
+        post.authorWallet === DEFAULT_PUMPR_ADMIN_WALLET
+          ? {
+              wallet: post.authorWallet,
+              handle: "pumpr_social",
+              displayName: "Pump-r Social",
+              imageUri: "/assets/pump-r-logo.png?v=20260609brand",
+              source: "official",
+              xUsername: "pf_remastered",
+              xp: 25
+            }
+          : { wallet: post.authorWallet, source: "post" },
+        handles
+      );
+      if (profile) {
+        handles.add(profile.handle);
+        profilesByKey.set(profile.key, profile);
+      }
+    }
+  }
+
+  const seeded = postsById.size ? [...postsById.values()] : emptySocialStore().posts;
+  return {
+    profiles: [...profilesByKey.values()].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)),
+    posts: seeded.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)).slice(0, 1000),
+    updatedAt: parseUnixTimestamp(store?.updatedAt) || Math.floor(Date.now() / 1000)
+  };
+}
+
+function readSocialDb() {
+  if (socialDbCache && typeof socialDbCache === "object") return socialDbCache;
+  try {
+    if (fs.existsSync(SOCIAL_DB_PATH)) {
+      socialDbCache = sanitizeSocialStore(JSON.parse(fs.readFileSync(SOCIAL_DB_PATH, "utf8") || "{}"));
+      return socialDbCache;
+    }
+  } catch {
+    // fall through
+  }
+  socialDbCache = emptySocialStore();
+  return socialDbCache;
+}
+
+function writeSocialDb(store) {
+  const safe = sanitizeSocialStore(store);
+  safe.updatedAt = Math.floor(Date.now() / 1000);
+  try {
+    fs.mkdirSync(path.dirname(SOCIAL_DB_PATH), { recursive: true });
+    fs.writeFileSync(SOCIAL_DB_PATH, JSON.stringify(safe, null, 2));
+  } catch {
+    // Local mirror failures should not block remote writes.
+  }
+  socialDbCache = safe;
+  return safe;
+}
+
+async function readSocialDbRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_SOCIAL_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_SOCIAL_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Supabase social read failed: ${response.status}`);
+  return sanitizeSocialStore(await response.json().catch(() => emptySocialStore()));
+}
+
+async function writeSocialDbRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_SOCIAL_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_SOCIAL_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizeSocialStore(store), null, 2)
+  });
+  if (!response.ok) throw new Error(`Supabase social write failed: ${response.status}`);
+  return true;
+}
+
+async function readSocialDbPersistent(options = {}) {
+  if (isSupabaseStorageConfigured() && (options.refresh || !socialDbRemoteLoaded)) {
+    try {
+      const remote = await readSocialDbRemote();
+      if (remote) writeSocialDb(remote);
+      socialDbRemoteLoaded = true;
+    } catch (error) {
+      console.warn(`Supabase social read failed: ${error?.message || "connection error"}`);
+      socialDbRemoteLoaded = true;
+    }
+  }
+  return sanitizeSocialStore(readSocialDb());
+}
+
+async function writeSocialDbPersistent(store) {
+  assertJsonStoreConfigured("Social", SUPABASE_SOCIAL_OBJECT);
+  const safe = writeSocialDb(store);
+  if (isSupabaseStorageConfigured()) {
+    await writeSocialDbRemote(safe);
+  }
+  return safe;
+}
+
+function findSocialProfileByWallet(store, wallet) {
+  const key = supportAddressKey(wallet);
+  return key ? (store.profiles || []).find((row) => row.key === key) || null : null;
+}
+
+function createOrUpdateSocialProfile(store, value = {}) {
+  const wallet = normalizeSupportAddress(value.wallet || value.address || "");
+  const key = supportAddressKey(wallet);
+  if (!wallet || !key) throw new Error("Connect a wallet or X-generated Solana wallet first");
+  const existing = findSocialProfileByWallet(store, wallet);
+  const requestedHandle = normalizeSocialHandle(value.handle || value.username || existing?.handle || "");
+  const duplicate = requestedHandle
+    ? (store.profiles || []).find((row) => row.handle === requestedHandle && row.key !== key)
+    : null;
+  if (duplicate || (requestedHandle && reservedSocialHandles().has(requestedHandle))) {
+    throw new Error("That social name is already taken");
+  }
+  const used = new Set((store.profiles || []).filter((row) => row.key !== key).map((row) => row.handle).filter(Boolean));
+  const profile = normalizeSocialProfile(
+    {
+      ...(existing || {}),
+      wallet,
+      handle: requestedHandle || existing?.handle || value.handle || value.username || "",
+      displayName: value.displayName || value.name || value.username || existing?.displayName || "",
+      bio: value.bio ?? existing?.bio ?? "",
+      imageUri: value.imageUri || value.image || existing?.imageUri || "",
+      source: value.source || value.type || existing?.source || "wallet",
+      xUsername: value.xUsername || value.x_username || existing?.xUsername || "",
+      xp: existing?.xp || 0,
+      createdAt: existing?.createdAt || Math.floor(Date.now() / 1000),
+      updatedAt: Math.floor(Date.now() / 1000)
+    },
+    used
+  );
+  if (!profile) throw new Error("Could not create social profile");
+  store.profiles = [profile, ...(store.profiles || []).filter((row) => row.key !== key)];
+  return profile;
+}
+
+function socialProfilePublic(profile = {}) {
+  return {
+    wallet: profile.wallet || "",
+    handle: profile.handle || "",
+    displayName: profile.displayName || profile.handle || "",
+    bio: profile.bio || "",
+    imageUri: profile.imageUri || "",
+    source: profile.source || "wallet",
+    xUsername: profile.xUsername || "",
+    xp: Math.max(0, Math.floor(Number(profile.xp || 0) || 0)),
+    createdAt: profile.createdAt || 0,
+    updatedAt: profile.updatedAt || 0
+  };
+}
+
+function socialStatsForWallet(store, wallet) {
+  const key = supportAddressKey(wallet);
+  const authored = (store.posts || []).filter((post) => post.authorKey === key);
+  const likesReceived = authored.reduce((sum, post) => sum + (post.likes || []).length, 0);
+  const repostsReceived = authored.reduce((sum, post) => sum + (post.reposts || []).length, 0);
+  const repliesWritten = (store.posts || []).reduce((sum, post) => sum + (post.replies || []).filter((reply) => reply.authorKey === key).length, 0);
+  const profile = findSocialProfileByWallet(store, wallet);
+  const xp = Math.max(0, Math.floor(Number(profile?.xp || 0) || 0)) + authored.length * 5 + repliesWritten * 2 + likesReceived + repostsReceived * 3;
+  let tier = "New";
+  if (xp >= 1000) tier = "Diamond";
+  else if (xp >= 350) tier = "Gold";
+  else if (xp >= 120) tier = "Silver";
+  else if (xp >= 25) tier = "Bronze";
+  return {
+    xp,
+    tier,
+    posts: authored.length,
+    likesReceived,
+    repostsReceived,
+    repliesWritten
+  };
+}
+
+function socialLeaderboard(store) {
+  const rows = [];
+  for (const profile of store.profiles || []) {
+    const stats = socialStatsForWallet(store, profile.wallet);
+    rows.push({ profile: socialProfilePublic(profile), stats });
+  }
+  return rows.sort((a, b) => Number(b.stats?.xp || 0) - Number(a.stats?.xp || 0)).slice(0, 20);
+}
+
+function socialPostPublic(post = {}, store = {}, viewer = "") {
+  const viewerKey = supportAddressKey(viewer);
+  const profile = findSocialProfileByWallet(store, post.authorWallet) || normalizeSocialProfile({ wallet: post.authorWallet }, new Set());
+  return {
+    id: post.id,
+    author: socialProfilePublic(profile),
+    body: post.body,
+    token: post.token,
+    chain: post.chain,
+    category: post.category,
+    mediaUrl: post.mediaUrl,
+    createdAt: post.createdAt,
+    tags: post.tags || extractCryptoTags(post.body),
+    stats: {
+      likes: (post.likes || []).length,
+      reposts: (post.reposts || []).length,
+      replies: (post.replies || []).length
+    },
+    viewer: {
+      liked: viewerKey ? (post.likes || []).includes(viewerKey) : false,
+      reposted: viewerKey ? (post.reposts || []).includes(viewerKey) : false
+    },
+    replies: (post.replies || []).slice(-8).map((reply) => ({
+      ...reply,
+      author: socialProfilePublic(findSocialProfileByWallet(store, reply.authorWallet) || normalizeSocialProfile({ wallet: reply.authorWallet }, new Set()))
+    }))
+  };
 }
 
 function referralTierFor({ holderPct = 0, balanceTokens = 0, holdingSeconds = 0 } = {}) {
@@ -8188,6 +8632,165 @@ function publicReferralLeaderboard(store) {
     .slice(0, 100);
 }
 
+app.get("/api/social", async (req, res) => {
+  try {
+    const store = await readSocialDbPersistent({ refresh: req.query.fresh === "1" });
+    const limit = Math.max(5, Math.min(100, Number(req.query.limit || 40)));
+    const tab = String(req.query.tab || "for-you").trim().toLowerCase();
+    const viewer = normalizeSupportAddress(req.query.viewer || "");
+    const query = sanitizeSocialText(req.query.q || "", 80).toLowerCase();
+    let posts = [...(store.posts || [])];
+    if (tab === "alpha") posts = posts.filter((post) => /\balpha\b/i.test(post.body) || post.category === "alpha");
+    if (tab === "launches") posts = posts.filter((post) => /\blaunch|ca:|contract|pump\.fun\b/i.test(post.body) || post.category === "launch");
+    if (tab === "rewards") posts = posts.filter((post) => /\breward|airdrop|xp|holder\b/i.test(post.body) || post.category === "rewards");
+    if (query) {
+      posts = posts.filter((post) => {
+        const profile = findSocialProfileByWallet(store, post.authorWallet);
+        return [post.body, post.token, post.chain, profile?.handle, profile?.displayName]
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      });
+    }
+    posts = posts.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)).slice(0, limit);
+    res.json({
+      posts: posts.map((post) => socialPostPublic(post, store, viewer)),
+      leaderboard: socialLeaderboard(store),
+      updatedAt: store.updatedAt || Math.floor(Date.now() / 1000)
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load Pump-r Social" });
+  }
+});
+
+app.get("/api/social/profile/:wallet", async (req, res) => {
+  try {
+    const wallet = normalizeSupportAddress(req.params.wallet || "");
+    if (!wallet) return res.status(400).json({ error: "Invalid wallet" });
+    const store = await readSocialDbPersistent({ refresh: req.query.fresh === "1" });
+    const profile = findSocialProfileByWallet(store, wallet);
+    res.json({
+      profile: profile ? socialProfilePublic(profile) : null,
+      stats: socialStatsForWallet(store, wallet)
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load social profile" });
+  }
+});
+
+app.post("/api/social/profile", async (req, res) => {
+  try {
+    const store = await readSocialDbPersistent({ refresh: true });
+    const profile = createOrUpdateSocialProfile(store, req.body || {});
+    const saved = await writeSocialDbPersistent(store);
+    res.json({
+      profile: socialProfilePublic(findSocialProfileByWallet(saved, profile.wallet) || profile),
+      stats: socialStatsForWallet(saved, profile.wallet)
+    });
+  } catch (error) {
+    const text = String(error?.message || "Failed to save social profile");
+    const status = /taken|connect|invalid|could not/i.test(text) ? 400 : 500;
+    res.status(status).json({ error: text });
+  }
+});
+
+app.post("/api/social/posts", async (req, res) => {
+  try {
+    const store = await readSocialDbPersistent({ refresh: true });
+    const profile = createOrUpdateSocialProfile(store, {
+      wallet: req.body?.wallet || req.body?.authorWallet,
+      handle: req.body?.handle,
+      displayName: req.body?.displayName,
+      imageUri: req.body?.imageUri,
+      source: req.body?.source || "social"
+    });
+    const post = normalizeSocialPost({
+      ...req.body,
+      authorWallet: profile.wallet,
+      id: `post-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+      createdAt: Math.floor(Date.now() / 1000)
+    });
+    if (!post) return res.status(400).json({ error: "Write something before posting" });
+    profile.xp = Math.max(0, Number(profile.xp || 0) || 0) + 5;
+    profile.updatedAt = Math.floor(Date.now() / 1000);
+    store.profiles = [profile, ...(store.profiles || []).filter((row) => row.key !== profile.key)];
+    store.posts = [post, ...(store.posts || [])].slice(0, 1000);
+    const saved = await writeSocialDbPersistent(store);
+    res.json({
+      post: socialPostPublic(post, saved, profile.wallet),
+      profile: socialProfilePublic(findSocialProfileByWallet(saved, profile.wallet) || profile),
+      stats: socialStatsForWallet(saved, profile.wallet)
+    });
+  } catch (error) {
+    const text = String(error?.message || "Failed to publish post");
+    const status = /taken|connect|invalid|write/i.test(text) ? 400 : 500;
+    res.status(status).json({ error: text });
+  }
+});
+
+app.post("/api/social/posts/:postId/react", async (req, res) => {
+  try {
+    const wallet = normalizeSupportAddress(req.body?.wallet || req.body?.address || "");
+    const key = supportAddressKey(wallet);
+    if (!wallet || !key) return res.status(400).json({ error: "Connect first" });
+    const type = String(req.body?.type || "like").toLowerCase() === "repost" ? "repost" : "like";
+    const listName = type === "repost" ? "reposts" : "likes";
+    const store = await readSocialDbPersistent({ refresh: true });
+    createOrUpdateSocialProfile(store, {
+      wallet,
+      handle: req.body?.handle,
+      displayName: req.body?.displayName,
+      imageUri: req.body?.imageUri,
+      source: req.body?.source || "social"
+    });
+    const post = (store.posts || []).find((row) => row.id === String(req.params.postId || ""));
+    if (!post) return res.status(404).json({ error: "Post not found" });
+    const set = new Set(post[listName] || []);
+    if (req.body?.active === false) set.delete(key);
+    else set.add(key);
+    post[listName] = [...set].slice(0, 5000);
+    const saved = await writeSocialDbPersistent(store);
+    res.json({ post: socialPostPublic(post, saved, wallet), leaderboard: socialLeaderboard(saved) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to update reaction" });
+  }
+});
+
+app.post("/api/social/posts/:postId/replies", async (req, res) => {
+  try {
+    const wallet = normalizeSupportAddress(req.body?.wallet || req.body?.address || "");
+    const key = supportAddressKey(wallet);
+    if (!wallet || !key) return res.status(400).json({ error: "Connect first" });
+    const store = await readSocialDbPersistent({ refresh: true });
+    const profile = createOrUpdateSocialProfile(store, {
+      wallet,
+      handle: req.body?.handle,
+      displayName: req.body?.displayName,
+      imageUri: req.body?.imageUri,
+      source: req.body?.source || "social"
+    });
+    const post = (store.posts || []).find((row) => row.id === String(req.params.postId || ""));
+    if (!post) return res.status(404).json({ error: "Post not found" });
+    const reply = normalizeSocialReply({
+      authorWallet: wallet,
+      body: req.body?.body || req.body?.text || "",
+      id: `reply-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+      createdAt: Math.floor(Date.now() / 1000)
+    });
+    if (!reply) return res.status(400).json({ error: "Write a reply first" });
+    profile.xp = Math.max(0, Number(profile.xp || 0) || 0) + 2;
+    profile.updatedAt = Math.floor(Date.now() / 1000);
+    store.profiles = [profile, ...(store.profiles || []).filter((row) => row.key !== profile.key)];
+    post.replies = [...(post.replies || []), reply].slice(-300);
+    const saved = await writeSocialDbPersistent(store);
+    res.json({ post: socialPostPublic(post, saved, wallet), stats: socialStatsForWallet(saved, wallet) });
+  } catch (error) {
+    const text = String(error?.message || "Failed to publish reply");
+    const status = /connect|write|not found/i.test(text) ? 400 : 500;
+    res.status(status).json({ error: text });
+  }
+});
+
 app.get("/api/referrals/me/:wallet", async (req, res) => {
   try {
     const wallet = normalizeSupportAddress(req.params.wallet || "");
@@ -10495,6 +11098,10 @@ app.get("/airdrop", (_req, res) => {
 
 app.get(["/referrals", "/r/:ref"], (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "referrals.html"));
+});
+
+app.get("/social", (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "social.html"));
 });
 
 app.get("/profile", (_req, res) => {

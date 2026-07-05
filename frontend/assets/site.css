@@ -14577,3 +14577,1467 @@ button[disabled] {
     min-width: 660px;
   }
 }
+
+.social-page {
+  background: #090a0c;
+}
+
+.social-topbar .create-searchbar {
+  max-width: 680px;
+}
+
+.social-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 18px;
+  width: min(1480px, calc(100vw - 280px));
+  margin: 0 auto;
+  padding: 18px 22px 42px;
+}
+
+.social-main,
+.social-rail {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.social-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 420px);
+  gap: 18px;
+  align-items: end;
+  border-color: rgba(111, 240, 165, 0.22);
+}
+
+.social-hero small,
+.social-profile-card small,
+.social-rewards-card small,
+.social-trending-card small,
+.social-leaderboard-card small {
+  color: #6ff0a5;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.social-hero h1 {
+  margin: 7px 0 10px;
+  font-size: clamp(30px, 4vw, 54px);
+  line-height: 0.98;
+  letter-spacing: 0;
+}
+
+.social-hero p,
+.social-rewards-card p {
+  max-width: 780px;
+  margin: 0;
+  color: #b8c6d9;
+  font-size: 15px;
+}
+
+.social-hero-stats,
+.social-rule-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.social-hero-stats span,
+.social-rule-list span,
+.social-feature-list span {
+  min-height: 70px;
+  padding: 13px;
+  border: 1px solid #26303b;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.social-hero-stats b,
+.social-rule-list b {
+  display: block;
+  color: #6ff0a5;
+  font-size: 20px;
+}
+
+.social-hero-stats small,
+.social-rule-list small {
+  color: #aab6c6;
+  text-transform: none;
+  font-weight: 700;
+}
+
+.social-profile-head,
+.social-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.social-profile-head h2,
+.social-card-head h2,
+.social-rewards-card h2,
+.social-trending-card h2 {
+  margin: 3px 0 0;
+}
+
+.social-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.social-profile-card label {
+  display: grid;
+  gap: 7px;
+  color: #dce7f8;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.social-profile-card input,
+.social-composer input,
+.social-composer select,
+.social-composer textarea {
+  width: 100%;
+  border: 1px solid #26303b;
+  border-radius: 8px;
+  background: #0b0f12;
+  color: #fff;
+  outline: none;
+}
+
+.social-profile-card input,
+.social-composer input,
+.social-composer select {
+  height: 44px;
+  padding: 0 13px;
+}
+
+.social-composer {
+  border-color: rgba(111, 240, 165, 0.18);
+}
+
+.social-composer-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.social-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(111, 240, 165, 0.55);
+  background: #102219 center / cover no-repeat;
+  color: #6ff0a5;
+  font-weight: 900;
+  object-fit: cover;
+}
+
+.social-avatar.mini {
+  width: 34px;
+  height: 34px;
+  font-size: 11px;
+}
+
+.social-avatar.tiny {
+  width: 24px;
+  height: 24px;
+  font-size: 9px;
+}
+
+.social-composer textarea {
+  min-height: 106px;
+  resize: vertical;
+  padding: 13px;
+  font: inherit;
+}
+
+.social-composer-tools {
+  display: grid;
+  grid-template-columns: 150px 100px minmax(0, 1fr) 120px;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.social-status {
+  min-height: 18px;
+  margin: 10px 0 0;
+  color: #9aa7ba;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.social-status[data-tone="ok"] {
+  color: #6ff0a5;
+}
+
+.social-status[data-tone="warn"] {
+  color: #ffd073;
+}
+
+.social-status[data-tone="error"] {
+  color: #ff7b8a;
+}
+
+.social-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #242a33;
+  border-radius: 8px;
+  background: #111315;
+}
+
+.social-tabs button {
+  border: 0;
+  border-radius: 7px;
+  padding: 10px 16px;
+  background: transparent;
+  color: #b8c6d9;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.social-tabs button.active {
+  background: #6ff0a5;
+  color: #06110b;
+}
+
+.social-feed {
+  display: grid;
+  gap: 12px;
+}
+
+.social-post {
+  padding: 0;
+  overflow: hidden;
+}
+
+.social-post-main {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px;
+}
+
+.social-post-body {
+  min-width: 0;
+}
+
+.social-post-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.social-post-head strong,
+.social-leader-row strong {
+  color: #fff;
+}
+
+.social-post-head small,
+.social-leader-row small {
+  display: block;
+  color: #9aa7ba;
+  font-weight: 700;
+}
+
+.social-post-head > span {
+  border: 1px solid rgba(111, 240, 165, 0.45);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #6ff0a5;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.social-post p {
+  margin: 9px 0;
+  color: #eaf1fb;
+  line-height: 1.48;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.social-tags,
+.social-actions,
+.social-feature-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.social-tags span {
+  border: 1px solid #27374a;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #c9d6e8;
+  background: #0d1117;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.social-post-media {
+  width: min(100%, 620px);
+  max-height: 420px;
+  object-fit: cover;
+  border: 1px solid #26303b;
+  border-radius: 8px;
+  margin: 8px 0 2px;
+}
+
+.social-actions {
+  margin-top: 10px;
+}
+
+.social-actions button,
+.social-reply-box button {
+  border: 1px solid #26303b;
+  border-radius: 999px;
+  background: #111821;
+  color: #b8c6d9;
+  padding: 8px 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.social-actions button.active {
+  border-color: rgba(111, 240, 165, 0.55);
+  color: #6ff0a5;
+  background: rgba(111, 240, 165, 0.1);
+}
+
+.social-replies {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #222932;
+}
+
+.social-reply {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.social-reply p {
+  margin: 0;
+  color: #c9d6e8;
+  font-size: 13px;
+}
+
+.social-reply-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.social-reply-box[hidden] {
+  display: none;
+}
+
+.social-reply-box input {
+  min-height: 40px;
+  border: 1px solid #26303b;
+  border-radius: 999px;
+  padding: 0 13px;
+  background: #0b0f12;
+  color: #fff;
+}
+
+.social-rule-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.social-feature-list {
+  margin-top: 12px;
+}
+
+.social-feature-list span {
+  min-height: 0;
+  padding: 9px 10px;
+  color: #dce7f8;
+  font-weight: 800;
+}
+
+.social-leaderboard-list {
+  display: grid;
+  gap: 10px;
+}
+
+.social-leader-row {
+  display: grid;
+  grid-template-columns: 22px 34px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  border: 1px solid #242a33;
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.social-leader-row > span {
+  color: #6ff0a5;
+  font-weight: 900;
+}
+
+.social-leader-row b {
+  color: #6ff0a5;
+}
+
+.social-empty {
+  border: 1px solid #242a33;
+  border-radius: 8px;
+  padding: 22px;
+  color: #9aa7ba;
+  background: #111315;
+  font-weight: 800;
+}
+
+.social-empty.small {
+  padding: 12px;
+}
+
+@media (max-width: 1200px) {
+  .social-shell {
+    grid-template-columns: 1fr;
+    width: min(100%, calc(100vw - 220px));
+  }
+
+  .social-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .social-leaderboard-card {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 860px) {
+  .social-shell {
+    width: 100%;
+    padding: 14px;
+  }
+
+  .social-hero,
+  .social-profile-grid,
+  .social-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .social-composer-tools {
+    grid-template-columns: 1fr 110px;
+  }
+
+  .social-composer-tools #socialPostMedia,
+  .social-composer-tools #socialPostBtn {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .social-post-main,
+  .social-composer-row {
+    grid-template-columns: 1fr;
+  }
+
+  .social-post-main > .social-avatar {
+    width: 40px;
+    height: 40px;
+  }
+
+  .social-hero h1 {
+    font-size: 30px;
+  }
+
+  .social-hero-stats,
+  .social-rule-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+.socialx-page {
+  background:
+    radial-gradient(circle at 50% -10%, rgba(111, 240, 165, 0.09), transparent 26%),
+    #07080a;
+}
+
+.socialx-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(18px);
+  background: rgba(13, 15, 17, 0.88);
+}
+
+.socialx-search {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  width: min(760px, 100%);
+  border: 1px solid #27303b;
+  border-radius: 12px;
+  background: #0b0f12;
+  overflow: hidden;
+}
+
+.socialx-search span {
+  color: #6ff0a5;
+  text-align: center;
+  font-weight: 900;
+}
+
+.socialx-search input {
+  height: 44px;
+  border: 0;
+  outline: 0;
+  color: #eef5ff;
+  background: transparent;
+}
+
+.socialx-shell {
+  display: grid;
+  grid-template-columns: 286px minmax(520px, 760px) 356px;
+  gap: 18px;
+  width: min(1500px, calc(100vw - 260px));
+  margin: 0 auto;
+  padding: 18px 22px 48px;
+  align-items: start;
+}
+
+.socialx-left,
+.socialx-right {
+  position: sticky;
+  top: 94px;
+  display: grid;
+  gap: 14px;
+}
+
+.socialx-center {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.socialx-me-card,
+.socialx-beta-card,
+.socialx-panel,
+.socialx-timeline-head,
+.socialx-composer,
+.socialx-post,
+.socialx-profile-view,
+.socialx-reward-hero,
+.socialx-modal {
+  border: 1px solid rgba(40, 49, 60, 0.95);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(21, 25, 29, 0.98), rgba(9, 12, 14, 0.98)),
+    radial-gradient(circle at 20% 0%, rgba(111, 240, 165, 0.08), transparent 28%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.2);
+}
+
+.socialx-me-card:hover,
+.socialx-panel:hover,
+.socialx-post:hover,
+.socialx-profile-view:hover {
+  border-color: rgba(111, 240, 165, 0.32);
+}
+
+.socialx-me-card {
+  padding: 16px;
+}
+
+.socialx-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(111, 240, 165, 0.52);
+  background: #102219 center / cover no-repeat;
+  color: #6ff0a5;
+  font-weight: 900;
+  object-fit: cover;
+}
+
+.socialx-avatar.large {
+  width: 64px;
+  height: 64px;
+  font-size: 20px;
+}
+
+.socialx-avatar.huge {
+  width: 94px;
+  height: 94px;
+  font-size: 26px;
+  border-width: 2px;
+}
+
+.socialx-avatar.mini {
+  width: 34px;
+  height: 34px;
+  font-size: 11px;
+}
+
+.socialx-avatar.tiny {
+  width: 24px;
+  height: 24px;
+  font-size: 9px;
+}
+
+.socialx-me-main {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.socialx-me-main strong,
+.socialx-post-head strong,
+.socialx-panel h2,
+.socialx-timeline-head h1,
+.socialx-profile-view h2 {
+  color: #fff;
+}
+
+.socialx-me-main span,
+.socialx-post-head small,
+.socialx-profile-view > span {
+  color: #9fb0c6;
+  font-weight: 700;
+}
+
+.socialx-me-main button,
+.socialx-post-head button,
+.socialx-trends button,
+.socialx-leader-row,
+.socialx-notifications button,
+.socialx-explore-tags button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.socialx-me-main button {
+  width: max-content;
+  max-width: 100%;
+  margin-top: 6px;
+  border: 1px solid #27303b;
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #cbd7e7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.socialx-me-stats,
+.socialx-profile-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.socialx-me-stats span,
+.socialx-profile-stats span {
+  border: 1px solid #242d37;
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.socialx-me-stats b,
+.socialx-profile-stats b {
+  display: block;
+  color: #6ff0a5;
+  font-size: 17px;
+}
+
+.socialx-me-stats small,
+.socialx-profile-stats small {
+  color: #96a7bc;
+  font-weight: 800;
+}
+
+.socialx-me-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.socialx-nav {
+  display: grid;
+  gap: 7px;
+}
+
+.socialx-nav button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 0 12px;
+  background: transparent;
+  color: #dce7f8;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.socialx-nav button.active,
+.socialx-nav button:hover {
+  border-color: rgba(111, 240, 165, 0.38);
+  background: rgba(111, 240, 165, 0.09);
+}
+
+.socialx-nav b {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #14251b;
+  color: #6ff0a5;
+  font-size: 11px;
+}
+
+.socialx-beta-card,
+.socialx-panel {
+  padding: 15px;
+}
+
+.socialx-beta-card small,
+.socialx-panel small,
+.socialx-timeline-head small,
+.socialx-reward-hero small,
+.socialx-section-label {
+  color: #6ff0a5;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.socialx-beta-card strong {
+  display: block;
+  margin: 8px 0;
+  color: #fff;
+  line-height: 1.25;
+}
+
+.socialx-beta-card p,
+.socialx-timeline-head p,
+.socialx-reward-hero p,
+.socialx-profile-view p {
+  margin: 0;
+  color: #aebdd0;
+  line-height: 1.45;
+}
+
+.socialx-timeline-head {
+  position: sticky;
+  top: 82px;
+  z-index: 12;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  backdrop-filter: blur(14px);
+  background:
+    linear-gradient(135deg, rgba(111, 240, 165, 0.08), transparent 42%),
+    rgba(13, 16, 18, 0.92);
+}
+
+.socialx-timeline-head h1 {
+  margin: 3px 0 5px;
+  font-size: 28px;
+  letter-spacing: 0;
+}
+
+.socialx-tabs {
+  position: sticky;
+  top: 185px;
+  z-index: 11;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #242d37;
+  border-radius: 10px;
+  background: rgba(12, 14, 16, 0.94);
+  backdrop-filter: blur(14px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.socialx-tabs button {
+  flex: 1;
+  min-height: 42px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #b8c7d9;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.socialx-tabs button.active {
+  background: linear-gradient(135deg, #6ff0a5, #49d88a);
+  color: #06110b;
+  box-shadow: 0 10px 30px rgba(111, 240, 165, 0.18);
+}
+
+.socialx-tabs button:hover {
+  transform: translateY(-1px);
+}
+
+.socialx-composer {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border-color: rgba(111, 240, 165, 0.22);
+}
+
+.socialx-composer-main textarea,
+.socialx-compose-tools input,
+.socialx-compose-tools select,
+.socialx-profile-form input,
+.socialx-profile-form textarea,
+.socialx-thread-reply input {
+  width: 100%;
+  border: 1px solid #28323d;
+  border-radius: 9px;
+  background: #090d10;
+  color: #f1f6ff;
+  outline: 0;
+  font: inherit;
+}
+
+.socialx-composer-main textarea {
+  min-height: 108px;
+  resize: vertical;
+  padding: 13px;
+}
+
+.socialx-compose-tools {
+  display: grid;
+  grid-template-columns: 138px 92px minmax(0, 1fr) 104px;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.socialx-compose-tools input,
+.socialx-compose-tools select,
+.socialx-thread-reply input {
+  height: 42px;
+  padding: 0 12px;
+}
+
+.socialx-status {
+  min-height: 18px;
+  margin: 9px 0 0;
+  color: #98a9bd;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.socialx-status[data-tone="ok"] {
+  color: #6ff0a5;
+}
+
+.socialx-status[data-tone="warn"] {
+  color: #ffd073;
+}
+
+.socialx-status[data-tone="error"] {
+  color: #ff7b8a;
+}
+
+.socialx-feed {
+  display: grid;
+  gap: 12px;
+}
+
+.socialx-post {
+  padding: 0;
+  overflow: hidden;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.socialx-post:hover {
+  transform: translateY(-1px);
+}
+
+.socialx-post.featured {
+  border-color: rgba(111, 240, 165, 0.38);
+}
+
+.socialx-post-main {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  padding: 15px;
+}
+
+.socialx-post-body {
+  min-width: 0;
+}
+
+.socialx-post-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.socialx-post-head button {
+  display: grid;
+  gap: 2px;
+}
+
+.socialx-post-head > span {
+  border: 1px solid rgba(111, 240, 165, 0.45);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #6ff0a5;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.socialx-post p {
+  margin: 10px 0;
+  color: #eef5ff;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: pointer;
+}
+
+.socialx-tags,
+.socialx-metrics,
+.socialx-actions,
+.socialx-profile-top,
+.socialx-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.socialx-tags span,
+.socialx-metrics span {
+  border: 1px solid #28323d;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #0d1217;
+  color: #c7d5e8;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.socialx-post-media {
+  width: min(100%, 620px);
+  max-height: 420px;
+  object-fit: cover;
+  border: 1px solid #28323d;
+  border-radius: 9px;
+  margin: 9px 0 2px;
+}
+
+.socialx-metrics {
+  margin-top: 8px;
+}
+
+.socialx-actions {
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.socialx-actions button {
+  border: 1px solid #28323d;
+  border-radius: 999px;
+  background: #111820;
+  color: #b8c7d9;
+  padding: 8px 11px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.socialx-actions button.active {
+  border-color: rgba(111, 240, 165, 0.55);
+  background: rgba(111, 240, 165, 0.1);
+  color: #6ff0a5;
+}
+
+.socialx-actions button:hover,
+.socialx-trends button:hover,
+.socialx-leader-row:hover,
+.socialx-notifications button:hover,
+.socialx-explore-tags button:hover {
+  border-color: rgba(111, 240, 165, 0.42);
+  background: rgba(111, 240, 165, 0.08);
+  transform: translateY(-1px);
+}
+
+.socialx-replies {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #222a34;
+}
+
+.socialx-reply {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.socialx-reply p {
+  margin: 0;
+  color: #cbd7e7;
+  font-size: 13px;
+  cursor: default;
+}
+
+.socialx-panel-head {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.socialx-panel h2 {
+  margin: 3px 0 0;
+  font-size: 20px;
+}
+
+.socialx-trends,
+.socialx-leaderboard {
+  display: grid;
+  gap: 9px;
+}
+
+.socialx-trends button,
+.socialx-leader-row,
+.socialx-notifications button,
+.socialx-explore-tags button {
+  display: grid;
+  border: 1px solid #242d37;
+  border-radius: 9px;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.socialx-trends button {
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+}
+
+.socialx-trends span,
+.socialx-leader-row > span {
+  color: #6ff0a5;
+  font-weight: 900;
+}
+
+.socialx-trends strong,
+.socialx-leader-row strong {
+  color: #fff;
+}
+
+.socialx-trends small,
+.socialx-leader-row small {
+  color: #99aabd;
+  font-weight: 800;
+}
+
+.socialx-leader-row {
+  grid-template-columns: 22px 34px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+}
+
+.socialx-leader-row b {
+  color: #6ff0a5;
+  white-space: nowrap;
+}
+
+.socialx-missions #socialMissionList,
+.socialx-mission-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.socialx-missions span,
+.socialx-mission-grid div {
+  border: 1px solid #242d37;
+  border-radius: 9px;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.socialx-missions b,
+.socialx-mission-grid strong {
+  display: block;
+  color: #6ff0a5;
+}
+
+.socialx-missions small,
+.socialx-mission-grid small,
+.socialx-mission-grid span {
+  color: #9fb0c6;
+  font-weight: 800;
+}
+
+.socialx-mission-grid div.done {
+  border-color: rgba(111, 240, 165, 0.45);
+  background: rgba(111, 240, 165, 0.08);
+}
+
+.socialx-empty {
+  border: 1px solid #242d37;
+  border-radius: 10px;
+  padding: 24px;
+  color: #9fb0c6;
+  background: #101316;
+  font-weight: 800;
+}
+
+.socialx-empty.small {
+  padding: 13px;
+}
+
+.socialx-section-label {
+  margin: 14px 0 8px;
+}
+
+.socialx-profile-view {
+  overflow: hidden;
+  padding-bottom: 12px;
+}
+
+.socialx-profile-view > h2,
+.socialx-profile-view > span,
+.socialx-profile-view > p,
+.socialx-profile-stats,
+.socialx-profile-view .socialx-section-label {
+  margin-left: 18px;
+  margin-right: 18px;
+}
+
+.socialx-profile-banner {
+  height: 150px;
+  background:
+    linear-gradient(135deg, rgba(111, 240, 165, 0.35), transparent 48%),
+    radial-gradient(circle at 80% 20%, rgba(118, 97, 255, 0.28), transparent 30%),
+    #10151a;
+}
+
+.socialx-profile-top {
+  justify-content: space-between;
+  margin: -46px 18px 10px;
+}
+
+.socialx-profile-view h2 {
+  margin-top: 0;
+  margin-bottom: 3px;
+}
+
+.socialx-profile-view p {
+  margin-top: 12px;
+}
+
+.socialx-profile-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.socialx-notifications {
+  display: grid;
+  gap: 10px;
+}
+
+.socialx-notifications button {
+  gap: 5px;
+}
+
+.socialx-notifications span {
+  color: #6ff0a5;
+  font-weight: 900;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.socialx-notifications strong {
+  color: #dfe9f8;
+}
+
+.socialx-reward-hero {
+  padding: 18px;
+}
+
+.socialx-reward-hero h2 {
+  margin: 5px 0 8px;
+  color: #fff;
+}
+
+.socialx-progress {
+  height: 12px;
+  border-radius: 999px;
+  margin: 16px 0 10px;
+  background: #1b222b;
+  overflow: hidden;
+}
+
+.socialx-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6ff0a5, #7aa7ff);
+}
+
+.socialx-explore-tags {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.socialx-explore-tags button {
+  gap: 4px;
+}
+
+.socialx-explore-tags strong {
+  color: #fff;
+}
+
+.socialx-explore-tags span {
+  color: #9fb0c6;
+  font-weight: 800;
+}
+
+.socialx-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.socialx-overlay[hidden] {
+  display: none;
+}
+
+.socialx-modal {
+  width: min(760px, 100%);
+  max-height: min(86vh, 900px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.socialx-thread-modal {
+  width: min(820px, 100%);
+}
+
+.socialx-modal header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border-bottom: 1px solid #242d37;
+}
+
+.socialx-modal header button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #2d3845;
+  border-radius: 9px;
+  background: #101820;
+  color: #fff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.socialx-modal header h2 {
+  margin: 2px 0 0;
+  color: #fff;
+}
+
+.socialx-thread-content {
+  overflow: auto;
+  padding: 14px;
+}
+
+.socialx-thread-reply {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 100px;
+  gap: 10px;
+  padding: 14px;
+  border-top: 1px solid #242d37;
+}
+
+.socialx-profile-form {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.socialx-avatar-editor {
+  display: grid;
+  grid-template-columns: 94px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  border: 1px solid rgba(111, 240, 165, 0.2);
+  border-radius: 10px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, rgba(111, 240, 165, 0.08), transparent 58%),
+    rgba(255, 255, 255, 0.025);
+}
+
+.socialx-avatar-editor strong {
+  display: block;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.socialx-avatar-editor span {
+  display: block;
+  color: #9fb0c6;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.socialx-avatar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.socialx-avatar-actions label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.socialx-profile-form label {
+  display: grid;
+  gap: 7px;
+  color: #dce7f8;
+  font-weight: 900;
+}
+
+.socialx-profile-form input {
+  height: 44px;
+  padding: 0 12px;
+}
+
+.socialx-profile-form textarea {
+  min-height: 110px;
+  padding: 12px;
+  resize: vertical;
+}
+
+@media (max-width: 1340px) {
+  .socialx-shell {
+    grid-template-columns: 260px minmax(0, 1fr);
+    width: min(100%, calc(100vw - 220px));
+  }
+
+  .socialx-right {
+    position: static;
+    grid-column: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .socialx-right .socialx-panel:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 980px) {
+  .socialx-shell {
+    grid-template-columns: 1fr;
+    width: 100%;
+    padding: 14px;
+  }
+
+  .socialx-left,
+  .socialx-right,
+  .socialx-timeline-head,
+  .socialx-tabs {
+    position: static;
+  }
+
+  .socialx-right {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .socialx-topbar {
+    gap: 10px;
+  }
+
+  .socialx-search {
+    grid-column: 1 / -1;
+    order: 2;
+  }
+
+  .socialx-composer,
+  .socialx-post-main {
+    grid-template-columns: 1fr;
+  }
+
+  .socialx-compose-tools,
+  .socialx-thread-reply,
+  .socialx-me-actions,
+  .socialx-avatar-editor,
+  .socialx-missions #socialMissionList,
+  .socialx-mission-grid,
+  .socialx-explore-tags,
+  .socialx-profile-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .socialx-actions {
+    justify-content: flex-start;
+  }
+
+  .socialx-tabs {
+    overflow-x: auto;
+  }
+
+  .socialx-tabs button {
+    min-width: 110px;
+  }
+}

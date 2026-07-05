@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Pump-r.fun | Social Beta</title>
+    <link rel="icon" type="image/png" href="/assets/favicon.png?v=20260609brand" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260705socialfull" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="appSidebar">
+        <div class="sidebar-top">
+          <a class="logo" href="/">
+            <img class="logo-mark" src="/assets/pump-r-logo.png?v=20260609brand" alt="Pump-r logo" />
+            <span class="logo-title"><span class="logo-name">Pump-r</span><span class="logo-sep">.</span><span class="logo-tld">fun</span></span>
+          </a>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
+            <svg viewBox="0 0 20 12" aria-hidden="true"><rect x="1.5" y="1" width="1.5" height="10" rx="0.75"></rect><rect x="17" y="1" width="1.5" height="10" rx="0.75"></rect><path d="M11.2 3.2L8.2 6l3 2.8"></path></svg>
+          </button>
+        </div>
+        <nav class="side-nav">
+          <a class="side-link" href="/"><span class="side-icon" aria-hidden="true"></span><span class="side-link-label">Home</span></a>
+          <a class="side-link active" href="/social"><span class="side-icon" aria-hidden="true"></span><span class="side-link-label">Social</span><span class="side-pill side-pill-beta">beta</span></a>
+        </nav>
+        <a class="side-create-btn" href="/create">Create</a>
+        <div class="side-footer"><span id="networkChip">SOL</span><span id="factoryChip">PUMPR</span></div>
+      </aside>
+
+      <main class="main-pane social-page socialx-page">
+        <div class="promo-strip home-contract-strip">
+          <span>Pump Fun Remastered is better</span>
+          <a href="https://pump.fun/coin/C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump" target="_blank" rel="noopener noreferrer">
+            CA: C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump
+          </a>
+        </div>
+
+        <header class="topbar socialx-topbar">
+          <div class="socialx-search">
+            <span aria-hidden="true">/</span>
+            <input id="socialSearchInput" placeholder="Search posts, cashtags, people, contracts..." />
+          </div>
+          <div class="top-actions">
+            <button id="socialComposeTopBtn" class="btn-ghost top-action-btn" type="button">New post</button>
+            <button id="signInBtn" class="btn-primary top-action-btn sign-in-btn" type="button">Sign in</button>
+          </div>
+        </header>
+
+        <section class="socialx-shell">
+          <aside class="socialx-left">
+            <section class="socialx-me-card">
+              <div id="socialMeAvatar" class="socialx-avatar large">PR</div>
+              <div class="socialx-me-main">
+                <strong id="socialMeName">Pump-r Social</strong>
+                <span id="socialMeHandle">@connect</span>
+                <button id="socialWalletCopyBtn" type="button">Connect to copy wallet</button>
+              </div>
+              <div class="socialx-me-stats">
+                <span><b id="socialMyXp">0</b><small>XP</small></span>
+                <span><b id="socialMyTier">Connect</b><small>tier</small></span>
+                <span><b id="socialMyPosts">0</b><small>posts</small></span>
+              </div>
+              <div class="socialx-me-actions">
+                <button id="socialEditProfileBtn" class="btn-ghost" type="button">Edit profile</button>
+                <button id="socialLeftComposeBtn" class="btn-primary" type="button">Post</button>
+              </div>
+            </section>
+
+            <nav class="socialx-nav" aria-label="Pump-r Social views">
+              <button class="active" type="button" data-social-view="feed"><span>Home feed</span><b id="socialFeedBadge">live</b></button>
+              <button type="button" data-social-view="explore"><span>Explore</span><b>hot</b></button>
+              <button type="button" data-social-view="notifications"><span>Notifications</span><b id="socialNotifyBadge">0</b></button>
+              <button type="button" data-social-view="profile"><span>Profile</span><b id="socialProfileBadge">me</b></button>
+              <button type="button" data-social-view="rewards"><span>Rewards</span><b>XP</b></button>
+            </nav>
+
+            <section class="socialx-beta-card">
+              <small>Beta economy</small>
+              <strong>Useful crypto activity should become rewardable.</strong>
+              <p>Posts, replies, launches, referrals, holder status, and community support can all become reward signals.</p>
+            </section>
+          </aside>
+
+          <section class="socialx-center">
+            <div class="socialx-timeline-head">
+              <div>
+                <small id="socialTimelineKicker">Pump-r Social beta</small>
+                <h1 id="socialTimelineTitle">Home feed</h1>
+                <p id="socialTimelineSub">Crypto-native feed for launches, alpha, holder updates, and creator rewards.</p>
+              </div>
+              <button id="socialRefreshBtn" class="btn-ghost" type="button">Refresh</button>
+            </div>
+
+            <nav id="socialTabs" class="socialx-tabs" aria-label="Feed filters">
+              <button class="active" type="button" data-social-tab="for-you">For you</button>
+              <button type="button" data-social-tab="launches">Launches</button>
+              <button type="button" data-social-tab="alpha">Alpha</button>
+              <button type="button" data-social-tab="rewards">Rewards</button>
+            </nav>
+
+            <article id="socialComposer" class="socialx-composer">
+              <div id="socialComposerAvatar" class="socialx-avatar">PR</div>
+              <div class="socialx-composer-main">
+                <textarea id="socialPostBody" maxlength="1200" placeholder="What is moving on-chain? Share alpha, a launch, a holder update, or a take that is not just cope in a trenchcoat."></textarea>
+                <div class="socialx-compose-tools">
+                  <input id="socialPostToken" maxlength="32" placeholder="$PUMPR or token" />
+                  <select id="socialPostChain" aria-label="Chain">
+                    <option>SOL</option>
+                    <option>ETH</option>
+                    <option>BASE</option>
+                    <option>MONAD</option>
+                    <option>RH</option>
+                  </select>
+                  <input id="socialPostMedia" placeholder="Image or clip URL optional" />
+                  <button id="socialPostBtn" class="btn-primary" type="button">Post</button>
+                </div>
+                <p id="socialPostStatus" class="socialx-status" role="status"></p>
+              </div>
+            </article>
+
+            <section id="socialFeed" class="socialx-feed" aria-live="polite">
+              <div class="socialx-empty">Loading Pump-r Social...</div>
+            </section>
+          </section>
+
+          <aside class="socialx-right">
+            <section class="socialx-panel">
+              <div class="socialx-panel-head">
+                <div>
+                  <small>What is moving</small>
+                  <h2>Trending tags</h2>
+                </div>
+              </div>
+              <div id="socialTrends" class="socialx-trends"></div>
+            </section>
+
+            <section class="socialx-panel">
+              <div class="socialx-panel-head">
+                <div>
+                  <small>Top creators</small>
+                  <h2>Leaderboard</h2>
+                </div>
+              </div>
+              <div id="socialLeaderboard" class="socialx-leaderboard"></div>
+            </section>
+
+            <section class="socialx-panel socialx-missions">
+              <small>Reward missions</small>
+              <h2>Earn social XP</h2>
+              <div id="socialMissionList">
+                <span><b>+20 XP</b><small>claim a unique profile</small></span>
+                <span><b>+5 XP</b><small>publish useful posts</small></span>
+                <span><b>+2 XP</b><small>reply in threads</small></span>
+                <span><b>+1 XP</b><small>likes received</small></span>
+              </div>
+            </section>
+          </aside>
+        </section>
+
+        <div id="socialThreadOverlay" class="socialx-overlay" hidden>
+          <section class="socialx-modal socialx-thread-modal" role="dialog" aria-modal="true" aria-labelledby="socialThreadTitle">
+            <header>
+              <button id="socialThreadCloseBtn" type="button" aria-label="Close thread">x</button>
+              <div>
+                <small>Thread</small>
+                <h2 id="socialThreadTitle">Post details</h2>
+              </div>
+            </header>
+            <div id="socialThreadContent" class="socialx-thread-content"></div>
+            <div class="socialx-thread-reply">
+              <input id="socialThreadReplyInput" maxlength="360" placeholder="Reply to this post..." />
+              <button id="socialThreadReplyBtn" class="btn-primary" type="button">Reply</button>
+            </div>
+          </section>
+        </div>
+
+        <div id="socialProfileOverlay" class="socialx-overlay" hidden>
+          <section class="socialx-modal" role="dialog" aria-modal="true" aria-labelledby="socialProfileModalTitle">
+            <header>
+              <button id="socialProfileCloseBtn" type="button" aria-label="Close profile editor">x</button>
+              <div>
+                <small>Identity</small>
+                <h2 id="socialProfileModalTitle">Edit Pump-r Social profile</h2>
+              </div>
+            </header>
+            <div class="socialx-profile-form">
+              <div class="socialx-avatar-editor">
+                <div id="socialProfileImagePreview" class="socialx-avatar huge">PR</div>
+                <div>
+                  <strong>Profile image</strong>
+                  <span>Upload an avatar or paste an image URL. This appears across Pump-r Social.</span>
+                  <div class="socialx-avatar-actions">
+                    <label class="btn-ghost" for="socialProfileImageFile">Upload image</label>
+                    <button id="socialProfileImageRemoveBtn" class="btn-ghost" type="button">Remove</button>
+                  </div>
+                  <input id="socialProfileImageFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+                </div>
+              </div>
+              <label><span>Image URL</span><input id="socialImageInput" maxlength="1024" placeholder="https://..." /></label>
+              <label><span>Unique social name</span><input id="socialHandleInput" maxlength="24" placeholder="pumpr_builder" /></label>
+              <label><span>Display name</span><input id="socialDisplayInput" maxlength="60" placeholder="Your crypto name" /></label>
+              <label><span>Bio</span><textarea id="socialBioInput" maxlength="180" placeholder="Launches, alpha, memes, communities..."></textarea></label>
+              <p id="socialProfileStatus" class="socialx-status" role="status"></p>
+              <button id="socialProfileSaveBtn" class="btn-primary" type="button">Save profile</button>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script src="/js/sidebar.js?v=20260705socialfull"></script>
+    <script type="module" src="/js/social.js?v=20260705socialfull"></script>
+  </body>
+</html>

@@ -146,6 +146,10 @@
       "dest": "/frontend/referrals.html"
     },
     {
+      "src": "/social$",
+      "dest": "/frontend/social.html"
+    },
+    {
       "src": "/pumpr-card$",
       "dest": "/frontend/pumpr-card.html"
     },
