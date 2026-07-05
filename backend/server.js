@@ -7311,6 +7311,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       blockhash: String(req.body?.blockhash || "").trim(),
       lastValidBlockHeight: Number(req.body?.lastValidBlockHeight || 0)
     };
+    const walletBroadcast = req.body?.walletBroadcast !== false;
     const rpcState = await withPumpFunSolanaRpc(
       SolanaConnection,
       "Pump.fun launch prep",
@@ -7344,6 +7345,9 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       // Phantom and finalization still perform the signed path; unsigned Pump.fun
       // create simulation can fail before the browser wallet signature exists.
       presignSimulationWarning = error.message || "Unsigned Pump.fun create simulation skipped";
+    }
+    if (walletBroadcast) {
+      tx.partialSign(mintKeypair);
     }
     const mint = mintKeypair.publicKey.toBase58();
     const signingToken = encryptPumpFunSigningPayload({
@@ -7381,6 +7385,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       holderEligibility,
       devBuyLamports: devBuyLamports.toString(),
       presignSimulationWarning,
+      walletBroadcast,
       rpcUrl,
       blockhash: latest.blockhash,
       lastValidBlockHeight: latest.lastValidBlockHeight
@@ -7400,8 +7405,9 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
     } = await loadSolanaWeb3();
     const signedTransactionBase64 = String(req.body?.signedTransactionBase64 || req.body?.transactionBase64 || "").trim();
     const signingToken = String(req.body?.signingToken || "").trim();
-    if (!signedTransactionBase64 || !signingToken) {
-      return res.status(400).json({ error: "Signed transaction and signing token are required" });
+    const walletSignature = String(req.body?.signature || "").trim();
+    if ((!signedTransactionBase64 && !walletSignature) || !signingToken) {
+      return res.status(400).json({ error: "Signed transaction or wallet signature and signing token are required" });
     }
 
     const pending = decryptPumpFunSigningPayload(signingToken);
@@ -7412,31 +7418,47 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
       return res.status(400).json({ error: "Pump.fun mint signer mismatch" });
     }
 
-    const tx = SolanaTransaction.from(Buffer.from(signedTransactionBase64, "base64"));
-    const userSignature = tx.signatures.find((row) => row.publicKey?.equals?.(user));
-    if (!userSignature?.signature) {
-      return res.status(400).json({ error: "Phantom did not sign the Pump.fun transaction. Reconnect wallet and try again." });
-    }
-    tx.partialSign(mintKeypair);
-
-    const sent = await withPumpFunSolanaRpc(
-      SolanaConnection,
-      "Pump.fun signed create broadcast",
-      async (connection, rpcUrl) => {
-        await simulateSolanaTransaction(connection, tx, "Signed Pump.fun create");
-        const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
-        await connection.confirmTransaction(
-          {
-            signature,
-            blockhash: String(pending.blockhash || ""),
-            lastValidBlockHeight: Number(pending.lastValidBlockHeight || 0)
+    const sent = walletSignature
+      ? await withPumpFunSolanaRpc(
+          SolanaConnection,
+          "Pump.fun wallet broadcast confirmation",
+          async (connection, rpcUrl) => {
+            await connection.confirmTransaction(
+              {
+                signature: walletSignature,
+                blockhash: String(pending.blockhash || ""),
+                lastValidBlockHeight: Number(pending.lastValidBlockHeight || 0)
+              },
+              "confirmed"
+            );
+            return { signature: walletSignature, rpcUrl };
           },
-          "confirmed"
+          { preferredRpcUrl: pending.rpcUrl }
+        )
+      : await withPumpFunSolanaRpc(
+          SolanaConnection,
+          "Pump.fun signed create broadcast",
+          async (connection, rpcUrl) => {
+            const tx = SolanaTransaction.from(Buffer.from(signedTransactionBase64, "base64"));
+            const userSignature = tx.signatures.find((row) => row.publicKey?.equals?.(user));
+            if (!userSignature?.signature) {
+              throw new Error("Phantom did not sign the Pump.fun transaction. Reconnect wallet and try again.");
+            }
+            tx.partialSign(mintKeypair);
+            await simulateSolanaTransaction(connection, tx, "Signed Pump.fun create");
+            const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
+            await connection.confirmTransaction(
+              {
+                signature,
+                blockhash: String(pending.blockhash || ""),
+                lastValidBlockHeight: Number(pending.lastValidBlockHeight || 0)
+              },
+              "confirmed"
+            );
+            return { signature, rpcUrl };
+          },
+          { preferredRpcUrl: pending.rpcUrl }
         );
-        return { signature, rpcUrl };
-      },
-      { preferredRpcUrl: pending.rpcUrl }
-    );
     const { signature, rpcUrl } = sent;
 
     const recordedLaunch = await recordPumpFunLaunch({

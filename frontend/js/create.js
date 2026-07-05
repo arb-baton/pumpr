@@ -1720,6 +1720,13 @@ function isSolanaBlockhashExpiredError(error) {
     message.includes("signature") && message.includes("expired");
 }
 
+function normalizeSolanaSignature(result) {
+  if (typeof result === "string") return result;
+  if (typeof result?.signature === "string") return result.signature;
+  if (typeof result?.txid === "string") return result.txid;
+  return "";
+}
+
 async function launchPumpFun(details) {
   const { provider, publicKey } = await connectSolanaWallet();
   await ensurePumpRHolderAccess({
@@ -1760,6 +1767,7 @@ async function launchPumpFun(details) {
         creatorWallet: details.pumpfunCreatorWallet || publicKey,
         userPublicKey: publicKey,
         source: "Pump-r",
+        walletBroadcast: typeof provider.signAndSendTransaction === "function",
         kolApplication: details.kolApplication || null
       });
       mint = String(payload?.mint || payload?.tokenAddress || payload?.token || "");
@@ -1772,14 +1780,22 @@ async function launchPumpFun(details) {
       const suffixText = suffix
         ? ` Mint ${shortAddress(mint)} ends with ${suffix}.`
         : "";
-      setAlert(ui.alert, `Open Phantom to sign${attempt > 0 ? " again" : ""}.${suffixText} Pump-r will verify and broadcast the create transaction through the configured Solana RPC.`);
+      const useWalletBroadcast = Boolean(payload?.walletBroadcast) && typeof provider.signAndSendTransaction === "function";
+      setAlert(ui.alert, `Open Phantom to ${useWalletBroadcast ? "sign and send" : "sign"}${attempt > 0 ? " again" : ""}.${suffixText} ${useWalletBroadcast ? "Phantom will broadcast the Pump.fun create transaction directly." : "Pump-r will verify and broadcast the create transaction through the configured Solana RPC."}`);
       const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
-      const signed = await provider.signTransaction(transaction);
+      const signedOrSent = useWalletBroadcast
+        ? await provider.signAndSendTransaction(transaction)
+        : await provider.signTransaction(transaction);
       setAlert(ui.alert, "Finalizing Pump.fun launch...");
       try {
+        const walletSignature = useWalletBroadcast ? normalizeSolanaSignature(signedOrSent) : "";
+        if (useWalletBroadcast && !walletSignature) throw new Error("Phantom did not return a transaction signature.");
         const finalized = await api.pumpfunFinalize({
           signingToken,
-          signedTransactionBase64: bytesToBase64(signed.serialize({ requireAllSignatures: false, verifySignatures: false }))
+          signature: walletSignature,
+          signedTransactionBase64: useWalletBroadcast
+            ? ""
+            : bytesToBase64(signedOrSent.serialize({ requireAllSignatures: false, verifySignatures: false }))
         });
         signature = String(finalized?.signature || "");
         finalizedLaunch = finalized?.launch || null;
