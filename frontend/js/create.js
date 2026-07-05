@@ -1730,6 +1730,7 @@ async function launchPumpFun(details) {
   });
   const solanaWeb3 = await loadSolanaWeb3();
   let signature = "";
+  let devBuySignature = "";
   let kolBuySignature = "";
   let kolTransferSignature = "";
   let kolApplication = details.kolApplication || null;
@@ -1771,10 +1772,10 @@ async function launchPumpFun(details) {
       const suffixText = suffix
         ? ` Mint ${shortAddress(mint)} ends with ${suffix}.`
         : "";
-      setAlert(ui.alert, `Open Phantom to sign${attempt > 0 ? " again" : ""}.${suffixText} Pump-r will add the mint signature after your approval, then verify and broadcast through the configured Solana RPC.`);
+      setAlert(ui.alert, `Open Phantom to sign${attempt > 0 ? " again" : ""}.${suffixText} Pump-r will verify and broadcast the create transaction through the configured Solana RPC.`);
       const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
       const signed = await provider.signTransaction(transaction);
-      setAlert(ui.alert, "Finalizing Pump.fun launch with the mint signature...");
+      setAlert(ui.alert, "Finalizing Pump.fun launch...");
       try {
         const finalized = await api.pumpfunFinalize({
           signingToken,
@@ -1787,6 +1788,27 @@ async function launchPumpFun(details) {
         if (attempt === 0 && isSolanaBlockhashExpiredError(error)) continue;
         throw error;
       }
+    }
+    if (Number(details.pumpfunDevBuySol || 0) > 0) {
+      setAlert(ui.alert, `Token is live. Open Phantom again to buy ${details.pumpfunDevBuySol} SOL from the dev wallet.`);
+      const devBuyPayload = await api.pumpfunDevBuy({
+        mint,
+        creatorWallet: details.pumpfunCreatorWallet || publicKey,
+        userPublicKey: publicKey,
+        buySol: String(details.pumpfunDevBuySol || 0)
+      });
+      const devBuyTransactionBase64 = String(devBuyPayload?.transactionBase64 || "");
+      if (!devBuyTransactionBase64) throw new Error("Dev buy transaction was not returned.");
+      const devBuyTransaction = solanaWeb3.Transaction.from(base64ToBytes(devBuyTransactionBase64));
+      const signedDevBuy = await provider.signTransaction(devBuyTransaction);
+      setAlert(ui.alert, "Broadcasting dev buy...");
+      const devBuySent = await api.solanaSendTransaction({
+        signedTransactionBase64: bytesToBase64(signedDevBuy.serialize({ requireAllSignatures: false, verifySignatures: false })),
+        rpcUrl: devBuyPayload.rpcUrl,
+        blockhash: devBuyPayload.blockhash,
+        lastValidBlockHeight: devBuyPayload.lastValidBlockHeight
+      });
+      devBuySignature = String(devBuySent?.signature || "");
     }
     if (details.kolApplication?.enabled && Number(details.kolApplication.buySol || 0) > 0) {
       setAlert(ui.alert, `Open Phantom again to buy ${details.kolApplication.buySol} SOL for Manlet Mode. Pump-r will transfer those tokens to ${details.kolApplication.name} next.`);
@@ -1843,6 +1865,7 @@ async function launchPumpFun(details) {
       imageUri: details.imageUri,
       creator: publicKey,
       kolApplication,
+      devBuySignature,
       kolBuySignature,
       kolTransferSignature,
       pumpfunUrl,
@@ -1865,11 +1888,11 @@ async function launchPumpFun(details) {
   ui.resultLink.href = pumpfunUrl || `https://pump.fun/coin/${encodeURIComponent(mint)}`;
   ui.resultLink.textContent = "Open Pump.fun token page";
   ui.resultLink.style.display = "inline-block";
-  setAlert(ui.alert, `Pump.fun transaction sent${signature ? ` (${shortAddress(signature)})` : ""}${kolBuySignature ? `; token buy completed (${shortAddress(kolBuySignature)})` : ""}${kolTransferSignature ? `; token transfer sent (${shortAddress(kolTransferSignature)})` : ""}. Redirecting...`);
+  setAlert(ui.alert, `Pump.fun transaction sent${signature ? ` (${shortAddress(signature)})` : ""}${devBuySignature ? `; dev buy completed (${shortAddress(devBuySignature)})` : ""}${kolBuySignature ? `; token buy completed (${shortAddress(kolBuySignature)})` : ""}${kolTransferSignature ? `; token transfer sent (${shortAddress(kolTransferSignature)})` : ""}. Redirecting...`);
   window.setTimeout(() => {
     window.location.href = ui.resultLink.href;
   }, 900);
-  return { ...payload, signature, kolBuySignature, kolTransferSignature };
+  return { ...payload, signature, devBuySignature, kolBuySignature, kolTransferSignature };
 }
 
 async function launchPumpVerse(details) {

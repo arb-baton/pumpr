@@ -198,6 +198,7 @@ export const api = {
   },
   pumpfunLaunch: (body = {}) => apiPost("/api/pumpfun/launch", body),
   pumpfunFinalize: (body = {}) => apiPost("/api/pumpfun/finalize", body),
+  pumpfunDevBuy: (body = {}) => apiPost("/api/pumpfun/dev-buy", body),
   pumpfunKolBuy: (body = {}) => apiPost("/api/pumpfun/kol-buy", body),
   pumpfunKolTransfer: (body = {}) => apiPost("/api/pumpfun/kol-transfer", body),
   pumpfunSession: (owner) => apiGet(`/api/pumpfun/session/${encodeURIComponent(String(owner || ""))}`),
