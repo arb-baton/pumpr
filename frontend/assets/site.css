@@ -16581,3 +16581,339 @@ button[disabled] {
     grid-column: 1 / -1;
   }
 }
+
+/* Final mobile rhythm pass: compact chrome, consistent gutters, clean feed spacing. */
+@media (max-width: 920px) {
+  body {
+    min-width: 0;
+    background: #07080a;
+  }
+
+  .app-shell {
+    display: block;
+  }
+
+  .sidebar,
+  .sidebar.compact {
+    min-height: 54px;
+    padding: 0.45rem 0.58rem;
+    gap: 0.48rem;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  }
+
+  .logo-mark {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+
+  .sidebar-toggle,
+  .sidebar.compact .sidebar-toggle {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .side-nav,
+  .sidebar.compact .side-nav {
+    gap: 0.34rem;
+    padding: 0 0.12rem;
+  }
+
+  .side-link,
+  .sidebar.compact .side-link {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    border-radius: 12px;
+  }
+
+  .side-icon,
+  .side-icon svg,
+  .sidebar.compact .side-icon {
+    width: 19px;
+    height: 19px;
+  }
+
+  .main-pane {
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .promo-strip,
+  .home-contract-strip {
+    min-height: 40px;
+    margin: 0.58rem 0.82rem 0;
+    padding: 0.54rem 0.62rem;
+    border-radius: 13px;
+    gap: 0.34rem;
+  }
+
+  .home-contract-strip span {
+    width: 100%;
+    text-align: center;
+  }
+
+  .home-contract-strip a {
+    max-width: 100%;
+    font-size: 0.72rem;
+    line-height: 1.1;
+  }
+
+  .topbar,
+  .home-topbar,
+  .create-topbar,
+  .socialx-topbar {
+    gap: 0.62rem;
+    padding: 0.72rem 0.9rem 0.86rem;
+  }
+
+  .search-wrap input,
+  .socialx-search input,
+  .create-searchbar input {
+    height: 46px;
+    border-radius: 10px;
+  }
+
+  .top-actions {
+    min-width: 0;
+    gap: 0.52rem;
+  }
+
+  .top-action-btn,
+  .sign-in-btn,
+  .language-select-wrap,
+  .wallet-hub-trigger,
+  .profile-trigger {
+    min-height: 44px;
+    border-radius: 10px;
+  }
+
+  .content-section {
+    width: 100%;
+    padding: 1.15rem 0.9rem 0;
+    margin-bottom: 2rem;
+    overflow: hidden;
+  }
+
+  .content-section + .content-section {
+    padding-top: 0.45rem;
+  }
+
+  .top-community-section {
+    padding-top: 1.05rem;
+    border-top: 1px solid #1e2229;
+  }
+
+  .section-head {
+    min-height: 38px;
+    margin-bottom: 0.78rem;
+    gap: 0.65rem;
+  }
+
+  .section-head h2 {
+    font-size: clamp(1.28rem, 6vw, 1.55rem);
+    line-height: 1.08;
+    letter-spacing: 0;
+  }
+
+  .section-icon-pill {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    flex: 0 0 30px;
+  }
+
+  .top-community-row {
+    grid-auto-columns: minmax(246px, 80vw);
+    gap: 0.58rem;
+    margin-inline: -0.14rem;
+    padding: 0 0.14rem 0.68rem;
+  }
+
+  .top-community-card {
+    min-height: 58px;
+    padding: 0.5rem 0.58rem;
+  }
+
+  .top-community-card img {
+    width: 36px;
+    height: 36px;
+  }
+
+  .top-community-copy strong,
+  .top-community-stat b {
+    font-size: 0.8rem;
+  }
+
+  .trend-row,
+  .trend-scroll {
+    grid-auto-columns: minmax(248px, 76vw);
+    gap: 0.72rem;
+  }
+
+  .trend-nav {
+    gap: 0.42rem;
+  }
+
+  .trend-nav .icon-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+  }
+
+  .trend-copy {
+    padding-top: 0.54rem;
+  }
+
+  .coin-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.86rem;
+  }
+
+  .coin-card {
+    min-width: 0;
+  }
+
+  .coin-body {
+    padding: 0.54rem 0 0;
+  }
+
+  .coin-head {
+    align-items: flex-start;
+  }
+
+  .coin-head h3,
+  .coin-head span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .coin-meta {
+    gap: 0.34rem;
+  }
+
+  .creator-pill {
+    min-width: 0;
+    max-width: 92px;
+  }
+
+  .creator-pill span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tag-row {
+    border-radius: 10px;
+  }
+
+  .pumpr-card-page,
+  .pumpr-card-hero,
+  .pumpr-card-video-shell,
+  .pumpr-card-video,
+  .pumpr-card-grid,
+  .pumpr-card-waitlist-band,
+  .pumpr-card-admin-panel {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .pumpr-card-video-shell {
+    width: 100%;
+    min-height: 0;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+  }
+
+  .pumpr-card-video {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+  }
+}
+
+@media (max-width: 520px) {
+  .sidebar,
+  .sidebar.compact {
+    grid-template-columns: auto minmax(0, 1fr);
+    min-height: 52px;
+    padding: 0.42rem 0.5rem;
+  }
+
+  .sidebar-toggle,
+  .sidebar.compact .sidebar-toggle {
+    display: none !important;
+  }
+
+  .side-nav,
+  .sidebar.compact .side-nav {
+    gap: 0.32rem;
+  }
+
+  .side-link,
+  .sidebar.compact .side-link {
+    width: 39px;
+    min-width: 39px;
+    height: 39px;
+    min-height: 39px;
+  }
+
+  .promo-strip,
+  .home-contract-strip {
+    margin-inline: 0.72rem;
+  }
+
+  .topbar,
+  .home-topbar,
+  .create-topbar,
+  .socialx-topbar {
+    padding-inline: 0.82rem;
+  }
+
+  .top-actions {
+    grid-template-columns: minmax(72px, 0.85fr) minmax(92px, 1fr) minmax(82px, 0.9fr);
+    gap: 0.48rem;
+  }
+
+  .content-section {
+    padding-inline: 0.82rem;
+    margin-bottom: 1.85rem;
+  }
+
+  .top-community-row {
+    grid-auto-columns: minmax(236px, 82vw);
+  }
+
+  .trend-row,
+  .trend-scroll {
+    grid-auto-columns: minmax(232px, 74vw);
+  }
+
+  .trend-overlay strong {
+    font-size: 1.22rem;
+  }
+
+  .coin-grid {
+    gap: 0.76rem;
+  }
+
+  .coin-metric {
+    font-size: 1rem;
+  }
+
+  .pumpr-card-copy h1 {
+    font-size: clamp(2.25rem, 13vw, 3.05rem);
+  }
+
+  .pumpr-card-page {
+    padding-inline: 0.82rem;
+  }
+
+  .pumpr-card-video-shell {
+    aspect-ratio: 4 / 3;
+  }
+}
