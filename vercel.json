@@ -53,6 +53,14 @@
       ]
     },
     {
+      "source": "/downloads/(.*)\\.apk",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, max-age=0" },
+        { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
+        { "key": "Content-Disposition", "value": "attachment" }
+      ]
+    },
+    {
       "source": "/js/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-store, max-age=0" }
@@ -81,6 +89,10 @@
     {
       "src": "/assets/(.*)",
       "dest": "/frontend/assets/$1"
+    },
+    {
+      "src": "/downloads/(.*)",
+      "dest": "/frontend/downloads/$1"
     },
     {
       "src": "/js/(.*)",
@@ -185,6 +197,10 @@
     {
       "src": "/pumpr-card$",
       "dest": "/frontend/pumpr-card.html"
+    },
+    {
+      "src": "/android$",
+      "dest": "/frontend/android.html"
     },
     {
       "src": "/card$",

@@ -11178,6 +11178,10 @@ app.get(["/pumpr-card", "/card"], (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "pumpr-card.html"));
 });
 
+app.get("/android", (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "android.html"));
+});
+
 app.get("/onboard", (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "onboard.html"));
 });
@@ -11235,6 +11239,10 @@ app.use(
         res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
         res.setHeader("Pragma", "no-cache");
         res.setHeader("Expires", "0");
+      } else if (lower.endsWith(".apk")) {
+        res.setHeader("Cache-Control", "no-store, max-age=0");
+        res.setHeader("Content-Type", "application/vnd.android.package-archive");
+        res.setHeader("Content-Disposition", "attachment");
       } else {
         res.setHeader("Cache-Control", "public, max-age=300");
       }
