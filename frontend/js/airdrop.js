@@ -6,7 +6,7 @@ import { KOL_LEADERBOARD } from "./kolData.js?v=20260703kol51";
 const AIRDROP_HOLDER_REFRESH_MS = 30_000;
 const AIRDROP_HISTORY_URL = "/data/pumpr-airdrops.json?v=20260706weighted1m-live5";
 const COMPLETED_AIRDROP_URL = "/data/pumpr-airdrop-250k.json?v=20260703drop250k";
-const OUTREACH_AIRDROP_URL = "/data/pumpr-outreach-airdrops.json?v=20260704ansemoutreach";
+const OUTREACH_AIRDROP_URL = "/data/pumpr-outreach-airdrops.json?v=20260706ansemtop100";
 const KOL_SEED_AMOUNT = 5_000;
 const KOL_BOOSTED_WALLETS = new Set([
   "GV6UUmNxz2RpKxmNAPadYKb7uQpszwqQAu3qLJxVdC52",
@@ -308,7 +308,7 @@ function outreachAirdropsHtml() {
       const token = drop.sourceToken || {};
       const tokenSymbol = String(token.symbol || "TOKEN").toUpperCase();
       const total = formatTokenAmount(drop.totalAllocatedPumpr || 0);
-      const each = formatTokenAmount(drop.amountPerHolderPumpr || 0);
+      const receivedLabel = drop.amountRangeLabel || `${formatTokenAmount(drop.amountPerHolderPumpr || 0)} $PUMPR`;
       const txLinks = (drop.txSignatures || [])
         .map((signature, index) => `<a href="${solscanTxUrl(signature)}" target="_blank" rel="noopener noreferrer">Batch ${index + 1}</a>`)
         .join("");
@@ -332,7 +332,7 @@ function outreachAirdropsHtml() {
           <div class="airdrop-kpi-grid">
             <span><b>${escapeHtml(total)} $PUMPR</b><small>Total sent</small></span>
             <span><b>${escapeHtml(String(drop.eligibleHolderCount || rows.length))}</b><small>Wallets paid</small></span>
-            <span><b>${escapeHtml(each)} $PUMPR</b><small>Each wallet</small></span>
+            <span><b>${escapeHtml(receivedLabel)}</b><small>${escapeHtml(drop.amountSummaryLabel || "Each wallet")}</small></span>
           </div>
           <div class="airdrop-source-note airdrop-outreach-note">
             <strong>${escapeHtml(drop.source?.primary || `${tokenSymbol} holder list`)}</strong>
