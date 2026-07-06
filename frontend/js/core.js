@@ -752,7 +752,23 @@ function isPumpVerseBrandCoin(coin = {}) {
 
 export function resolveCoinImage(coin) {
   if (isPumpVerseBrandCoin(coin)) return PUMPR_BRAND_IMAGE;
-  const raw = String(coin?.imageURI || coin?.imageUri || coin?.image || "").trim();
+  const dexInfo = coin?.dexSnapshot?.raw?.info || coin?.dexSnapshot?.info || {};
+  const raw = String(
+    coin?.imageURI ||
+      coin?.imageUri ||
+      coin?.imageUrl ||
+      coin?.image_url ||
+      coin?.image_uri ||
+      coin?.image ||
+      coin?.logo ||
+      coin?.thumbnail ||
+      coin?.metadata?.image ||
+      coin?.metadata?.imageUri ||
+      coin?.metadata?.image_uri ||
+      dexInfo.imageUrl ||
+      dexInfo.openGraph ||
+      ""
+  ).trim();
   if (raw) {
     try {
       const parsed = new URL(raw, window.location.origin);

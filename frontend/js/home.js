@@ -17,7 +17,7 @@ import {
   shortAddress,
   walletState,
   weiToUsd
-} from "./core.js?v=20260703sharedauth";
+} from "./core.js?v=20260706pumpfunimages";
 import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260705langselect";
 import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
 import { initSupportWidget } from "./support.js?v=20260703adminwallet";
@@ -245,6 +245,12 @@ function mergeLaunchRows(base = [], updates = []) {
     const pool = previousMcapWei > 0n && incomingMcapWei <= 0n ? previousPool : { ...previousPool, ...incomingPool };
     const dexSnapshot = row.dexSnapshot || previous.dexSnapshot || null;
     const merged = { ...previous, ...row, pool, dexSnapshot };
+    const previousImage = previous.imageURI || previous.imageUri || previous.imageUrl || previous.image_url || previous.image;
+    const incomingImage = row.imageURI || row.imageUri || row.imageUrl || row.image_url || row.image;
+    if (previousImage && !incomingImage) {
+      merged.imageURI = previous.imageURI || previousImage;
+      merged.imageUri = previous.imageUri || previousImage;
+    }
     if (isPumpFunLaunch(merged)) {
       for (const key of ["marketCapUsd", "marketCapSol", "fdvUsd", "priceUsd"]) {
         const incoming = Number(row?.[key] || 0);

@@ -6733,6 +6733,25 @@ function normalizePumpFunLaunch(row = {}) {
   const marketCapSol = toNumberSafe(row.marketCapSol || row.market_cap_sol || row.market_cap, 0);
   const fdvUsd = toNumberSafe(row.fdvUsd || row.fdv_usd, 0);
   const priceUsd = toNumberSafe(row.priceUsd || row.price_usd, 0);
+  const dexInfo = row.dexSnapshot?.raw?.info || row.dexSnapshot?.info || {};
+  const rawImageUri = String(
+    row.imageUri ||
+      row.imageURI ||
+      row.image_url ||
+      row.imageUrl ||
+      row.image_uri ||
+      row.image ||
+      row.logo ||
+      row.thumbnail ||
+      row.metadata?.image ||
+      row.metadata?.image_uri ||
+      row.metadata?.imageUrl ||
+      row.data?.image ||
+      row.data?.image_uri ||
+      dexInfo.imageUrl ||
+      dexInfo.openGraph ||
+      ""
+  ).trim();
   return {
     id: String(row.id || mint).trim(),
     chainId: "pumpfun",
@@ -6743,14 +6762,14 @@ function normalizePumpFunLaunch(row = {}) {
     name: String(row.name || symbol || "Pump.fun token").trim().slice(0, 80),
     symbol: symbol || mint.slice(0, 6).toUpperCase(),
     description: String(row.description || "").trim().slice(0, 4000),
-    imageUri: String(row.imageUri || row.image || "").trim().slice(0, 2048),
+    imageUri: sanitizeLaunchImageUri(rawImageUri).slice(0, 2048),
     creator: String(row.creator || row.user || "").trim(),
     kolApplication: sanitizeKolApplication(row.kolApplication),
     kolBuySignature: String(row.kolBuySignature || "").trim(),
     kolTransferSignature: String(row.kolTransferSignature || "").trim(),
     pumpfunUrl: pickPumpFunUrl(row, mint),
     signature: String(row.signature || "").trim(),
-    metadataUri: String(row.metadataUri || "").trim(),
+    metadataUri: String(row.metadataUri || row.metadata_uri || row.uri || row.data?.metadata_uri || "").trim(),
     marketCapUsd,
     marketCapSol,
     fdvUsd,
@@ -6789,7 +6808,23 @@ async function readPumpFunCoinSnapshot(mint = "") {
     toNumberSafe(dex?.marketCapUsd, 0),
     toNumberSafe(dex?.fdvUsd, 0)
   );
+  const dexInfo = dex?.raw?.info || dex?.info || {};
   return {
+    name: String(row?.name || "").trim(),
+    symbol: String(row?.symbol || "").trim(),
+    description: String(row?.description || "").trim(),
+    imageUri: String(
+      row?.image_uri ||
+        row?.imageUrl ||
+        row?.image_url ||
+        row?.image ||
+        row?.metadata?.image ||
+        dexInfo.imageUrl ||
+        dexInfo.openGraph ||
+        ""
+    ).trim(),
+    creator: String(row?.creator || row?.user || "").trim(),
+    metadataUri: String(row?.metadata_uri || row?.metadataUri || row?.uri || "").trim(),
     marketCapUsd,
     marketCapSol: toNumberSafe(row?.market_cap || row?.marketCapSol || row?.market_cap_sol, 0),
     fdvUsd: Math.max(toNumberSafe(row?.fdv_usd || row?.fdvUsd, 0), toNumberSafe(dex?.fdvUsd, 0)),
@@ -6803,13 +6838,26 @@ async function readPumpFunCoinSnapshot(mint = "") {
 async function hydratePumpFunLaunchMarketCaps(rows = [], options = {}) {
   const launches = Array.isArray(rows) ? rows : [];
   const forceFresh = Boolean(options.fresh);
+  const imageOnlyLimit = Number.isFinite(Number(options.imageOnlyLimit)) ? Math.max(0, Math.floor(Number(options.imageOnlyLimit))) : 0;
+  let imageOnlyHydrated = 0;
   return mapWithConcurrency(launches, 4, async (launch) => {
-    if (!forceFresh && Number(launch?.marketCapUsd || 0) > 0) return launch;
+    const hasMarketCap = Number(launch?.marketCapUsd || 0) > 0;
+    const hasImage = Boolean(String(launch?.imageUri || launch?.imageURI || launch?.image || "").trim());
+    if (!forceFresh && hasMarketCap && hasImage) return launch;
+    if (!forceFresh && hasMarketCap && !hasImage && imageOnlyLimit > 0) {
+      imageOnlyHydrated += 1;
+      if (imageOnlyHydrated > imageOnlyLimit) return launch;
+    }
     const snapshot = await readPumpFunCoinSnapshot(launch?.mint || launch?.token || "");
     if (!snapshot) return launch;
     return {
       ...launch,
       ...snapshot,
+      imageUri: snapshot.imageUri || launch.imageUri || launch.imageURI || launch.image || "",
+      name: snapshot.name || launch.name,
+      symbol: snapshot.symbol || launch.symbol,
+      description: snapshot.description || launch.description,
+      metadataUri: snapshot.metadataUri || launch.metadataUri,
       pumpfunUrl: snapshot.pumpfunUrl || launch.pumpfunUrl
     };
   });
@@ -6934,8 +6982,20 @@ async function writePumpFunLaunchesPersistent(store) {
 }
 
 async function recordPumpFunLaunch(row = {}) {
-  const snapshot = Number(row?.marketCapUsd || 0) > 0 ? null : await readPumpFunCoinSnapshot(row?.mint || row?.token || "");
-  const normalized = normalizePumpFunLaunch(snapshot ? { ...row, ...snapshot } : row);
+  const hasMarketCap = Number(row?.marketCapUsd || 0) > 0;
+  const hasImage = Boolean(String(row?.imageUri || row?.imageURI || row?.image || row?.image_url || row?.image_uri || "").trim());
+  const snapshot = hasMarketCap && hasImage ? null : await readPumpFunCoinSnapshot(row?.mint || row?.token || "");
+  const normalized = normalizePumpFunLaunch(snapshot
+    ? {
+        ...row,
+        ...snapshot,
+        name: snapshot.name || row.name,
+        symbol: snapshot.symbol || row.symbol,
+        description: snapshot.description || row.description,
+        imageUri: snapshot.imageUri || row.imageUri || row.imageURI || row.image || "",
+        metadataUri: snapshot.metadataUri || row.metadataUri
+      }
+    : row);
   if (!normalized) return null;
   const store = await readPumpFunLaunchesPersistent({ refresh: true });
   const launches = [normalized, ...(Array.isArray(store.launches) ? store.launches : []).filter((item) => String(item?.mint || "").toLowerCase() !== normalized.mint.toLowerCase())];
@@ -9155,8 +9215,27 @@ app.get("/api/launches", async (req, res) => {
 
     if (pumpFunOnly) {
       const pumpFunStore = await readPumpFunLaunchesPersistent({ refresh: forceFresh && !fastHome });
-      const pumpFunLaunches = (Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : [])
+      let pumpFunLaunches = (Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : [])
         .sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
+      const visibleWindow = pumpFunLaunches.slice(offset, offset + limit);
+      const needsImageHydration = visibleWindow.some((row) => !String(row?.imageUri || row?.imageURI || row?.image || "").trim());
+      if (needsImageHydration || (!fastHome && forceFresh)) {
+        const hydratedLaunches = await hydratePumpFunLaunchMarketCaps(pumpFunLaunches, {
+          fresh: forceFresh && !fastHome,
+          imageOnlyLimit: fastHome ? Math.max(limit, 12) : 60
+        });
+        const gainedImages = hydratedLaunches.some((row, index) => {
+          const before = pumpFunLaunches[index];
+          return !String(before?.imageUri || before?.imageURI || before?.image || "").trim() &&
+            Boolean(String(row?.imageUri || row?.imageURI || row?.image || "").trim());
+        });
+        pumpFunLaunches = hydratedLaunches.sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
+        if (gainedImages) {
+          writePumpFunLaunchesPersistent({ launches: pumpFunLaunches }).catch(() => {
+            // best-effort image backfill
+          });
+        }
+      }
       const launches = pumpFunLaunches.slice(offset, offset + limit);
       const pumpFunPayload = { total: pumpFunLaunches.length, launches };
       return res.json(homeLite ? compactLaunchPayloadForHome(pumpFunPayload) : pumpFunPayload);
@@ -9251,13 +9330,24 @@ app.get("/api/launches", async (req, res) => {
     if (includePumpFunFeed) {
       const pumpFunStore = await readPumpFunLaunchesPersistent({ refresh: forceFresh });
       const rawPumpFunLaunches = Array.isArray(pumpFunStore.launches) ? pumpFunStore.launches : [];
-      const pumpFunLaunches = fastHome
+      const fastNeedsImageHydration = fastHome && rawPumpFunLaunches.slice(0, limit).some((row) => {
+        return !String(row?.imageUri || row?.imageURI || row?.image || "").trim();
+      });
+      const pumpFunLaunches = fastHome && !fastNeedsImageHydration
         ? rawPumpFunLaunches
-        : await hydratePumpFunLaunchMarketCaps(rawPumpFunLaunches, { fresh: forceFresh });
+        : await hydratePumpFunLaunchMarketCaps(rawPumpFunLaunches, {
+            fresh: forceFresh && !fastHome,
+            imageOnlyLimit: fastHome ? Math.max(limit, 12) : 60
+          });
       const launches = [...pumpFunLaunches, ...(Array.isArray(payload.launches) ? payload.launches : [])]
         .sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0))
         .slice(0, limit);
-      if (!fastHome && pumpFunLaunches.some((row) => Number(row?.marketCapUsd || 0) > 0)) {
+      const backfilledPumpFunImages = pumpFunLaunches.some((row, index) => {
+        const before = rawPumpFunLaunches[index];
+        return !String(before?.imageUri || before?.imageURI || before?.image || "").trim() &&
+          Boolean(String(row?.imageUri || row?.imageURI || row?.image || "").trim());
+      });
+      if ((!fastHome && pumpFunLaunches.some((row) => Number(row?.marketCapUsd || 0) > 0)) || backfilledPumpFunImages) {
         writePumpFunLaunchesPersistent({ launches: pumpFunLaunches }).catch(() => {
           // best-effort snapshot persistence
         });
