@@ -329,12 +329,11 @@ async function fetchRecentLaunchPage(options = {}) {
 
 async function fetchFastHomeLaunchPage(options = {}) {
   return fetchRecentLaunchPage({
-    limit: 80,
+    limit: 24,
     lite: true,
     home: true,
-    includeDex: false,
+    includeDex: true,
     includePumpFun: true,
-    pumpFunOnly: true,
     allChains: true,
     ...options
   });
@@ -1604,6 +1603,7 @@ function setupInteractions() {
 
 async function refreshLaunches(options = {}) {
   const enrich = options.enrich !== false;
+  const skipQuick = options.skipQuick === true;
   let launchesRes = null;
   let lastError = null;
   const cached = loadCachedLaunches();
@@ -1613,11 +1613,13 @@ async function refreshLaunches(options = {}) {
     syncCachedPumpFunLaunchesToServer(cached);
   }
 
-  try {
-    const quick = await fetchFastHomeLaunchPage();
-    paintLaunchRows(quick.launches, { hydrateLimit: 8, hydrateDelay: 1000 });
-  } catch (error) {
-    lastError = error;
+  if (!skipQuick) {
+    try {
+      const quick = await fetchFastHomeLaunchPage();
+      paintLaunchRows(quick.launches, { hydrateLimit: 8, hydrateDelay: 1000 });
+    } catch (error) {
+      lastError = error;
+    }
   }
 
   if (enrich) {
@@ -1783,14 +1785,11 @@ async function init() {
   await loadConfig();
   try {
     await fastHomeBoot;
-    if (!state.launches.length) {
+    const hasFastRows = state.launches.length > 0;
+    if (!hasFastRows) {
       await refreshLaunches({ enrich: false });
-    } else {
-      refreshLaunches({ enrich: false }).catch(() => {
-        // keep already-painted fast content
-      });
     }
-    refreshLaunches({ enrich: true }).catch(() => {
+    refreshLaunches({ enrich: true, skipQuick: hasFastRows }).catch(() => {
       // keep fast-first content if enrich pass fails
     });
   } catch (err) {
