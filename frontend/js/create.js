@@ -876,10 +876,12 @@ function showImagePreview(src) {
   if (!ui.imagePreview) return;
   if (!src) {
     ui.imagePreview.style.display = "none";
+    ui.imagePreview.hidden = true;
     ui.imagePreview.removeAttribute("src");
     return;
   }
   ui.imagePreview.src = src;
+  ui.imagePreview.hidden = false;
   ui.imagePreview.style.display = "block";
 }
 
@@ -887,6 +889,7 @@ function showUploadBoxPreview(src) {
   if (!ui.uploadPreviewImage || !ui.uploadMediaWrap || !ui.uploadCopy) return;
   if (!src) {
     ui.uploadPreviewImage.removeAttribute("src");
+    ui.uploadPreviewImage.hidden = true;
     ui.uploadPreviewImage.style.display = "none";
     ui.uploadMediaWrap.classList.remove("active");
     ui.uploadCopy.style.display = "grid";
@@ -894,6 +897,7 @@ function showUploadBoxPreview(src) {
   }
 
   ui.uploadPreviewImage.src = src;
+  ui.uploadPreviewImage.hidden = false;
   ui.uploadPreviewImage.style.display = "block";
   ui.uploadMediaWrap.classList.add("active");
   ui.uploadCopy.style.display = "none";

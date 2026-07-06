@@ -133,19 +133,23 @@ function renderQr(link = "") {
   if (ui.qrWrap) ui.qrWrap.hidden = !link;
   if (!link) {
     ui.qrImage.removeAttribute("src");
+    ui.qrImage.hidden = true;
     renderedQrLink = "";
     return;
   }
   if (renderedQrLink === link && ui.qrImage.getAttribute("src")) {
     if (ui.qrWrap) ui.qrWrap.hidden = false;
+    ui.qrImage.hidden = false;
     return;
   }
   renderedQrLink = link;
   ui.qrImage.onload = () => {
     if (ui.qrWrap) ui.qrWrap.hidden = false;
+    ui.qrImage.hidden = false;
   };
   ui.qrImage.onerror = () => {
     if (ui.qrWrap) ui.qrWrap.hidden = true;
+    ui.qrImage.hidden = true;
     setAlert(ui.status, "QR could not be generated. Use the referral link instead.", true);
   };
   ui.qrImage.src = `/api/referrals/qr?url=${encodeURIComponent(link)}`;

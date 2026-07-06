@@ -1968,6 +1968,7 @@ export function initWalletHubMenu({
       if (depositAddressEl) depositAddressEl.textContent = "Not connected";
       if (depositQrEl) {
         depositQrEl.removeAttribute("src");
+        depositQrEl.hidden = true;
         depositQrEl.style.display = "none";
       }
       triggerEl?.classList.remove("connected");
@@ -1992,6 +1993,7 @@ export function initWalletHubMenu({
     if (depositQrEl) {
       const data = encodeURIComponent(address);
       depositQrEl.src = `https://api.qrserver.com/v1/create-qr-code/?size=176x176&data=${data}`;
+      depositQrEl.hidden = false;
       depositQrEl.style.display = "block";
     }
 

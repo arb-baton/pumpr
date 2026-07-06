@@ -1274,6 +1274,7 @@ function setTokenHeader(launch) {
 
   if (ui.tokenImage) {
     ui.tokenImage.src = resolveCoinImage(launch);
+    ui.tokenImage.hidden = false;
     ui.tokenImage.style.display = "block";
   }
   updateTradeQuickTokenLabels(launch.symbol);

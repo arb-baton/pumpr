@@ -1020,6 +1020,10 @@ function renderDetail() {
     if (hasMedia) {
       ui.detailMedia.src = bounty.imageUri;
       ui.detailMedia.alt = bounty.title || "Bounty media";
+      ui.detailMedia.hidden = false;
+    } else {
+      ui.detailMedia.removeAttribute("src");
+      ui.detailMedia.hidden = true;
     }
   }
   ui.detailDescription.innerHTML = `${richTextMarkup(bounty.description || "") || "<p>No description provided.</p>"}${bounty.sourceUrl ? `<p><a class="go-external-link" href="${escapeHtml(bounty.sourceUrl)}" target="_blank" rel="noreferrer noopener">Open original ${escapeHtml(bounty.source || "bounty")}</a></p>` : ""}`;

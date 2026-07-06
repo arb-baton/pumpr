@@ -331,7 +331,10 @@ function renderShell() {
   const symbol = String(launch?.symbol || "coin").toUpperCase();
   const name = String(launch?.name || "Coin communities");
   const image = launch ? resolveCoinImage(launch) : "/assets/pump-r-logo.png?v=20260609brand";
-  if (ui.image) ui.image.src = image;
+  if (ui.image) {
+    ui.image.src = image;
+    ui.image.hidden = false;
+  }
   if (ui.cover) {
     ui.cover.style.backgroundImage = tokenMode
       ? `linear-gradient(180deg, rgba(8,10,18,0.08), rgba(8,10,18,0.82)), url("${image}")`
