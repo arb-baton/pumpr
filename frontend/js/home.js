@@ -140,6 +140,23 @@ function saveCachedLaunches(launches) {
   }
 }
 
+function paintLaunchRows(rows = [], options = {}) {
+  const launches = filterHomeLaunchRows(Array.isArray(rows) ? rows.filter((row) => Boolean(row && row.token)) : []);
+  if (!launches.length) return false;
+  state.launches = mergeLaunchRows(state.launches, launches);
+  saveCachedLaunches(state.launches);
+  if (options.syncServer) syncCachedPumpFunLaunchesToServer(state.launches);
+  updateMoverSignals(state.launches);
+  renderTopCommunities();
+  renderTrending();
+  renderExplore();
+  const hydrateLimit = Math.max(0, Number(options.hydrateLimit || 0));
+  if (hydrateLimit > 0) {
+    scheduleVisibleMarketCapHydration(hydrateLimit, Number(options.hydrateDelay || 1000));
+  }
+  return true;
+}
+
 function syncCachedPumpFunLaunchesToServer(rows = []) {
   const pumpFunRows = filterHomeLaunchRows(rows)
     .filter((row) => isPumpFunLaunch(row) && String(row?.mint || row?.token || "").trim())
@@ -1591,27 +1608,14 @@ async function refreshLaunches(options = {}) {
   let lastError = null;
   const cached = loadCachedLaunches();
   if (!state.launches.length && cached.length) {
-    state.launches = cached;
-    syncCachedPumpFunLaunchesToServer(cached);
-    updateMoverSignals(state.launches);
-    renderTopCommunities();
-    renderTrending();
-    renderExplore();
+    paintLaunchRows(cached, { syncServer: true });
   } else if (cached.length) {
     syncCachedPumpFunLaunchesToServer(cached);
   }
 
   try {
     const quick = await fetchFastHomeLaunchPage();
-    if (quick.launches.length) {
-      state.launches = mergeLaunchRows(state.launches, quick.launches);
-      saveCachedLaunches(state.launches);
-      updateMoverSignals(state.launches);
-      renderTopCommunities();
-      renderTrending();
-      renderExplore();
-      scheduleVisibleMarketCapHydration(8, 1000);
-    }
+    paintLaunchRows(quick.launches, { hydrateLimit: 8, hydrateDelay: 1000 });
   } catch (error) {
     lastError = error;
   }
@@ -1624,12 +1628,7 @@ async function refreshLaunches(options = {}) {
         ? payload.launches.filter((row) => Boolean(row && row.token))
         : [];
       if (!batch.length) return;
-      state.launches = mergeLaunchRows(state.launches, batch);
-      saveCachedLaunches(state.launches);
-      updateMoverSignals(state.launches);
-      renderTopCommunities();
-      renderTrending();
-      renderExplore();
+      paintLaunchRows(batch);
       if (!renderedProgressiveBatch) {
         renderedProgressiveBatch = true;
         scheduleVisibleMarketCapHydration(8, 1000);
@@ -1675,23 +1674,13 @@ async function refreshLaunches(options = {}) {
   if (!freshLaunches.length) {
     const cached = loadCachedLaunches();
     if (cached.length) {
-      state.launches = cached;
-      syncCachedPumpFunLaunchesToServer(cached);
-      updateMoverSignals(state.launches);
-      renderTopCommunities();
-      renderTrending();
-      renderExplore();
+      paintLaunchRows(cached, { syncServer: true });
       setAlert(ui.alert, "Live feed is syncing, showing recent cached tokens.");
       return;
     }
   }
 
-  state.launches = mergeLaunchRows(state.launches, freshLaunches);
-  saveCachedLaunches(state.launches);
-  updateMoverSignals(state.launches);
-  renderTopCommunities();
-  renderTrending();
-  renderExplore();
+  paintLaunchRows(freshLaunches);
   hydrateVisibleMarketCaps(14).catch(() => {
     // best-effort card enrichment
   });
@@ -1744,6 +1733,14 @@ async function init() {
     await walletHub?.refresh();
   };
 
+  const fastHomeBoot = fetchFastHomeLaunchPage()
+    .then((quick) => {
+      paintLaunchRows(quick.launches, { hydrateLimit: 8, hydrateDelay: 900 });
+    })
+    .catch(() => {
+      // The normal refresh path below still handles cached and retry fallbacks.
+    });
+
   walletControls = initTopbarWalletProfile({
     signInBtn: ui.signInBtn,
     connectBtn: ui.connectBtn,
@@ -1785,7 +1782,14 @@ async function init() {
 
   await loadConfig();
   try {
-    await refreshLaunches({ enrich: false });
+    await fastHomeBoot;
+    if (!state.launches.length) {
+      await refreshLaunches({ enrich: false });
+    } else {
+      refreshLaunches({ enrich: false }).catch(() => {
+        // keep already-painted fast content
+      });
+    }
     refreshLaunches({ enrich: true }).catch(() => {
       // keep fast-first content if enrich pass fails
     });
