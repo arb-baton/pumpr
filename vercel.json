@@ -32,6 +32,27 @@
       ]
     },
     {
+      "source": "/service-worker.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, max-age=0" },
+        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, max-age=0" },
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "/.well-known/assetlinks.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, max-age=0" },
+        { "key": "Content-Type", "value": "application/json; charset=utf-8" }
+      ]
+    },
+    {
       "source": "/js/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-store, max-age=0" }
@@ -80,6 +101,18 @@
     {
       "src": "/(favicon\\.ico|robots\\.txt)",
       "dest": "/frontend/$1"
+    },
+    {
+      "src": "/manifest\\.webmanifest$",
+      "dest": "/frontend/manifest.webmanifest"
+    },
+    {
+      "src": "/service-worker\\.js$",
+      "dest": "/frontend/service-worker.js"
+    },
+    {
+      "src": "/\\.well-known/(.*)",
+      "dest": "/frontend/.well-known/$1"
     },
     {
       "src": "/create$",

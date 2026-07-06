@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "fun.pumpr.app",
+        "sha256_cert_fingerprints": ["10:7E:40:C9:58:27:1F:C0:30:54:34:72:46:48:12:04:CC:2A:9F:3D:5A:5E:D2:CD:BB:A4:DF:C5:CC:51:44:AE"]
+      }
+    }]

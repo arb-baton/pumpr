@@ -1,0 +1,76 @@
+{
+  "packageId": "fun.pumpr.app",
+  "host": "pump-r.fun",
+  "name": "Pump-r.fun",
+  "launcherName": "Pump-r",
+  "display": "standalone",
+  "themeColor": "#6FF0A5",
+  "themeColorDark": "#000000",
+  "navigationColor": "#000000",
+  "navigationColorDark": "#000000",
+  "navigationDividerColor": "#000000",
+  "navigationDividerColorDark": "#000000",
+  "backgroundColor": "#07080A",
+  "enableNotifications": true,
+  "startUrl": "/?app=pumpr",
+  "iconUrl": "https://pump-r.fun/assets/pump-r-logo.png",
+  "maskableIconUrl": "https://pump-r.fun/assets/pump-r-logo.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "C:\\Users\\learn\\Documents\\Codex\\2026-04-23-make-meme-launch-platform-like-pump\\mobile\\twa\\pumpr-twa\\pumpr-release.keystore",
+    "alias": "pumpr"
+  },
+  "appVersionName": "1",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "Create",
+      "shortName": "Create",
+      "url": "https://pump-r.fun/create?app=pumpr",
+      "chosenIconUrl": "https://pump-r.fun/assets/pump-r-logo.png?v=20260609brand"
+    },
+    {
+      "name": "Airdrops",
+      "shortName": "Airdrop",
+      "url": "https://pump-r.fun/airdrop?app=pumpr",
+      "chosenIconUrl": "https://pump-r.fun/assets/pump-r-logo.png?v=20260609brand"
+    },
+    {
+      "name": "Referrals Beta",
+      "shortName": "Referrals",
+      "url": "https://pump-r.fun/referrals?app=pumpr",
+      "chosenIconUrl": "https://pump-r.fun/assets/pump-r-logo.png?v=20260609brand"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://pump-r.fun/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://pump-r.fun/",
+  "minSdkVersion": 21,
+  "orientation": "portrait",
+  "fingerprints": [
+    {
+      "name": "Pump-r release key",
+      "value": "10:7E:40:C9:58:27:1F:C0:30:54:34:72:46:48:12:04:CC:2A:9F:3D:5A:5E:D2:CD:BB:A4:DF:C5:CC:51:44:AE"
+    }
+  ],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": [],
+  "launchHandlerClientMode": "",
+  "displayOverride": [
+    "standalone",
+    "fullscreen",
+    "minimal-ui",
+    "browser"
+  ],
+  "appVersion": "1"
+}

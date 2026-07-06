@@ -9,3 +9,11 @@ frontend/.DS_Store
 tmp*.log
 
 .vercel
+mobile/twa/**/pumpr-release.keystore
+mobile/twa/**/app-release-*.apk
+mobile/twa/**/app-release-*.idsig
+mobile/twa/**/app-release-*.aab
+mobile/twa/**/app-release-unsigned*.apk
+mobile/twa/**/app/build/
+mobile/twa/**/build/
+mobile/twa/**/.gradle/
