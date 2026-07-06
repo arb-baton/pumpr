@@ -37,6 +37,12 @@ const ui = {
   token: document.getElementById("socialPostToken"),
   chain: document.getElementById("socialPostChain"),
   media: document.getElementById("socialPostMedia"),
+  mediaFile: document.getElementById("socialPostMediaFile"),
+  mediaPreview: document.getElementById("socialPostMediaPreview"),
+  mediaPreviewFrame: document.querySelector("#socialPostMediaPreview .socialx-media-preview-frame"),
+  mediaName: document.getElementById("socialPostMediaName"),
+  mediaHint: document.getElementById("socialPostMediaHint"),
+  mediaRemoveBtn: document.getElementById("socialPostMediaRemoveBtn"),
   postBtn: document.getElementById("socialPostBtn"),
   postStatus: document.getElementById("socialPostStatus"),
   editProfileBtn: document.getElementById("socialEditProfileBtn"),
@@ -71,6 +77,7 @@ let refreshTimer = null;
 let searchTimer = null;
 let openThreadId = "";
 let pendingImageUri = "";
+let pendingPostMediaUri = "";
 
 const TAB_COPY = {
   "for-you": {
@@ -215,6 +222,62 @@ async function uploadProfileImage(file) {
     status(ui.profileStatus, error.message || "Could not upload image.", "error");
   } finally {
     if (ui.imageFile) ui.imageFile.value = "";
+  }
+}
+
+function renderPostMediaPreview(uri = "", name = "") {
+  if (!ui.mediaPreview || !ui.mediaPreviewFrame) return;
+  const src = String(uri || "").trim();
+  const label = name || (src ? "Media ready" : "");
+  ui.mediaPreview.hidden = !src;
+  ui.mediaPreviewFrame.innerHTML = "";
+  if (!src) {
+    if (ui.mediaName) ui.mediaName.textContent = "";
+    if (ui.mediaHint) ui.mediaHint.textContent = "";
+    return;
+  }
+  const isVideo = /\.(mp4|webm|mov)(\?|#|$)/i.test(src) || /^data:video\//i.test(src);
+  if (isVideo) {
+    const video = document.createElement("video");
+    video.src = src;
+    video.muted = true;
+    video.playsInline = true;
+    video.controls = true;
+    ui.mediaPreviewFrame.appendChild(video);
+  } else {
+    const img = document.createElement("img");
+    img.src = src;
+    img.alt = "Post media preview";
+    ui.mediaPreviewFrame.appendChild(img);
+  }
+  if (ui.mediaName) ui.mediaName.textContent = label;
+  if (ui.mediaHint) ui.mediaHint.textContent = src.startsWith("data:") ? "Local preview ready." : "This will attach to your post.";
+}
+
+async function uploadPostMedia(file) {
+  if (!file) return;
+  const kind = String(file.type || "");
+  if (!/^image\//i.test(kind)) {
+    status(ui.postStatus, "Choose an image file.", "warn");
+    return;
+  }
+  if (file.size > 1024 * 1024) {
+    status(ui.postStatus, "Image is too large. Use something under 1 MB.", "warn");
+    return;
+  }
+  status(ui.postStatus, "Uploading media...", "");
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    renderPostMediaPreview(dataUrl, file.name || "Local media");
+    const uploaded = await api.uploadImage(dataUrl);
+    pendingPostMediaUri = uploaded?.url || uploaded?.imageUrl || uploaded?.imageUri || dataUrl;
+    if (ui.media) ui.media.value = pendingPostMediaUri;
+    renderPostMediaPreview(pendingPostMediaUri, file.name || "Media ready");
+    status(ui.postStatus, "Media ready. Hit Post when your take is ready.", "ok");
+  } catch (error) {
+    status(ui.postStatus, error.message || "Could not upload media.", "error");
+  } finally {
+    if (ui.mediaFile) ui.mediaFile.value = "";
   }
 }
 
@@ -395,13 +458,15 @@ async function publishPost() {
       body: text,
       token: ui.token?.value || "",
       chain: ui.chain?.value || "SOL",
-      mediaUrl: ui.media?.value || "",
+      mediaUrl: pendingPostMediaUri || ui.media?.value || "",
       source: identity.source || "social"
     });
     currentSocialProfile = payload.profile || currentSocialProfile;
     currentStats = payload.stats || currentStats;
     ui.body.value = "";
     ui.media.value = "";
+    pendingPostMediaUri = "";
+    renderPostMediaPreview("");
     status(ui.postStatus, "+5 XP. Post is live.", "ok");
     updateIdentityUi();
     setView("feed");
@@ -913,6 +978,17 @@ function bindEvents() {
     if (!pendingImageUri) renderImagePreview("", ui.displayInput.value || "PR");
   });
   ui.profileSaveBtn?.addEventListener("click", saveSocialProfile);
+  ui.mediaFile?.addEventListener("change", () => uploadPostMedia(ui.mediaFile?.files?.[0] || null));
+  ui.media?.addEventListener("input", () => {
+    pendingPostMediaUri = String(ui.media.value || "").trim();
+    renderPostMediaPreview(pendingPostMediaUri, pendingPostMediaUri ? "Linked media" : "");
+  });
+  ui.mediaRemoveBtn?.addEventListener("click", () => {
+    pendingPostMediaUri = "";
+    if (ui.media) ui.media.value = "";
+    renderPostMediaPreview("");
+    status(ui.postStatus, "Media removed.", "warn");
+  });
   ui.postBtn?.addEventListener("click", publishPost);
   ui.topComposeBtn?.addEventListener("click", () => {
     setView("feed");

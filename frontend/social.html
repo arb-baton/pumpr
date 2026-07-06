@@ -118,7 +118,17 @@
                     <option>RH</option>
                   </select>
                   <input id="socialPostMedia" placeholder="Image or clip URL optional" />
+                  <label class="socialx-media-upload" for="socialPostMediaFile">Upload</label>
+                  <input id="socialPostMediaFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
                   <button id="socialPostBtn" class="btn-primary" type="button">Post</button>
+                </div>
+                <div id="socialPostMediaPreview" class="socialx-media-preview" hidden>
+                  <div class="socialx-media-preview-frame"></div>
+                  <div>
+                    <strong id="socialPostMediaName">Media ready</strong>
+                    <span id="socialPostMediaHint">This will attach to your post.</span>
+                  </div>
+                  <button id="socialPostMediaRemoveBtn" class="btn-ghost" type="button">Remove</button>
                 </div>
                 <p id="socialPostStatus" class="socialx-status" role="status"></p>
               </div>

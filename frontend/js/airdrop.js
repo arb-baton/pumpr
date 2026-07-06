@@ -4,7 +4,7 @@ import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260705langselect"
 import { KOL_LEADERBOARD } from "./kolData.js?v=20260703kol51";
 
 const AIRDROP_HOLDER_REFRESH_MS = 30_000;
-const AIRDROP_HISTORY_URL = "/data/pumpr-airdrops.json?v=20260705weighted1m-live4";
+const AIRDROP_HISTORY_URL = "/data/pumpr-airdrops.json?v=20260706weighted1m-live5";
 const COMPLETED_AIRDROP_URL = "/data/pumpr-airdrop-250k.json?v=20260703drop250k";
 const OUTREACH_AIRDROP_URL = "/data/pumpr-outreach-airdrops.json?v=20260704ansemoutreach";
 const KOL_SEED_AMOUNT = 5_000;
