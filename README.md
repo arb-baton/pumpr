@@ -1,118 +1,291 @@
-# MemeForge ETH Launchpad
+# Pump-r.Fun
 
-A low-fee meme token launch platform for Ethereum inspired by Pump.fun.
+Pump-r.Fun is a mobile-first Solana launchpad and crypto-native social rewards app.
 
-## What this includes
+The project started as a Pump.fun-style launch experience and has grown into a broader platform for launches, communities, referrals, airdrops, creator rewards, alpha, GO bounties, AI agents, and Android/Seeker distribution.
 
-- `MemeLaunchFactory`: launches new meme tokens + pools with default graduation config.
-- `MemeToken`: minimal ERC20 token for each launch.
-- `MemePool`: bonding-curve pool with virtual reserves, low fees, and auto DEX liquidity migration.
-- `MockDexRouter` (local testing): simulates auto LP migration flow on localhost.
-- Hardhat tests and deploy script.
-- Multi-page web app (`frontend/`) with pump-style flows: Explore, Create, Token, Profile.
+- Live app: https://pump-r.fun
+- Android APK page: https://pump-r.fun/android
+- Airdrop history: https://pump-r.fun/airdrop
+- Skill file: https://pump-r.fun/skill.md
+- Android package: `fun.pumpr.app`
+- Official Pump-r mint: `C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump`
 
-## Pump-style behavior implemented
+## What Pump-r Does
 
-- No manual LP step for creators.
-- Trading starts on bonding curve.
-- When pool ETH reserve reaches `graduationTargetEth`, migration auto-runs.
-- Pool migrates remaining ETH + token reserves to configured DEX router via `addLiquidityETH`.
-- Bonding-curve trading is then closed (`graduated=true`) and UI shows DEX pair.
+Pump-r is built around one idea: launches should reward the people who actually help them grow.
 
-## Design highlights
+The current app includes:
 
-- Launches are on-chain and permissionless.
-- Trading fee defaults to `0.50%` (`50` bps) on DEX trades, split as:
-  - `0.30%` to token creator (claimable on profile)
-  - `0.20%` to platform recipient
-- Launch fee is configurable (`launchFeeWei`) and sent to the platform recipient.
-- Virtual reserves smooth initial pricing and reduce launch slippage spikes.
-- Creator allocation is capped at `20%` for fairer launches.
-- Graduation settings are factory defaults, so each launch is consistent.
+- Pump.fun-style Solana token launches through connected Solana wallets.
+- Persistent home cards for launched tokens with market-cap syncing from live sources.
+- No-vamp checks to block duplicate token names and tickers.
+- Token holder gating for launches and reward eligibility.
+- Weighted holder airdrops with public proof, Solscan transaction links, and historical drop records.
+- Referral links, editable referral names, QR codes, and beta referral tracking.
+- Pump-r Social beta with profiles, posts, replies, likes, image uploads, and wallet-linked identity.
+- Communities per token with comments and post flows.
+- Alpha Tips for posting and rewarding useful alpha.
+- GO bounties and Pump.fun open bounty syncing.
+- Agent registry using `SKILL.md` for bounty/launch-support agents.
+- PUMPR Card waitlist page for the upcoming crypto-native card concept.
+- Android APK/TWA build and Seeker dApp Store submission support.
+- Terms and Privacy pages for store/compliance submissions.
+- Legacy EVM launch contracts and factory support for Ethereum/Base/Robinhood-style chains.
 
-## Quick start (local)
+## Product Pages
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-2. Compile and test:
-   ```bash
-   npm run compile
-   npm test
-   ```
-3. Run local chain:
-   ```bash
-   npm run node
-   ```
-4. In another terminal, deploy:
-   ```bash
-   npm run deploy:local
-   ```
-5. Start web app server:
-   ```bash
-   npm run app
-   ```
-6. Open:
-   - `http://localhost:4173/` (Explore)
-   - `http://localhost:4173/create` (Create)
-   - `http://localhost:4173/token?token=<TOKEN_ADDRESS>` (Token page)
-   - `http://localhost:4173/profile?address=<WALLET_ADDRESS>` (Profile page)
+The frontend lives in `frontend/` and is served by the Express backend.
 
-## Deploy to Sepolia
+Main pages:
 
-1. Copy `.env.example` to `.env` and set values.
-2. Configure real `DEX_ROUTER` and `LP_RECIPIENT`.
-3. Export env vars in your shell.
-4. Run:
-   ```bash
-   npm run deploy:sepolia
-   ```
+- `/` - home/explore feed and token cards
+- `/create` - token launch flow
+- `/token` - token details
+- `/profile` - wallet/social profile
+- `/communities` - token communities
+- `/go` - GO bounties
+- `/alpha` - alpha tips
+- `/agents` - agent registry and SKILL.md onboarding
+- `/airdrop` - PUMPR holder and outreach airdrop history
+- `/referrals` - referral beta
+- `/social` - Pump-r Social beta
+- `/pumpr-card` - PUMPR Card waitlist
+- `/android` - Android APK download and package/compliance details
+- `/terms` - public Terms of Use
+- `/privacy` - public Privacy Policy
+- `/skill.md` - agent skill file
 
-## Deploy to Ethereum mainnet
+## Architecture
 
-1. Copy `.env.example` to `.env` and set:
-   - `MAINNET_RPC_URL`
-   - `PRIVATE_KEY` (use a burner wallet)
-   - `FEE_RECIPIENT`
-   - `PLATFORM_FEE_RECIPIENT`
-   - `LP_RECIPIENT`
-2. Optional:
-   - `LAUNCH_FEE_ETH`
-   - `DEX_ROUTER` (defaults to Uniswap V2 Router02 on mainnet)
-3. Deploy:
-   ```bash
-   npm run deploy:mainnet
-   ```
-4. Start app in mainnet mode:
-   - `CHAIN_ID=1`
-   - `FACTORY_ADDRESS=<deployed factory address>`
+Pump-r uses a simple production architecture:
 
-## Environment variables
+```text
+Browser / Android TWA / Seeker
+        |
+        v
+Frontend HTML/CSS/JS in frontend/
+        |
+        v
+Node.js + Express backend on Vercel
+        |
+        +--> Supabase storage/database objects
+        +--> Solana RPC / Pump.fun SDK / Token-2022
+        +--> Dexscreener / GeckoTerminal / Pump.fun APIs
+        +--> X OAuth / email-social auth helpers
+        +--> OpenAI-powered agent and bounty drafting
+        +--> Legacy EVM factories through ethers/Hardhat artifacts
+```
 
-- `SEPOLIA_RPC_URL`
-- `MAINNET_RPC_URL`
-- `PRIVATE_KEY`
-- `CHAIN_ID`
-- `FACTORY_ADDRESS`
-- `FACTORY_ADDRESSES` (JSON map for multi-chain production auto-discovery)
-- `RPC_URLS_BY_CHAIN` (JSON map for chain-specific RPC endpoints)
-- `UPLOAD_MODE` (`disk` for traditional server, `inline` for serverless deployments)
-- `FEE_RECIPIENT`
-- `PLATFORM_FEE_RECIPIENT`
-- `FEE_BPS`
-- `LAUNCH_FEE_WEI` or `LAUNCH_FEE_ETH`
-- `VIRTUAL_ETH_RESERVE`
-- `VIRTUAL_TOKEN_RESERVE`
-- `GRADUATION_TARGET_ETH`
-- `DEX_ROUTER`
-- `LP_RECIPIENT`
+Runtime persistence is a mix of Supabase-backed stores in production and local JSON/cache files during local development. Production data such as profiles, launches, social posts, referrals, support messages, waitlists, Pump.fun sessions, and Pump.fun launch records should be backed by Supabase environment variables.
 
-## Notes
+## Tech Stack
 
-- Mainnet deployment still requires external security audit.
-- Frontend uses MetaMask + direct contract calls, with an Express backend for live chain reads and page routing.
-- Frontend supports local image upload (stored as `data:image/...` URI); keep image size under `35 KB`.
-- If contracts change, redeploy to refresh `frontend/deployment.json`.
-- Production API supports `?chainId=<id>` and auto-resolves factory per chain from env config.
-- `vercel.json` is included for deploying the Express app as a single Vercel Node function.
+- Node.js + Express
+- Vanilla HTML/CSS/JavaScript frontend
+- Solana Web3.js
+- Pump.fun SDK
+- SPL Token / Token-2022
+- Supabase storage and REST tables
+- Vercel production deployment
+- Hardhat + Solidity for legacy EVM launch factories
+- Android Trusted Web Activity / PWA wrapper
+- OpenAI API for agent and bounty draft helpers
+- Dexscreener, GeckoTerminal, Pump.fun, Jupiter-related market data integrations
+
+## Local Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the local app:
+
+```bash
+npm run app
+```
+
+Open:
+
+```text
+http://localhost:4173
+```
+
+The backend serves both API routes and frontend pages from `backend/server.js`.
+
+Useful local routes:
+
+```text
+http://localhost:4173/create
+http://localhost:4173/airdrop
+http://localhost:4173/referrals
+http://localhost:4173/social
+http://localhost:4173/android
+```
+
+## Environment
+
+Copy `.env.example` to `.env` and fill in the services you need.
+
+Minimum useful local setup:
+
+```env
+SOLANA_RPC_URL=https://your-solana-rpc.example
+PUMPFUN_SOLANA_RPC_URL=https://your-solana-rpc.example
+PUMPR_TOKEN_ADDRESS=C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump
+PUMPR_TOKEN_CHAIN_ID=101
+PUMPR_HOLDER_GATE_REQUIRED=0
+```
+
+Production storage/session features need Supabase:
+
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_STORAGE_BUCKET=uploads
+SUPABASE_PROFILE_TABLE=user_profiles
+SUPABASE_FOLLOW_TABLE=user_follows
+```
+
+X auth needs:
+
+```env
+X_CLIENT_ID=your-x-oauth-client-id
+X_CLIENT_SECRET=your-x-oauth-client-secret
+X_CALLBACK_URL=https://pump-r.fun/api/x/oauth/callback
+```
+
+AI agent/bounty helpers need:
+
+```env
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_AGENT_MODEL=gpt-4.1-mini
+OPENAI_IMAGE_MODEL=gpt-image-1
+```
+
+Pump.fun live bounty sync:
+
+```env
+ENABLE_PUMPFUN_BOUNTIES=1
+PUMPFUN_BOUNTIES_URL=https://pump.fun/go
+PUMPFUN_LIVESTREAM_API_URL=https://livestream-api.pump.fun
+```
+
+For a fuller list, see `.env.example`.
+
+## Solana / Pump.fun Launch Flow
+
+At a high level:
+
+1. User connects a Solana wallet.
+2. Create page validates token name, ticker, image, social links, and duplicate/vamp checks.
+3. Metadata is hosted through the configured storage path.
+4. Pump.fun launch transaction is prepared.
+5. User signs with Phantom or another compatible Solana wallet.
+6. Backend records the launch and keeps it visible on the home page.
+7. Market cap and token card data sync from live data sources after launch.
+8. Optional post-launch creator/KOL/community distribution logic can run through separate transfer tooling.
+
+Holder gating can be turned on/off with:
+
+```env
+PUMPR_HOLDER_GATE_REQUIRED=1
+```
+
+For local testing without requiring token holdings:
+
+```env
+PUMPR_HOLDER_GATE_REQUIRED=0
+```
+
+## Airdrops And Rewards
+
+The airdrop page is backed by static JSON records in:
+
+```text
+frontend/data/
+```
+
+Operational scripts and local audit records live in:
+
+```text
+work/
+```
+
+The system has been used for:
+
+- PUMPR holder airdrops
+- weighted 0.5%+ holder rewards
+- KOL/outreach drops
+- Ansem Black Bull holder outreach
+- one-off PUMPR sends
+
+Execution scripts should never commit private keys. Use environment variables only in the local shell and clear them after use.
+
+## Android / Seeker
+
+The project includes Android-focused support:
+
+- APK download page: `/android`
+- TWA package name: `fun.pumpr.app`
+- Terms: `/terms`
+- Privacy: `/privacy`
+- Android source/config under `mobile/`
+- TWA wrapper under `mobile/twa/pumpr-twa/`
+
+Mobile app notes are in:
+
+```text
+mobile/README.md
+mobile/PRODUCTION.md
+mobile/twa/README.md
+```
+
+## Legacy EVM Contracts
+
+This repo still includes the earlier EVM launchpad contracts and Hardhat setup:
+
+- `MemeLaunchFactory`
+- `MemeToken`
+- `MemePool`
+- local test router and deployment scripts
+
+Useful commands:
+
+```bash
+npm run compile
+npm test
+npm run node
+npm run deploy:local
+```
+
+EVM deployment scripts exist for Ethereum, Base, Monad-style config, Robinhood chain config, and GO escrow/factory experiments. These are secondary to the current Pump-r Solana/Pump.fun product.
+
+## Production Deployment
+
+Production is deployed to Vercel.
+
+```bash
+npm run deploy:prod
+```
+
+That runs:
+
+```bash
+node scripts/vercel-production-deploy.js
+```
+
+The deployment script builds the Vercel output, deploys it, aliases `pump-r.fun`, and verifies the production domain.
+
+## Important Safety Notes
+
+- Do not commit `.env`, private keys, wallet seed phrases, session cookies, or API bearer tokens.
+- The PUMPR dev wallet key must only be passed through a temporary shell environment variable when running local operational scripts.
+- Airdrops and token transfers are real on-chain actions. Always dry-run, validate recipients, and verify finalized signatures.
+- This code is not financial advice and does not guarantee token performance, rewards, or eligibility.
+
+## Project Status
+
+Pump-r is an active prototype/product build. The app is live, Android/Seeker-ready, and under fast iteration. Some features are beta and intentionally labeled as such in the UI, including referrals and Pump-r Social.
