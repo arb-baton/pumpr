@@ -203,6 +203,14 @@
       "dest": "/frontend/android.html"
     },
     {
+      "src": "/terms$",
+      "dest": "/frontend/terms.html"
+    },
+    {
+      "src": "/privacy$",
+      "dest": "/frontend/privacy.html"
+    },
+    {
       "src": "/card$",
       "dest": "/frontend/pumpr-card.html"
     },
