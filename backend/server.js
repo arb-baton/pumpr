@@ -11188,6 +11188,14 @@ app.get("/android", (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "android.html"));
 });
 
+app.get("/terms", (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "terms.html"));
+});
+
+app.get("/privacy", (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "privacy.html"));
+});
+
 app.get("/onboard", (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "onboard.html"));
 });
