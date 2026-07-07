@@ -6,8 +6,8 @@ import {
   shortAddress,
   solanaWalletState,
   walletState
-} from "./core.js?v=20260706socialavatar";
-import { initTopbarWalletProfile, showCopyToast } from "./ui.js?v=20260705langselect";
+} from "./core.js?v=20260706mobileauth";
+import { initTopbarWalletProfile, showCopyToast } from "./ui.js?v=20260706mobileauth";
 
 const REFRESH_MS = 40_000;
 const BOOKMARK_KEY = "pumpr.social.bookmarks.v1";

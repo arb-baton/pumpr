@@ -1,6 +1,6 @@
 import { api } from "./api.js?v=20260703adminwallet";
-import { restoreWalletFromSession, walletState } from "./core.js?v=20260703sharedauth";
-import { initLanguageSelector } from "./ui.js?v=20260705langselect";
+import { restoreWalletFromSession, walletState } from "./core.js?v=20260706mobileauth";
+import { initLanguageSelector } from "./ui.js?v=20260706mobileauth";
 
 const form = document.getElementById("pumprCardWaitlistForm");
 const emailInput = document.getElementById("pumprCardEmail");

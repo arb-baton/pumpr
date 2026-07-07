@@ -1,4 +1,4 @@
-import { initLanguageSelector } from "./ui.js?v=20260705langselect";
+import { initLanguageSelector } from "./ui.js?v=20260706mobileauth";
 
 const STORAGE_KEY = "Pump-r.onboard.v2";
 

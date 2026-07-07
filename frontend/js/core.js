@@ -506,6 +506,7 @@ async function activateGeneratedWallet(row = {}) {
   state.solanaAddress = publicKey;
   state.solanaWalletLabel = state.walletLabel;
   saveWalletSession({ connected: true, choice: "social", type: "social", address: publicKey });
+  window.dispatchEvent(new CustomEvent("etherpump:solanaWalletChanged", { detail: solanaWalletState() }));
   window.dispatchEvent(new CustomEvent("etherpump:walletChanged", { detail: walletState() }));
   return { ...walletState(), socialWallet: publicSocialWalletInfo(row) };
 }
@@ -1008,6 +1009,28 @@ export function getSolanaProvider() {
   return window.phantom?.solana || window.solana || null;
 }
 
+export function isMobileLike() {
+  const ua = String(navigator.userAgent || navigator.vendor || "").toLowerCase();
+  const touch = Number(navigator.maxTouchPoints || 0) > 1;
+  return /android|iphone|ipad|ipod|mobile/.test(ua) || (touch && Math.min(window.innerWidth || 0, window.innerHeight || 0) <= 900);
+}
+
+export function phantomMobileBrowseUrl(targetUrl = window.location.href) {
+  const target = String(targetUrl || window.location.href);
+  const ref = String(window.location.origin || "https://pump-r.fun");
+  return `https://phantom.app/ul/browse/${encodeURIComponent(target)}?ref=${encodeURIComponent(ref)}`;
+}
+
+export function canOpenPhantomMobileBrowser() {
+  return isMobileLike() && !getSolanaProvider();
+}
+
+export function openPhantomMobileBrowser(targetUrl = window.location.href) {
+  const url = phantomMobileBrowseUrl(targetUrl);
+  window.location.href = url;
+  return url;
+}
+
 export function solanaWalletState() {
   return {
     provider: state.solanaProvider,
@@ -1039,6 +1062,9 @@ export async function connectSolanaWallet(options = {}) {
   const provider = getSolanaProvider();
   if (!provider?.connect) {
     if (silent) return null;
+    if (isMobileLike()) {
+      throw new Error("Open Pump-r inside Phantom's in-app browser, then sign in again.");
+    }
     throw new Error("Install or enable Phantom with a Solana account before using Pump.fun.");
   }
 

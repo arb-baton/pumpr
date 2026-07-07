@@ -9,8 +9,8 @@ import {
   parseUiError,
   shortAddress,
   walletState
-} from "./core.js?v=20260703sharedauth";
-import { initTopbarWalletProfile, setAlert, setWalletLabel } from "./ui.js?v=20260705langselect";
+} from "./core.js?v=20260706mobileauth";
+import { initTopbarWalletProfile, setAlert, setWalletLabel } from "./ui.js?v=20260706mobileauth";
 
 const ALPHA_X_AUTH_KEY = "etherpump.alpha.xauth.v1";
 

@@ -9724,7 +9724,13 @@ app.get("/api/x/oauth/callback", async (req, res) => {
           image: String(data.profile_image_url || "").trim().slice(0, 1024),
           followers: Math.max(0, Number(data?.public_metrics?.followers_count || 0) || 0)
         };
+      } else {
+        const text = await userRes.text().catch(() => "");
+        throw new Error(`X profile fetch failed: ${userRes.status} ${text}`.trim());
       }
+    }
+    if (!xUser?.username) {
+      throw new Error("X authorized, but no X profile was returned");
     }
 
     const target = new URL(returnTo, publicOriginFromRequest(req));

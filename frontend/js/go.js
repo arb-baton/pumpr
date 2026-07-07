@@ -11,8 +11,8 @@ import {
   shortAddress,
   solanaWalletState,
   walletState
-} from "./core.js?v=20260703sharedauth";
-import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260705langselect";
+} from "./core.js?v=20260706mobileauth";
+import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260706mobileauth";
 import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 
 const ui = {

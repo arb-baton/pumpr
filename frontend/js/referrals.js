@@ -1,6 +1,6 @@
 import { api } from "./api.js?v=20260703referrals";
-import { shortAddress, solanaWalletState, walletState } from "./core.js?v=20260703sharedauth";
-import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260705langselect";
+import { shortAddress, solanaWalletState, walletState } from "./core.js?v=20260706mobileauth";
+import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260706mobileauth";
 
 const REFERRAL_PENDING_KEY = "pumpr.referral.pending.v1";
 const REFRESH_MS = 45_000;

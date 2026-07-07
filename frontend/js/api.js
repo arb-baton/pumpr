@@ -1,4 +1,4 @@
-import { getPreferredChainId } from "./core.js?v=20260703sharedauth";
+import { getPreferredChainId } from "./core.js?v=20260706mobileauth";
 
 function withPreferredChain(path) {
   const chainId = getPreferredChainId();

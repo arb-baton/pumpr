@@ -21,8 +21,8 @@ import {
   shortAddress,
   solanaWalletState,
   walletState
-} from "./core.js?v=20260703sharedauth";
-import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260705langselect";
+} from "./core.js?v=20260706mobileauth";
+import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260706mobileauth";
 import { initCoinSearchOverlay } from "./searchModal.js?v=20260703sharedauth";
 import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 import { KOL_LEADERBOARD } from "./kolData.js?v=20260703ansem";

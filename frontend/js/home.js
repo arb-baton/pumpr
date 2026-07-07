@@ -17,8 +17,8 @@ import {
   shortAddress,
   walletState,
   weiToUsd
-} from "./core.js?v=20260706pumpfunimages";
-import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260705langselect";
+} from "./core.js?v=20260706mobileauth";
+import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260706mobileauth";
 import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
 import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 

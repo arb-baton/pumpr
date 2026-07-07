@@ -24,8 +24,8 @@ import {
   setPreferredChainId,
   shortAddress,
   walletState
-} from "./core.js?v=20260703sharedauth";
-import { initLanguageSelector, initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260705langselect";
+} from "./core.js?v=20260706mobileauth";
+import { initLanguageSelector, initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260706mobileauth";
 import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
 import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 

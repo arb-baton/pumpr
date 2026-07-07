@@ -8,18 +8,20 @@ import {
   ethers,
   exportGeneratedWalletPrivateKey,
   fetchEthUsdPrice,
+  canOpenPhantomMobileBrowser,
   getChainOption,
   getGeneratedWalletInfo,
   getSavedWalletChoice,
   getSolanaProvider,
   hydrateUserProfile,
   loadUserProfile,
+  openPhantomMobileBrowser,
   restoreWalletFromSession,
   shortAddress,
   solanaWalletState,
   walletState,
   parseUiError
-} from "./core.js?v=20260703sharedauth";
+} from "./core.js?v=20260706mobileauth";
 
 export function setAlert(el, message, isError = false) {
   if (!el) return;
@@ -2139,8 +2141,15 @@ export function initWalletHubMenu({
 function showWalletPickerModal(wallets = []) {
   return new Promise((resolve, reject) => {
     const rows = Array.isArray(wallets) ? [...wallets] : [];
-    if (getSolanaProvider() && !rows.some((wallet) => wallet.key === "phantom")) {
-      rows.push({ id: "phantom", key: "phantom", label: "Phantom" });
+    const hasSolanaProvider = Boolean(getSolanaProvider());
+    const canOpenPhantomMobile = canOpenPhantomMobileBrowser();
+    if ((hasSolanaProvider || canOpenPhantomMobile) && !rows.some((wallet) => wallet.key === "phantom")) {
+      rows.push({
+        id: "phantom",
+        key: "phantom",
+        label: "Phantom",
+        requiresMobileOpen: canOpenPhantomMobile
+      });
     }
 
     const preferredOrder = ["phantom", "metamask", "rabby", "coinbase", "injected", "unknown"];
@@ -2163,7 +2172,7 @@ function showWalletPickerModal(wallets = []) {
 
     const renderWalletButton = (wallet, withStatus = true) => {
       const isRecent = recentChoice && (wallet.id === recentChoice || wallet.key === recentChoice);
-      const status = withStatus ? (isRecent ? "RECENT" : "DETECTED") : "";
+      const status = withStatus ? (wallet.requiresMobileOpen ? "OPEN APP" : isRecent ? "RECENT" : "DETECTED") : "";
       const badge = status
         ? `<span class="wallet-picker-badge ${status === "RECENT" ? "recent" : "detected"}"><i></i>${status}</span>`
         : `<span class="wallet-picker-arrow">></span>`;
@@ -2427,6 +2436,12 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
         return;
       }
       if (walletKey === "phantom") {
+        if (canOpenPhantomMobileBrowser()) {
+          setAlert(alertEl, "Opening Phantom. Sign in from inside Phantom's browser so it can expose your Solana wallet.");
+          showCopyToast("Opening Phantom");
+          openPhantomMobileBrowser(window.location.href);
+          return;
+        }
         await connectSolanaWallet({ requirePrompt: true, requireSignature: true });
       } else {
         await connectWallet(choice);
