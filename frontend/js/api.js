@@ -38,7 +38,7 @@ export async function apiGet(path) {
 export async function apiPost(path, body) {
   const target = withPreferredChain(path);
   const ctrl = new AbortController();
-  const timeoutMs = path.startsWith("/api/pumpfun/") || path.startsWith("/api/agents/") || path.startsWith("/api/referrals/") ? 60000 : 15000;
+  const timeoutMs = path.startsWith("/api/pumpfun/") || path.startsWith("/api/agents/") || path.startsWith("/api/referrals/") || path.startsWith("/api/rh-swap/") ? 60000 : 15000;
   const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
   const res = await fetch(target, {
     method: "POST",
@@ -239,6 +239,25 @@ export const api = {
     if (Number.isFinite(Number(options.targetChainId))) params.set("targetChainId", String(Math.floor(Number(options.targetChainId))));
     return apiGet(`/api/holder/eligibility?${params.toString()}`);
   },
+  rhSwapQuote: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.solanaAddress) params.set("solanaAddress", String(options.solanaAddress));
+    if (options.recipient) params.set("recipient", String(options.recipient));
+    if (options.amountPumpr) params.set("amountPumpr", String(options.amountPumpr));
+    if (options.targetToken) params.set("targetToken", String(options.targetToken));
+    return apiGet(`/api/rh-swap/quote?${params.toString()}`);
+  },
+  rhSwapToken: (token = "") => apiGet(`/api/rh-swap/token?token=${encodeURIComponent(String(token || ""))}`),
+  rhSwapSearch: (query = "", limit = 12) =>
+    apiGet(`/api/rh-swap/search?q=${encodeURIComponent(String(query || ""))}&limit=${encodeURIComponent(String(limit || 12))}`),
+  rhSwapEligibility: (solanaAddress = "") =>
+    apiGet(`/api/rh-swap/eligibility?solanaAddress=${encodeURIComponent(String(solanaAddress || ""))}`),
+  rhSwapRequest: (body = {}) => apiPost("/api/rh-swap/request", body),
+  rhSwapPrepare: (body = {}) => apiPost("/api/rh-swap/prepare", body),
+  rhSwapSettle: (body = {}) => apiPost("/api/rh-swap/settle", body),
+  rhSwapRequests: (wallet = "") => apiGet(`/api/rh-swap/requests?wallet=${encodeURIComponent(String(wallet || ""))}`),
+  rhSwapRequestStatus: (id = "", wallet = "") =>
+    apiGet(`/api/rh-swap/requests/${encodeURIComponent(String(id || ""))}?wallet=${encodeURIComponent(String(wallet || ""))}`),
   referralMe: (wallet, options = {}) => {
     const params = new URLSearchParams();
     if (options.refresh) params.set("refresh", "1");

@@ -7,6 +7,10 @@ frontend/.DS_Store
 *.out.log
 *.err.log
 tmp*.log
+run-*.out
+run-*.err
+tmp-mobile-export/
+work/
 
 .vercel
 mobile/twa/**/pumpr-release.keystore

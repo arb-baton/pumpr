@@ -30,6 +30,7 @@ import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 const CLAIM_MIN_USD = 8;
 const SOCIAL_AUTH_KEY = "pumpr.social.session.v1";
+const RH_WALLET_STORE_KEY = "pumpr.robinhood.wallets.v1";
 const PROFILE_HOLDINGS_REFRESH_MS = 15_000;
 
 async function ensurePumpRHolderPaymentAccess(address) {
@@ -296,6 +297,29 @@ function viewingOwnProfile() {
 
 async function copyText(value) {
   await navigator.clipboard.writeText(String(value || ""));
+}
+
+function readRhWalletStore() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RH_WALLET_STORE_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function rhWalletForSolanaOwner(owner = "") {
+  const key = normalizeSolanaAddress(owner);
+  if (!key) return null;
+  const row = readRhWalletStore()[key] || null;
+  if (!row?.address) return null;
+  return {
+    type: row.type === "generated" ? "generated" : "existing",
+    address: normalizeAddress(row.address || "") || String(row.address || "").trim(),
+    privateKey: String(row.privateKey || ""),
+    createdAt: Number(row.createdAt || row.updatedAt || 0) || 0,
+    updatedAt: Number(row.updatedAt || row.createdAt || 0) || 0
+  };
 }
 
 function getAddressFromUrl() {
@@ -784,9 +808,31 @@ function setupAddressCopy() {
     try {
       await copyText(key);
       showCopyToast("Private key copied");
-      setAlert(ui.alert, "Generated Solana private key copied. Store it somewhere secure.");
+      setAlert(ui.alert, "Generated private key copied. Store it somewhere secure.");
     } catch {
       setAlert(ui.alert, "Could not copy private key", true);
+    }
+  });
+  ui.profileTabContent?.addEventListener("click", async (event) => {
+    const copyBtn = event.target.closest("[data-rh-copy]");
+    if (copyBtn) {
+      try {
+        await copyText(copyBtn.dataset.rhCopy || "");
+        showCopyToast("Robinhood wallet copied");
+      } catch {
+        setAlert(ui.alert, "Could not copy Robinhood wallet", true);
+      }
+      return;
+    }
+    const exportBtn = event.target.closest("[data-rh-export]");
+    if (exportBtn) {
+      const owner = normalizeSolanaAddress(state.address || state.payload?.address || getAddressFromUrl());
+      const row = rhWalletForSolanaOwner(owner);
+      if (!row?.privateKey) {
+        setAlert(ui.alert, "No generated Robinhood private key found on this browser", true);
+        return;
+      }
+      showPrivateKeyModal(row.privateKey);
     }
   });
 }
@@ -1173,6 +1219,83 @@ async function loadNotificationsTab() {
   }
 }
 
+function renderRhWalletShell(owner = "", row = null) {
+  const own = viewingOwnProfile();
+  if (!normalizeSolanaAddress(owner)) {
+    return `<p class="muted">Robinhood swap wallets are attached to Solana PUMPR profiles.</p>`;
+  }
+  if (!own) {
+    return `<p class="muted">Robinhood wallet details are private to the profile owner.</p>`;
+  }
+  if (!row) {
+    return `
+      <section class="profile-rh-wallet-empty">
+        <div>
+          <small>Robinhood Chain</small>
+          <h3>No RH wallet saved yet</h3>
+          <p>Create a fresh Robinhood Chain EVM wallet or attach your existing wallet from the swap page.</p>
+        </div>
+        <a class="btn-primary" href="/rh-swap">Open RH Swap</a>
+      </section>
+    `;
+  }
+  const typeLabel = row.type === "generated" ? "Generated wallet" : "Existing wallet";
+  const created = row.createdAt ? new Date(row.createdAt).toLocaleString() : "Saved";
+  return `
+    <section class="profile-rh-wallet-card">
+      <div class="profile-rh-wallet-main">
+        <small>Robinhood Chain receive wallet</small>
+        <h3>${escapeHtml(typeLabel)}</h3>
+        <button class="profile-rh-address" type="button" data-rh-copy="${escapeHtml(row.address)}">
+          ${escapeHtml(row.address)}
+        </button>
+        <p>${escapeHtml(created)} - used for PUMPR -> Robinhood Chain swap requests.</p>
+      </div>
+      <div class="profile-rh-actions">
+        <button class="btn-ghost" type="button" data-rh-copy="${escapeHtml(row.address)}">Copy wallet</button>
+        ${
+          row.type === "generated" && row.privateKey
+            ? `<button class="btn-primary" type="button" data-rh-export="1">Export private key</button>`
+            : `<a class="btn-primary" href="/rh-swap">Change wallet</a>`
+        }
+      </div>
+    </section>
+    <div id="profileRhSwapHistory" class="rhswap-history"><p class="muted">Loading RH swap requests...</p></div>
+  `;
+}
+
+async function loadRhWalletTab() {
+  if (!ui.profileTabContent) return;
+  const owner = normalizeSolanaAddress(state.address || state.payload?.address || getAddressFromUrl());
+  const row = rhWalletForSolanaOwner(owner);
+  ui.profileTabContent.innerHTML = renderRhWalletShell(owner, row);
+  if (!owner || !viewingOwnProfile()) return;
+  const historyEl = document.getElementById("profileRhSwapHistory");
+  if (!historyEl) return;
+  try {
+    const payload = await api.rhSwapRequests(owner);
+    const requests = Array.isArray(payload?.requests) ? payload.requests : [];
+    if (!requests.length) {
+      historyEl.innerHTML = `<p class="muted">No RH swap requests yet.</p>`;
+      return;
+    }
+    historyEl.innerHTML = requests
+      .slice(0, 20)
+      .map((request) => `
+        <article class="rhswap-history-row">
+          <div>
+            <strong>${escapeHtml(Number(request.amountPumpr || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }))} $PUMPR -> ${escapeHtml(Number(request.estimatedTargetTokens || 0).toLocaleString(undefined, { maximumFractionDigits: 6 }))} ${escapeHtml(request.targetSymbol || "TOKEN")}</strong>
+            <span>${escapeHtml(shortAddress(request.recipient || ""))} - ${escapeHtml(request.status || "requested")}</span>
+          </div>
+          <b>${escapeHtml(formatCompactUsd(request.netUsd || 0, 2))}</b>
+        </article>
+      `)
+      .join("");
+  } catch (error) {
+    historyEl.innerHTML = `<p class="muted">${escapeHtml(parseUiError(error))}</p>`;
+  }
+}
+
 function renderActiveTab() {
   const payload = state.payload;
   if (!payload) {
@@ -1198,6 +1321,12 @@ function renderActiveTab() {
   }
   if (state.activeTab === "creatorRewards") {
     ui.profileTabContent.innerHTML = renderCreatorRewardsTab(payload);
+    return;
+  }
+  if (state.activeTab === "rhWallet") {
+    loadRhWalletTab().catch(() => {
+      ui.profileTabContent.innerHTML = `<p class="muted">Could not load Robinhood wallet.</p>`;
+    });
     return;
   }
   loadNotificationsTab().catch(() => {

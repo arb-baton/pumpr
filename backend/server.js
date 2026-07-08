@@ -36,6 +36,7 @@ const AIRDROP_HOLDER_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-aird
 const PUMPR_CARD_WAITLIST_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-card-waitlist.json") : path.join(ROOT, "cache", "pumpr-card-waitlist.json");
 const REFERRAL_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-referrals.json") : path.join(ROOT, "cache", "referrals.json");
 const SOCIAL_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-social.json") : path.join(ROOT, "cache", "social.json");
+const RH_SWAP_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-rh-swaps.json") : path.join(ROOT, "cache", "rh-swaps.json");
 const OFFICIAL_PUMPFUN_MINT = "C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump";
 const PUMPFUN_MINT_SUFFIX_ENABLED = !["0", "false", "no", "off"].includes(String(process.env.PUMPFUN_MINT_SUFFIX_ENABLED || "1").trim().toLowerCase());
 const PUMPFUN_MINT_SUFFIX = PUMPFUN_MINT_SUFFIX_ENABLED ? String(process.env.PUMPFUN_MINT_SUFFIX || "pr").trim() : "";
@@ -60,6 +61,7 @@ const SUPABASE_SUPPORT_OBJECT = String(process.env.SUPABASE_SUPPORT_OBJECT || "s
 const SUPABASE_PUMPR_CARD_WAITLIST_OBJECT = String(process.env.SUPABASE_PUMPR_CARD_WAITLIST_OBJECT || "pumpr-card/waitlist.json").trim();
 const SUPABASE_REFERRAL_OBJECT = String(process.env.SUPABASE_REFERRAL_OBJECT || "referrals/referrals.json").trim();
 const SUPABASE_SOCIAL_OBJECT = String(process.env.SUPABASE_SOCIAL_OBJECT || "social/social.json").trim();
+const SUPABASE_RH_SWAP_OBJECT = String(process.env.SUPABASE_RH_SWAP_OBJECT || "rh-swap/swaps.json").trim();
 const COMMUNITY_RESET_BEFORE_UNIX = Math.max(0, Number(process.env.COMMUNITY_RESET_BEFORE_UNIX || "1782413298"));
 const PROFILE_IMAGE_URI_MAX_LENGTH = 2 * 1024 * 1024;
 const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || (IS_VERCEL_RUNTIME ? "1" : "0")) === "1";
@@ -84,8 +86,10 @@ async function loadSolanaWeb3() {
     Keypair: mod.Keypair,
     PublicKey: mod.PublicKey,
     Transaction: mod.Transaction,
+    TransactionInstruction: mod.TransactionInstruction,
     TransactionMessage: mod.TransactionMessage,
     VersionedTransaction: mod.VersionedTransaction,
+    SystemProgram: mod.SystemProgram,
     ComputeBudgetProgram: mod.ComputeBudgetProgram
   };
 }
@@ -1856,6 +1860,9 @@ function reservedReferralNames() {
     "pumpr-card",
     "referral",
     "referrals",
+    "rh-swap",
+    "robinhood-swap",
+    "swap",
     "support",
     "token",
     "uploads"
@@ -3749,6 +3756,7 @@ function buildHolderEligibilityPayload(official, row = {}) {
   const balanceRaw = String(row.balanceRaw || "0");
   const supplyRaw = String(row.supplyRaw || "0");
   const balanceFloat = Number(row.balanceTokens || 0) || 0;
+  const supplyFloat = Number(row.supplyTokens || 0) || 0;
   const holderPct = holderPctFromRaw(balanceRaw, supplyRaw);
   const hasBalance = BigInt(balanceRaw || "0") > 0n;
   const minHolderPct = Number(official.minHolderPct || 1);
@@ -3764,6 +3772,7 @@ function buildHolderEligibilityPayload(official, row = {}) {
     balanceRaw,
     balanceTokens: balanceFloat,
     supplyRaw,
+    supplyTokens: supplyFloat,
     holderPct,
     eligibleToLaunch: hasBalance,
     eligibleForAirdrop: hasBalance && holderPct >= minHolderPct
@@ -3841,7 +3850,8 @@ async function readEvmOfficialHolderEligibility(official, address) {
   return buildHolderEligibilityPayload(official, {
     balanceRaw: balanceRaw.toString(),
     supplyRaw: supplyRaw.toString(),
-    balanceTokens: Number(ethers.formatUnits(balanceRaw, decimals)) || 0
+    balanceTokens: Number(ethers.formatUnits(balanceRaw, decimals)) || 0,
+    supplyTokens: Number(ethers.formatUnits(supplyRaw, decimals)) || 0
   });
 }
 
@@ -3886,7 +3896,11 @@ async function readSolanaOfficialHolderEligibility(official, solanaAddress) {
   return buildHolderEligibilityPayload(official, {
     balanceRaw: balanceRaw.toString(),
     supplyRaw: supplyRaw.toString(),
-    balanceTokens
+    balanceTokens,
+    supplyTokens: Number(mintParsed.uiAmountString || mintParsed.uiAmount || 0) || (() => {
+      const decimals = Number(mintParsed.decimals || 6) || 6;
+      return Number(supplyRaw) / 10 ** decimals;
+    })()
   });
 }
 
@@ -3939,6 +3953,1572 @@ async function assertOfficialHolderAccess({ address = "", solanaAddress = "", ac
     throw new Error(`You hold ${heldText} $${eligibility.symbol || "PUMPR"} on ${chain}. Hold any amount above 0 $${eligibility.symbol || "PUMPR"} in this wallet to ${action}. 1%+ holders will also be eligible for later airdrops.`);
   }
   return eligibility;
+}
+
+function rhSwapGateRequired() {
+  const raw = String(process.env.PUMPR_RH_SWAP_GATE_REQUIRED || "1").trim().toLowerCase();
+  return !["0", "false", "no", "off"].includes(raw);
+}
+
+function rhSwapMinHolderPct() {
+  return Math.max(0, Number(process.env.PUMPR_RH_SWAP_MIN_HOLDER_PCT || "0.1") || 0.1);
+}
+
+function rhSwapTestWallets() {
+  return new Set(
+    [
+      "5rF78JchrAqnKMTV7DU4v2NDm4WsvCLphrC2H6pHZTe9",
+      ...String(process.env.PUMPR_RH_SWAP_TEST_WALLETS || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    ]
+      .map((item) => normalizeSolanaAddress(item) || item)
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+  );
+}
+
+function isRhSwapTestWallet(solanaAddress = "") {
+  const wallet = normalizeSolanaAddress(solanaAddress) || String(solanaAddress || "").trim();
+  return Boolean(wallet && rhSwapTestWallets().has(wallet));
+}
+
+function rhSwapFeeBps() {
+  return Math.max(0, Math.min(2500, Number(process.env.PUMPR_RH_SWAP_FEE_BPS || "75") || 75));
+}
+
+function rhSwapGasUsd() {
+  return Math.max(0, Number(process.env.PUMPR_RH_SWAP_GAS_USD || "0.35") || 0.35);
+}
+
+function rhSwapSlippageBps() {
+  return Math.max(0, Math.min(5000, Number(process.env.PUMPR_RH_SWAP_SLIPPAGE_BPS || "100") || 100));
+}
+
+function rhSwapChainIds() {
+  return String(process.env.PUMPR_RH_DEXSCREENER_CHAIN_IDS || "robinhood,robinhoodchain,robinhood-chain,rh")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function rhSwapSolanaTreasury() {
+  return String(
+    process.env.PUMPR_RH_SWAP_SOLANA_TREASURY ||
+      process.env.PUMPR_SOLANA_TREASURY ||
+      process.env.PUMPR_ADMIN_SOLANA_WALLET ||
+      DEFAULT_PUMPR_ADMIN_WALLET
+  ).trim();
+}
+
+function decodeSolanaSecretKey(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (/^0x[0-9a-fA-F]{64}$/.test(raw)) {
+    throw new Error("EVM private keys cannot be used as Solana treasury keys.");
+  }
+  if (raw.startsWith("[") && raw.endsWith("]")) {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new Error("Solana fee payer secret key JSON must be an array.");
+    return Uint8Array.from(parsed.map((item) => Number(item)));
+  }
+  try {
+    const decoder = bs58.decode ? bs58 : bs58.default;
+    if (decoder?.decode) {
+      const decoded = decoder.decode(raw);
+      if (decoded?.length === 64) return Uint8Array.from(decoded);
+    }
+  } catch {
+    // Try base64 below.
+  }
+  const decoded = Buffer.from(raw, "base64");
+  if (decoded.length === 64) return Uint8Array.from(decoded);
+  throw new Error("Solana fee payer secret key must be a 64-byte JSON array, base58 secret key, or base64 secret key.");
+}
+
+function firstValidSolanaSecret(...names) {
+  let invalid = "";
+  for (const name of names) {
+    const raw = String(process.env[name] || "").trim();
+    if (!raw) continue;
+    try {
+      decodeSolanaSecretKey(raw);
+      return raw;
+    } catch (error) {
+      invalid = invalid || `${name}: ${error?.message || "invalid Solana key"}`;
+    }
+  }
+  return "";
+}
+
+function rhSwapSolanaFeePayerSecret() {
+  return firstValidSolanaSecret(
+    "PUMPR_RH_SWAP_SOLANA_FEE_PAYER_SECRET_KEY",
+    "PUMPR_RH_SWAP_SOLANA_TREASURY_SECRET_KEY",
+    "PUMPR_DEV_WALLET_SECRET_KEY",
+    "PUMPR_DEV_WALLET_PRIVATE_KEY",
+    "PUMPR_ADMIN_SOLANA_SECRET_KEY",
+    "PUMPR_ADMIN_SOLANA_PRIVATE_KEY",
+    "PUMPR_AIRDROP_SOLANA_SECRET_KEY",
+    "PUMPR_AIRDROP_SOLANA_PRIVATE_KEY",
+    "PUMPR_SOLANA_FEE_PAYER_SECRET_KEY",
+    "SOLANA_FEE_PAYER_SECRET_KEY",
+    "SOLANA_PRIVATE_KEY",
+    "PRIVATE_KEY"
+  );
+}
+
+function rhSwapSolanaTreasurySecret() {
+  return firstValidSolanaSecret(
+    "PUMPR_RH_SWAP_SOLANA_TREASURY_SECRET_KEY",
+    "PUMPR_RH_SWAP_SOLANA_TREASURY_PRIVATE_KEY"
+  );
+}
+
+function rhSwapSolanaFeePayerKeypair(SolanaKeypair) {
+  const secret = rhSwapSolanaFeePayerSecret();
+  if (!secret) return null;
+  return SolanaKeypair.fromSecretKey(decodeSolanaSecretKey(secret));
+}
+
+function rhSwapSolanaTreasuryKeypair(SolanaKeypair) {
+  const secret = rhSwapSolanaTreasurySecret();
+  if (!secret) return null;
+  return SolanaKeypair.fromSecretKey(decodeSolanaSecretKey(secret));
+}
+
+async function rhSwapSolanaTreasuryStatus() {
+  const { Keypair: SolanaKeypair } = await loadSolanaWeb3();
+  const treasuryKeypair = rhSwapSolanaTreasuryKeypair(SolanaKeypair);
+  const feePayerKeypair = rhSwapSolanaFeePayerKeypair(SolanaKeypair);
+  return {
+    routeTreasuryConfigured: Boolean(treasuryKeypair),
+    feePayerConfigured: Boolean(feePayerKeypair),
+    treasuryAddress: treasuryKeypair?.publicKey?.toBase58?.() || rhSwapSolanaTreasury(),
+    feePayerAddress: feePayerKeypair?.publicKey?.toBase58?.() || "",
+    lifiEnabled: rhSwapLifiEnabled(),
+    treasuryFallbackEnabled: rhSwapTreasuryFallbackEnabled()
+  };
+}
+
+function rhSwapSolanaGasSponsored() {
+  return Boolean(rhSwapSolanaFeePayerSecret());
+}
+
+function rhSwapLifiEnabled() {
+  const raw = String(process.env.PUMPR_RH_SWAP_LIFI_ENABLED || "1").trim().toLowerCase();
+  return !["0", "false", "no", "off"].includes(raw);
+}
+
+function rhSwapTreasuryFallbackEnabled() {
+  const raw = String(process.env.PUMPR_RH_SWAP_TREASURY_FALLBACK_ENABLED || "0").trim().toLowerCase();
+  return ["1", "true", "yes", "on"].includes(raw);
+}
+
+function rhSwapDirectUserLifiEnabled() {
+  const raw = String(process.env.PUMPR_RH_SWAP_DIRECT_USER_LIFI_ENABLED || "1").trim().toLowerCase();
+  return !["0", "false", "no", "off"].includes(raw);
+}
+
+function rhSwapTreasuryRoutingEnabled() {
+  const raw = String(process.env.PUMPR_RH_SWAP_TREASURY_ROUTING_ENABLED || "0").trim().toLowerCase();
+  return ["1", "true", "yes", "on"].includes(raw);
+}
+
+function rhSwapLifiBaseUrl() {
+  return String(process.env.LIFI_API_URL || "https://li.quest/v1").replace(/\/+$/, "");
+}
+
+function rhSwapEvmTreasuryPrivateKey() {
+  const raw = String(
+    process.env.PUMPR_RH_SWAP_EVM_TREASURY_PRIVATE_KEY ||
+      process.env.ROBINHOOD_TREASURY_PRIVATE_KEY ||
+      process.env.ROBINHOOD_PRIVATE_KEY ||
+      process.env.PUMPR_DEV_EVM_PRIVATE_KEY ||
+      process.env.PUMPR_ADMIN_EVM_PRIVATE_KEY ||
+      process.env.PRIVATE_KEY ||
+      ""
+  ).trim();
+  return raw ? (raw.startsWith("0x") ? raw : `0x${raw}`) : "";
+}
+
+function rhSwapRealExecutionConfigured() {
+  return Boolean(
+    (rhSwapLifiEnabled() && rhSwapDirectUserLifiEnabled()) ||
+    (rhSwapTreasuryRoutingEnabled() && rhSwapLifiEnabled() && rhSwapSolanaTreasurySecret()) ||
+      (rhSwapTreasuryFallbackEnabled() && rhSwapSolanaTreasury() && rhSwapEvmTreasuryPrivateKey())
+  );
+}
+
+function assertRhSwapRealExecutionConfigured() {
+  if (!rhSwapSolanaTreasury()) {
+    throw new Error("PUMPR_RH_SWAP_SOLANA_TREASURY is required for real swaps.");
+  }
+  if (!rhSwapDirectUserLifiEnabled() && !(rhSwapTreasuryRoutingEnabled() && rhSwapSolanaTreasurySecret()) && !(rhSwapTreasuryFallbackEnabled() && rhSwapEvmTreasuryPrivateKey())) {
+    throw new Error("Enable direct LI.FI routing. Dev wallet is only allowed as SOL gas backup, not as a PUMPR swap router.");
+  }
+}
+
+function rhSwapConfirmations() {
+  return Math.max(1, Math.min(10, Number(process.env.PUMPR_RH_SWAP_CONFIRMATIONS || "1") || 1));
+}
+
+function parseUnitsFloor(value, decimals = 0) {
+  const clean = String(value || "").replace(/,/g, "").trim();
+  if (!/^\d+(\.\d+)?$/.test(clean)) return 0n;
+  const [wholeRaw, fracRaw = ""] = clean.split(".");
+  const whole = BigInt(wholeRaw || "0");
+  const scale = 10n ** BigInt(Math.max(0, Number(decimals || 0)));
+  const fracText = fracRaw.slice(0, Number(decimals || 0)).padEnd(Number(decimals || 0), "0");
+  const frac = fracText ? BigInt(fracText) : 0n;
+  return whole * scale + frac;
+}
+
+function numberToUnitString(value, decimals = 18) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  const places = Math.max(0, Math.min(18, Number(decimals || 0)));
+  const fixed = n.toFixed(places);
+  return fixed.replace(/\.?0+$/, "") || "0";
+}
+
+const RH_SWAP_ERC20_ABI = [
+  "function balanceOf(address account) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+  "function transfer(address to,uint256 amount) returns (bool)"
+];
+
+function lifiHeaders() {
+  const headers = { Accept: "application/json" };
+  const apiKey = String(process.env.LIFI_API_KEY || process.env.PUMPR_LIFI_API_KEY || "").trim();
+  if (apiKey) headers["x-lifi-api-key"] = apiKey;
+  return headers;
+}
+
+async function fetchLifiQuote(params = {}, options = {}) {
+  const url = new URL(`${rhSwapLifiBaseUrl()}/quote`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && String(value).trim()) {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  const response = await fetch(url, { headers: lifiHeaders() });
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    const message = payload?.message || payload?.error || text || `LI.FI quote failed with ${response.status}`;
+    if (options.optional) return { ok: false, error: message, status: response.status };
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+  return { ok: true, quote: payload };
+}
+
+async function fetchLifiStatus(params = {}) {
+  const url = new URL(`${rhSwapLifiBaseUrl()}/status`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && String(value).trim()) {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  const response = await fetch(url, { headers: lifiHeaders() });
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    return { ok: false, status: response.status, error: payload?.message || payload?.error || text || "LI.FI status unavailable" };
+  }
+  return { ok: true, status: response.status, payload };
+}
+
+function extractLifiQuoteAmounts(lifiQuote = {}) {
+  const estimate = lifiQuote?.estimate || {};
+  const action = lifiQuote?.action || {};
+  const toToken = action.toToken || estimate.toToken || {};
+  const toDecimals = Math.max(0, Math.min(36, Number(toToken.decimals || 18) || 18));
+  const toAmountRaw = String(estimate.toAmount || estimate.toAmountMin || "0").replace(/[^0-9]/g, "");
+  const toAmountMinRaw = String(estimate.toAmountMin || estimate.toAmount || "0").replace(/[^0-9]/g, "");
+  const toAmount = Number(toAmountRaw || "0") / 10 ** toDecimals;
+  const toAmountMin = Number(toAmountMinRaw || "0") / 10 ** toDecimals;
+  return {
+    toAmount,
+    toAmountMin,
+    toAmountRaw,
+    toAmountMinRaw,
+    toDecimals,
+    tool: String(lifiQuote?.tool || ""),
+    toolDetails: lifiQuote?.toolDetails || null
+  };
+}
+
+function normalizeSwapAmount(value = "") {
+  const amount = Number(String(value || "").replace(/,/g, "").trim());
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+function sanitizeSwapNote(value = "", max = 180) {
+  return sanitizePumprCardText(value, max);
+}
+
+function sanitizeSwapUrl(value = "", max = 1200) {
+  const raw = String(value || "").trim().slice(0, max);
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    if (!["http:", "https:"].includes(parsed.protocol)) return "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+async function assertRhSwapHolderAccess(solanaAddress = "") {
+  const eligibility = await readRhSwapHolderEligibility(solanaAddress);
+  if (!eligibility.eligibleForSwap) {
+    const held = Number(eligibility.balanceTokens || 0);
+    const heldText = Number.isFinite(held) ? held.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "0";
+    throw new Error(`Hold at least ${eligibility.swapMinHolderPct}% of $${eligibility.symbol || "PUMPR"} supply to use Robinhood swaps. This wallet holds ${Number(eligibility.holderPct || 0).toFixed(4)}% (${heldText} $${eligibility.symbol || "PUMPR"}).`);
+  }
+  return eligibility;
+}
+
+async function readRhSwapHolderEligibility(solanaAddress = "") {
+  const official = officialAirdropConfig();
+  const minimumPct = rhSwapMinHolderPct();
+  const testBypass = isRhSwapTestWallet(solanaAddress);
+  if (!rhSwapGateRequired()) {
+    return {
+      ...buildHolderEligibilityPayload(official, { balanceRaw: "0", supplyRaw: "0", balanceTokens: 0 }),
+      required: false,
+      eligibleForSwap: true,
+      swapMinHolderPct: minimumPct,
+      rhSwapTestBypass: false
+    };
+  }
+  if (!official.configured) {
+    throw new Error("Official Pump-r token is not configured. Set PUMPR_TOKEN_ADDRESS and PUMPR_TOKEN_CHAIN_ID before enabling swaps.");
+  }
+  if (official.chainId !== 101) {
+    throw new Error("PUMPR Robinhood swaps require the official Solana Pump-r mint for holder verification.");
+  }
+  const eligibility = await readSolanaOfficialHolderEligibility(official, solanaAddress);
+  const holderPct = Number(eligibility.holderPct || 0);
+  return {
+    ...eligibility,
+    eligibleForSwap: testBypass || holderPct >= minimumPct,
+    swapMinHolderPct: minimumPct,
+    rhSwapTestBypass: testBypass
+  };
+}
+
+function normalizeDexTokenAddress(value = "") {
+  const text = String(value || "").trim();
+  if (normalizeSolanaAddress(text)) return text;
+  return normalizeAddress(text);
+}
+
+function pairLiquidityUsd(pair = {}) {
+  return Math.max(0, Number(pair?.liquidity?.usd || 0) || 0);
+}
+
+function pairPriceUsd(pair = {}, tokenAddress = "") {
+  const target = String(tokenAddress || "").trim().toLowerCase();
+  const baseAddress = String(pair?.baseToken?.address || "").trim().toLowerCase();
+  const quoteAddress = String(pair?.quoteToken?.address || "").trim().toLowerCase();
+  if (target && quoteAddress === target && Number(pair?.priceUsd || 0) > 0) {
+    const baseUsd = Number(pair?.priceUsd || 0);
+    const nativePrice = Number(pair?.priceNative || 0);
+    if (baseUsd > 0 && nativePrice > 0) return baseUsd / nativePrice;
+  }
+  return Number(pair?.priceUsd || 0) || 0;
+}
+
+function pickBestDexPair(payload = {}, tokenAddress = "", options = {}) {
+  const pairs = Array.isArray(payload?.pairs) ? payload.pairs : [];
+  const target = String(tokenAddress || "").trim().toLowerCase();
+  const chainFilter = Array.isArray(options.chainIds) ? options.chainIds.map((item) => String(item).toLowerCase()) : [];
+  const matches = pairs
+    .filter((pair) => {
+      if (!target) return true;
+      const base = String(pair?.baseToken?.address || "").trim().toLowerCase();
+      const quote = String(pair?.quoteToken?.address || "").trim().toLowerCase();
+      return base === target || quote === target;
+    })
+    .filter((pair) => pairPriceUsd(pair, target) > 0);
+  const chainMatches = chainFilter.length
+    ? matches.filter((pair) => chainFilter.includes(String(pair?.chainId || "").toLowerCase()))
+    : matches;
+  const pool = chainMatches.length ? chainMatches : matches;
+  return pool.sort((a, b) => pairLiquidityUsd(b) - pairLiquidityUsd(a))[0] || null;
+}
+
+async function fetchDexscreenerToken(tokenAddress = "", options = {}) {
+  const token = normalizeDexTokenAddress(tokenAddress);
+  if (!token) throw new Error("Valid token address is required for pricing.");
+  const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(token)}`, {
+    headers: { Accept: "application/json" }
+  });
+  if (!response.ok) throw new Error(`Dexscreener quote failed for ${token}: ${response.status}`);
+  const payload = await response.json().catch(() => ({}));
+  const pair = pickBestDexPair(payload, token, options);
+  if (!pair) throw new Error(`No live Dexscreener price found for ${token}. Try after the token has an active pair.`);
+  const base = String(pair?.baseToken?.address || "").trim().toLowerCase();
+  const tokenMeta = base === token.toLowerCase() ? pair.baseToken : pair.quoteToken || pair.baseToken;
+  return {
+    token,
+    name: sanitizeSwapNote(tokenMeta?.name || "", 80),
+    symbol: sanitizeSwapNote(tokenMeta?.symbol || "", 32).replace(/^\$/, "").toUpperCase(),
+    imageUrl: sanitizeSwapUrl(pair?.info?.imageUrl || pair?.info?.header || ""),
+    priceUsd: pairPriceUsd(pair, token),
+    chainId: String(pair?.chainId || ""),
+    dexId: String(pair?.dexId || ""),
+    pairAddress: String(pair?.pairAddress || ""),
+    liquidityUsd: pairLiquidityUsd(pair),
+    url: String(pair?.url || "")
+  };
+}
+
+function dexTokenMetaFromPair(pair = {}, tokenMeta = {}, options = {}) {
+  const token = normalizeDexTokenAddress(tokenMeta?.address || "");
+  if (!token) return null;
+  const chainId = String(pair?.chainId || "");
+  const chainMatched = !Array.isArray(options.chainIds) || !options.chainIds.length
+    ? true
+    : options.chainIds.map((item) => String(item).toLowerCase()).includes(chainId.toLowerCase());
+  return {
+    token,
+    name: sanitizeSwapNote(tokenMeta?.name || "", 80),
+    symbol: sanitizeSwapNote(tokenMeta?.symbol || "", 32).replace(/^\$/, "").toUpperCase(),
+    imageUrl: sanitizeSwapUrl(pair?.info?.imageUrl || pair?.info?.header || ""),
+    priceUsd: pairPriceUsd(pair, token),
+    chainId,
+    dexId: String(pair?.dexId || ""),
+    pairAddress: String(pair?.pairAddress || ""),
+    liquidityUsd: pairLiquidityUsd(pair),
+    url: String(pair?.url || ""),
+    chainMatched,
+    expectedChain: "Robinhood Chain"
+  };
+}
+
+async function searchDexscreenerTokens(query = "", options = {}) {
+  const q = sanitizeSwapNote(query, 80).trim();
+  if (q.length < 2) return [];
+  const chainIds = Array.isArray(options.chainIds) ? options.chainIds.map((item) => String(item).toLowerCase()) : [];
+  const response = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(q)}`, {
+    headers: { Accept: "application/json" }
+  });
+  if (!response.ok) throw new Error(`Dexscreener search failed: ${response.status}`);
+  const payload = await response.json().catch(() => ({}));
+  const pairs = Array.isArray(payload?.pairs) ? payload.pairs : [];
+  const exactAddress = normalizeDexTokenAddress(q);
+  const queryLower = q.toLowerCase();
+  const candidates = [];
+  for (const pair of pairs) {
+    for (const tokenMeta of [pair?.baseToken, pair?.quoteToken]) {
+      const row = dexTokenMetaFromPair(pair, tokenMeta, { chainIds });
+      if (!row || row.priceUsd <= 0) continue;
+      const haystack = `${row.name} ${row.symbol} ${row.token}`.toLowerCase();
+      const exactMatch = exactAddress && row.token.toLowerCase() === exactAddress.toLowerCase();
+      if (!exactMatch && !haystack.includes(queryLower)) continue;
+      candidates.push(row);
+    }
+  }
+  const byToken = new Map();
+  for (const row of candidates) {
+    const key = row.token.toLowerCase();
+    const prev = byToken.get(key);
+    if (!prev || (row.chainMatched && !prev.chainMatched) || Number(row.liquidityUsd || 0) > Number(prev.liquidityUsd || 0)) {
+      byToken.set(key, row);
+    }
+  }
+  const rows = Array.from(byToken.values());
+  const chainRows = rows.filter((row) => row.chainMatched);
+  const pool = chainRows.length ? chainRows : rows;
+  return pool
+    .sort((a, b) => {
+      if (a.chainMatched !== b.chainMatched) return a.chainMatched ? -1 : 1;
+      return Number(b.liquidityUsd || 0) - Number(a.liquidityUsd || 0);
+    })
+    .slice(0, Math.max(1, Math.min(20, Number(options.limit || 12))));
+}
+
+async function buildRhSwapQuote(value = {}) {
+  const solanaAddress = String(value.solanaAddress || value.wallet || "").trim();
+  const recipient = normalizeAddress(value.recipient || value.destination || "");
+  const amountPumpr = normalizeSwapAmount(value.amountPumpr || value.amount || "");
+  const targetToken = normalizeAddress(value.targetToken || value.token || "");
+  if (!solanaAddress) throw new Error("Connect the Solana wallet that holds $PUMPR first.");
+  if (!amountPumpr) throw new Error("Enter a PUMPR amount to swap.");
+  if (!targetToken) throw new Error("Enter a valid Robinhood Chain token contract.");
+
+  const holderEligibility = await assertRhSwapHolderAccess(solanaAddress);
+  const [pumpr, target] = await Promise.all([
+    fetchDexscreenerToken(OFFICIAL_PUMPFUN_MINT, {}),
+    fetchDexscreenerToken(targetToken, { chainIds: rhSwapChainIds() })
+  ]);
+  const feeBps = rhSwapFeeBps();
+  const gasUsd = rhSwapGasUsd();
+  const slippageBps = rhSwapSlippageBps();
+  const grossUsd = amountPumpr * Number(pumpr.priceUsd || 0);
+  const platformFeeUsd = grossUsd * (feeBps / 10_000);
+  const netUsdBeforeSlippage = Math.max(0, grossUsd - platformFeeUsd - gasUsd);
+  const estimatedTargetTokens = target.priceUsd > 0 ? netUsdBeforeSlippage / target.priceUsd : 0;
+  const minimumTargetTokens = estimatedTargetTokens * Math.max(0, 1 - slippageBps / 10_000);
+  const chainMatched = rhSwapChainIds().includes(String(target.chainId || "").toLowerCase());
+  const treasuryStatus = await rhSwapSolanaTreasuryStatus().catch(() => ({
+    routeTreasuryConfigured: false,
+    feePayerConfigured: false,
+    treasuryAddress: rhSwapSolanaTreasury(),
+    lifiEnabled: rhSwapLifiEnabled(),
+    treasuryFallbackEnabled: rhSwapTreasuryFallbackEnabled()
+  }));
+  const quote = {
+    quoteId: `rhswap_${Date.now().toString(36)}_${crypto.randomBytes(4).toString("hex")}`,
+    createdAt: Math.floor(Date.now() / 1000),
+    status: "quote",
+    mode: rhSwapRealExecutionConfigured() ? "real-cross-chain-settlement" : "beta-settlement",
+    executionConfigured: rhSwapRealExecutionConfigured(),
+    routeProvider: rhSwapLifiEnabled() && rhSwapDirectUserLifiEnabled()
+      ? "lifi-direct"
+      : rhSwapTreasuryRoutingEnabled() && rhSwapLifiEnabled() && rhSwapSolanaTreasurySecret()
+      ? "lifi"
+      : (rhSwapTreasuryFallbackEnabled() && rhSwapEvmTreasuryPrivateKey() ? "treasury" : "setup-required"),
+    treasuryStatus,
+    solanaAddress,
+    recipient,
+    targetToken,
+    amountPumpr,
+    pumpr,
+    target: {
+      ...target,
+      chainMatched,
+      expectedChain: "Robinhood Chain"
+    },
+    holderEligibility,
+    fees: {
+      feeBps,
+      platformFeeUsd,
+      gasUsd,
+      slippageBps,
+      gasDeductedFromProceeds: true
+    },
+    gasModel: {
+      poweredByPumpr: true,
+      platformFeeDeductedFromPumpr: true,
+      rhGasDeductedFromPumpr: true,
+      solanaGasSponsored: rhSwapSolanaGasSponsored(),
+      solanaFeePayerRequired: !rhSwapSolanaGasSponsored(),
+      routeProvider: rhSwapLifiEnabled() && rhSwapDirectUserLifiEnabled()
+        ? "LI.FI user wallet"
+        : rhSwapTreasuryRoutingEnabled() && rhSwapLifiEnabled() && rhSwapSolanaTreasurySecret()
+        ? "LI.FI"
+        : (rhSwapTreasuryFallbackEnabled() && rhSwapEvmTreasuryPrivateKey() ? "Treasury fallback" : "Setup required")
+    },
+    grossUsd,
+    netUsd: netUsdBeforeSlippage,
+    estimatedTargetTokens,
+    minimumTargetTokens,
+    warnings: [
+      !chainMatched ? `Dexscreener returned chain "${target.chainId || "unknown"}"; confirm this token is on Robinhood Chain before settlement.` : "",
+      rhSwapRealExecutionConfigured()
+        ? "Live settlement quote. The connected user wallet signs and swaps PUMPR through LI.FI; dev wallet only backs SOL gas if needed."
+        : "Setup required: configure the dev/admin Solana treasury secret so Pump-r can route deposited PUMPR automatically."
+    ].filter(Boolean)
+  };
+  return quote;
+}
+
+function emptyRhSwapStore() {
+  return { requests: [], updatedAt: 0 };
+}
+
+function sanitizeRhSwapStore(store = {}) {
+  const requests = (Array.isArray(store?.requests) ? store.requests : [])
+    .map((row) => ({
+      id: sanitizeSwapNote(row?.id || row?.quoteId || `rhswap_${Date.now().toString(36)}`, 90),
+      quoteId: sanitizeSwapNote(row?.quoteId || "", 90),
+      status: sanitizeSwapNote(row?.status || "queued", 40),
+      stage: sanitizeSwapNote(row?.stage || "", 60),
+      statusMessage: sanitizeSwapNote(row?.statusMessage || "", 220),
+      mode: sanitizeSwapNote(row?.mode || "beta-settlement", 40),
+      routeProvider: sanitizeSwapNote(row?.routeProvider || "", 40),
+      routeTool: sanitizeSwapNote(row?.routeTool || "", 60),
+      routeStatus: sanitizeSwapNote(row?.routeStatus || "", 40),
+      solanaAddress: sanitizeSwapNote(row?.solanaAddress || "", 90),
+      depositTreasury: sanitizeSwapNote(row?.depositTreasury || "", 90),
+      solanaFeePayer: sanitizeSwapNote(row?.solanaFeePayer || "", 90),
+      solanaGasSponsored: Boolean(row?.solanaGasSponsored),
+      recipient: normalizeAddress(row?.recipient || "") || sanitizeSwapNote(row?.recipient || "", 90),
+      recipientType: sanitizeSwapNote(row?.recipientType || "existing", 40),
+      targetToken: normalizeAddress(row?.targetToken || "") || sanitizeSwapNote(row?.targetToken || "", 90),
+      targetSymbol: sanitizeSwapNote(row?.targetSymbol || "", 32),
+      targetName: sanitizeSwapNote(row?.targetName || "", 80),
+      targetImageUrl: sanitizeSwapUrl(row?.targetImageUrl || "", 1200),
+      amountPumpr: Math.max(0, Number(row?.amountPumpr || 0) || 0),
+      expectedPumprRaw: String(row?.expectedPumprRaw || "").replace(/[^0-9]/g, ""),
+      pumprDecimals: Math.max(0, Math.min(18, Number(row?.pumprDecimals || 0) || 0)),
+      estimatedTargetTokens: Math.max(0, Number(row?.estimatedTargetTokens || 0) || 0),
+      minimumTargetTokens: Math.max(0, Number(row?.minimumTargetTokens || 0) || 0),
+      grossUsd: Math.max(0, Number(row?.grossUsd || 0) || 0),
+      netUsd: Math.max(0, Number(row?.netUsd || 0) || 0),
+      feeBps: Math.max(0, Number(row?.feeBps || 0) || 0),
+      gasUsd: Math.max(0, Number(row?.gasUsd || 0) || 0),
+      holderPct: Math.max(0, Number(row?.holderPct || 0) || 0),
+      note: sanitizeSwapNote(row?.note || "", 180),
+      depositSignature: sanitizeSwapNote(row?.depositSignature || "", 140),
+      depositSlot: Math.max(0, Number(row?.depositSlot || 0) || 0),
+      depositConfirmedAt: Math.max(0, Number(row?.depositConfirmedAt || 0) || 0),
+      payoutRaw: String(row?.payoutRaw || "").replace(/[^0-9]/g, ""),
+      payoutDecimals: Math.max(0, Math.min(36, Number(row?.payoutDecimals || 0) || 0)),
+      executionChainId: Math.max(0, Number(row?.executionChainId || 0) || 0),
+      executionTx: sanitizeSwapNote(row?.executionTx || row?.txHash || "", 140),
+      bridgeTx: sanitizeSwapNote(row?.bridgeTx || "", 140),
+      destinationTx: sanitizeSwapNote(row?.destinationTx || "", 140),
+      error: sanitizeSwapNote(row?.error || "", 220),
+      createdAt: Math.max(0, Number(row?.createdAt || Math.floor(Date.now() / 1000)) || 0),
+      updatedAt: Math.max(0, Number(row?.updatedAt || row?.createdAt || Math.floor(Date.now() / 1000)) || 0),
+      completedAt: Math.max(0, Number(row?.completedAt || 0) || 0)
+    }))
+    .filter((row) => row.id && row.solanaAddress && row.recipient && row.targetToken)
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    .slice(0, 5000);
+  return { requests, updatedAt: Math.floor(Date.now() / 1000) };
+}
+
+function decorateRhSwapRequest(row = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  const createdAt = Math.max(0, Number(row.createdAt || now) || now);
+  const elapsed = Math.max(0, now - createdAt);
+  const explicitStatus = String(row.status || "").trim().toLowerCase();
+  const directRoute = String(row.routeProvider || "").toLowerCase() === "lifi-direct";
+  const completed = ["completed", "settled", "executed"].includes(explicitStatus) || (!directRoute && Boolean(row.executionTx));
+  const failed = ["failed", "rejected", "error"].includes(explicitStatus) || Boolean(row.error);
+  let status = explicitStatus || "queued";
+  let stage = row.stage || "queued";
+  let statusMessage = row.statusMessage || "Swap request is queued for treasury settlement.";
+  let progressPct = Math.min(82, 18 + elapsed * 8);
+  let estimatedSeconds = Math.max(0, 18 - elapsed);
+  if (status === "awaiting_deposit_signature" && !completed && !failed) {
+    stage = directRoute ? "Sign PUMPR swap" : "Sign PUMPR deposit";
+    statusMessage = row.statusMessage || (directRoute
+      ? (row.solanaGasSponsored
+          ? "Dev wallet backed SOL gas only. Open Phantom and sign the $PUMPR swap from your connected wallet."
+          : "Open Phantom and sign the $PUMPR swap from your connected wallet.")
+      : (row.solanaGasSponsored
+          ? "Open Phantom and sign the $PUMPR transfer. Pump-r sponsors Solana gas for this swap."
+          : "Open Phantom and sign the $PUMPR transfer. This wallet pays the tiny Solana fee."));
+    progressPct = 18;
+    estimatedSeconds = 30;
+  } else if (status === "deposit_submitted" && !completed && !failed) {
+    stage = directRoute ? "Submitting LI.FI route" : "Confirming Solana deposit";
+    statusMessage = row.statusMessage || (directRoute
+      ? "User-wallet PUMPR swap was broadcast. Waiting for Robinhood Chain delivery."
+      : "Solana deposit was broadcast. Waiting for confirmation before payout.");
+    progressPct = 38;
+    estimatedSeconds = 15;
+  } else if (status === "deposit_confirmed" && !completed && !failed) {
+    stage = directRoute ? "Route confirmed" : "Deposit confirmed";
+    statusMessage = row.statusMessage || (directRoute
+      ? "User-wallet route is confirmed. Waiting for LI.FI destination status."
+      : "PUMPR deposit is confirmed. Preparing Robinhood Chain payout.");
+    progressPct = 58;
+    estimatedSeconds = 10;
+  } else if (status === "executing" && !completed && !failed) {
+    stage = directRoute ? "Routing RH token" : "Sending RH token";
+    statusMessage = row.statusMessage || (directRoute
+      ? "LI.FI is routing the user-wallet swap to Robinhood Chain."
+      : "Robinhood Chain treasury payout is being sent.");
+    progressPct = 82;
+    estimatedSeconds = 8;
+  } else if (elapsed < 2 && !completed && !failed) {
+    status = "validating";
+    stage = "Quote locked";
+    statusMessage = "Quote, gate, token, and destination wallet are being verified.";
+    progressPct = 28;
+    estimatedSeconds = 16;
+  } else if (elapsed < 5 && !completed && !failed) {
+    status = "queued";
+    stage = "Execution queue";
+    statusMessage = "Request accepted. Waiting for the treasury executor to pick it up.";
+    progressPct = 48;
+    estimatedSeconds = 12;
+  } else if (!completed && !failed) {
+    status = "awaiting_treasury";
+    stage = "Ready for settlement";
+    statusMessage = "Request is ready. No tokens have moved yet because the live Robinhood treasury executor is not connected in this environment.";
+    progressPct = 72;
+    estimatedSeconds = 0;
+  }
+  if (completed) {
+    status = "completed";
+    stage = "Completed";
+    statusMessage = row.statusMessage || "Swap completed and Robinhood Chain tokens were sent to the destination wallet.";
+    progressPct = 100;
+    estimatedSeconds = 0;
+  }
+  if (failed) {
+    status = "failed";
+    stage = "Needs attention";
+    statusMessage = row.error || row.statusMessage || "Swap could not be completed. Check the request details before retrying.";
+    progressPct = Math.max(18, Math.min(80, Number(row.progressPct || progressPct) || progressPct));
+    estimatedSeconds = 0;
+  }
+  return {
+    ...row,
+    status,
+    stage,
+    statusMessage,
+    progressPct,
+    estimatedSeconds,
+    elapsedSeconds: elapsed,
+    executionRequired: !completed && !failed,
+    canCompleteAutomatically: rhSwapRealExecutionConfigured(),
+    updatedAt: Math.max(Number(row.updatedAt || 0), now)
+  };
+}
+
+function mergeRhSwapStores(...stores) {
+  const byId = new Map();
+  for (const store of stores) {
+    const safe = sanitizeRhSwapStore(store || {});
+    for (const row of safe.requests || []) {
+      const key = String(row.id || row.quoteId || "").trim();
+      if (!key) continue;
+      const prev = byId.get(key);
+      const rowTime = Math.max(Number(row.updatedAt || 0), Number(row.createdAt || 0), Number(row.completedAt || 0));
+      const prevTime = prev ? Math.max(Number(prev.updatedAt || 0), Number(prev.createdAt || 0), Number(prev.completedAt || 0)) : -1;
+      if (!prev || rowTime >= prevTime) byId.set(key, row);
+    }
+  }
+  return sanitizeRhSwapStore({
+    requests: Array.from(byId.values()),
+    updatedAt: Math.floor(Date.now() / 1000)
+  });
+}
+
+function readRhSwapDb() {
+  try {
+    if (fs.existsSync(RH_SWAP_DB_PATH)) {
+      return sanitizeRhSwapStore(JSON.parse(fs.readFileSync(RH_SWAP_DB_PATH, "utf8") || "{}"));
+    }
+  } catch {
+    // fall through
+  }
+  return emptyRhSwapStore();
+}
+
+function writeRhSwapDb(store) {
+  const safe = sanitizeRhSwapStore(store);
+  try {
+    fs.mkdirSync(path.dirname(RH_SWAP_DB_PATH), { recursive: true });
+    fs.writeFileSync(RH_SWAP_DB_PATH, JSON.stringify(safe, null, 2));
+  } catch {
+    // local cache failures should not block remote storage attempts.
+  }
+  return safe;
+}
+
+async function readRhSwapRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_RH_SWAP_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_RH_SWAP_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Supabase RH swap read failed: ${response.status}`);
+  return sanitizeRhSwapStore(await response.json().catch(() => emptyRhSwapStore()));
+}
+
+async function writeRhSwapRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_RH_SWAP_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_RH_SWAP_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizeRhSwapStore(store), null, 2)
+  });
+  if (!response.ok) throw new Error(`Supabase RH swap write failed: ${response.status}`);
+  return true;
+}
+
+async function readRhSwapPersistent(options = {}) {
+  if (isSupabaseStorageConfigured() && options.refresh) {
+    const remote = await readRhSwapRemote().catch(() => null);
+    if (remote) {
+      const merged = mergeRhSwapStores(readRhSwapDb(), remote);
+      writeRhSwapDb(merged);
+      return merged;
+    }
+  }
+  return sanitizeRhSwapStore(readRhSwapDb());
+}
+
+async function writeRhSwapPersistent(store) {
+  assertJsonStoreConfigured("Robinhood swap", SUPABASE_RH_SWAP_OBJECT);
+  const safe = writeRhSwapDb(store);
+  if (isSupabaseStorageConfigured()) {
+    await writeRhSwapRemote(safe).catch((error) => {
+      if (!allowFileJsonFallback()) throw error;
+      console.warn(`Supabase RH swap write failed: ${error?.message || "connection error"}`);
+    });
+  }
+  return safe;
+}
+
+async function addRhSwapRequest(value = {}) {
+  const quote = await buildRhSwapQuote(value);
+  const recipient = normalizeAddress(value.recipient || value.destination || "");
+  if (!recipient) throw new Error("Enter a valid Robinhood Chain destination wallet.");
+  const store = await readRhSwapPersistent({ refresh: true });
+  const entry = {
+    id: quote.quoteId.replace(/^quote_/, "rhswap_"),
+    quoteId: quote.quoteId,
+    status: "queued",
+    stage: "Quote locked",
+    statusMessage: "Swap request accepted. Waiting for Robinhood Chain treasury execution.",
+    mode: quote.mode,
+    solanaAddress: quote.solanaAddress,
+    recipient,
+    recipientType: sanitizeSwapNote(value.recipientType || "existing", 40),
+    targetToken: quote.targetToken,
+    targetSymbol: quote.target.symbol,
+    targetName: quote.target.name,
+    targetImageUrl: quote.target.imageUrl,
+    amountPumpr: quote.amountPumpr,
+    estimatedTargetTokens: quote.estimatedTargetTokens,
+    minimumTargetTokens: quote.minimumTargetTokens,
+    grossUsd: quote.grossUsd,
+    netUsd: quote.netUsd,
+    feeBps: quote.fees.feeBps,
+    gasUsd: quote.fees.gasUsd,
+    holderPct: quote.holderEligibility.holderPct,
+    note: sanitizeSwapNote(value.note || ""),
+    createdAt: Math.floor(Date.now() / 1000),
+    updatedAt: Math.floor(Date.now() / 1000)
+  };
+  const requests = [decorateRhSwapRequest(entry), ...(store.requests || [])].slice(0, 5000);
+  await writeRhSwapPersistent({ requests });
+  return { entry: decorateRhSwapRequest(entry), quote };
+}
+
+async function buildRhSwapDirectLifiRequest(value = {}) {
+  if (!rhSwapLifiEnabled() || !rhSwapDirectUserLifiEnabled()) {
+    throw new Error("Direct user LI.FI routing is disabled.");
+  }
+  const quote = await buildRhSwapQuote(value);
+  const recipient = normalizeAddress(value.recipient || value.destination || "");
+  if (!recipient) throw new Error("Enter a valid Robinhood Chain destination wallet.");
+
+  const { Connection: SolanaConnection, Keypair: SolanaKeypair, PublicKey: SolanaPublicKey } = await loadSolanaWeb3();
+  const splToken = require("@solana/spl-token");
+  const mint = new SolanaPublicKey(OFFICIAL_PUMPFUN_MINT);
+  const user = new SolanaPublicKey(quote.solanaAddress);
+  const feePayerKeypair = rhSwapSolanaFeePayerKeypair(SolanaKeypair);
+  if (
+    feePayerKeypair?.publicKey?.toBase58?.() &&
+    feePayerKeypair.publicKey.toBase58() === user.toBase58() &&
+    !["1", "true", "yes", "on"].includes(String(process.env.PUMPR_RH_SWAP_ALLOW_DEV_WALLET_AS_USER || "0").trim().toLowerCase())
+  ) {
+    throw new Error("This wallet is configured as the dev SOL backup wallet. Connect the actual user wallet so PUMPR is swapped from the signed-in user, not the dev wallet.");
+  }
+  const id = quote.quoteId.replace(/^quote_/, "rhswap_");
+
+  const rpcState = await withPumpFunSolanaRpc(
+    SolanaConnection,
+    "Robinhood direct LI.FI swap prep",
+    async (connection, rpcUrl) => {
+      const mintInfo = await connection.getAccountInfo(mint, "confirmed");
+      if (!mintInfo) throw new Error("Official PUMPR mint was not found on Solana.");
+      const tokenProgram = pickSplTokenProgramFromMintInfo(mintInfo, splToken);
+      const mintAccount = await splToken.getMint(connection, mint, "confirmed", tokenProgram);
+      const decimals = Number(mintAccount.decimals || 0);
+      const amountRaw = parseUnitsFloor(quote.amountPumpr, decimals);
+      if (amountRaw <= 0n) throw new Error("PUMPR amount is too small.");
+      const sourceAta = splToken.getAssociatedTokenAddressSync(mint, user, true, tokenProgram);
+      const sourceBalance = await connection.getTokenAccountBalance(sourceAta, "confirmed").catch(() => null);
+      const sourceRaw = BigInt(String(sourceBalance?.value?.amount || "0"));
+      if (sourceRaw < amountRaw) {
+        throw new Error(`This wallet does not have enough PUMPR for the swap. Needed ${quote.amountPumpr} PUMPR.`);
+      }
+      const gasTopup = await maybeTopUpRhSwapUserGas({
+        connection,
+        user,
+        feePayerKeypair,
+        requiredLamports: PUMPFUN_TRANSFER_BUFFER_LAMPORTS
+      });
+      return { connection, rpcUrl, tokenProgram, decimals, amountRaw, sourceAta, gasTopup };
+    },
+    { retryAll: true }
+  );
+
+  const lifiPreflight = await fetchLifiQuote({
+    fromChain: "SOL",
+    toChain: "4663",
+    fromToken: OFFICIAL_PUMPFUN_MINT,
+    toToken: quote.targetToken,
+    fromAmount: rpcState.amountRaw.toString(),
+    fromAddress: user.toBase58(),
+    toAddress: recipient,
+    slippage: Math.max(0.001, rhSwapSlippageBps() / 10_000)
+  }, { optional: true });
+  if (!lifiPreflight.ok) {
+    throw new Error(`No LI.FI user-wallet route is available for this PUMPR -> ${quote.target.symbol || "Robinhood token"} swap yet. Try another token or a larger amount. LI.FI: ${lifiPreflight.error || "route unavailable"}`);
+  }
+  const lifiQuote = lifiPreflight.quote || {};
+  const transactionBase64 = String(lifiQuote?.transactionRequest?.data || "").trim();
+  if (!transactionBase64) throw new Error("LI.FI did not return a user-wallet swap transaction for this route.");
+  const amounts = extractLifiQuoteAmounts(lifiQuote);
+
+  const now = Math.floor(Date.now() / 1000);
+  const store = await readRhSwapPersistent({ refresh: true });
+  const entry = decorateRhSwapRequest({
+    id,
+    quoteId: quote.quoteId,
+    status: "awaiting_deposit_signature",
+    stage: "Sign user wallet swap",
+    statusMessage: rpcState.gasTopup?.toppedUp
+      ? "Dev wallet topped up SOL gas only. Now sign the PUMPR swap from your connected wallet."
+      : "Open Phantom and sign the PUMPR swap from your connected wallet. Dev wallet is not selling tokens.",
+    mode: "real-cross-chain-settlement",
+    routeProvider: "lifi-direct",
+    routeTool: lifiQuote.tool || amounts.tool || "",
+    solanaAddress: quote.solanaAddress,
+    depositTreasury: "",
+    solanaFeePayer: feePayerKeypair?.publicKey?.toBase58?.() || "",
+    solanaGasSponsored: Boolean(rpcState.gasTopup?.toppedUp),
+    recipient,
+    recipientType: sanitizeSwapNote(value.recipientType || "existing", 40),
+    targetToken: quote.targetToken,
+    targetSymbol: quote.target.symbol,
+    targetName: quote.target.name,
+    targetImageUrl: quote.target.imageUrl,
+    amountPumpr: quote.amountPumpr,
+    expectedPumprRaw: rpcState.amountRaw.toString(),
+    pumprDecimals: rpcState.decimals,
+    estimatedTargetTokens: amounts.toAmount || quote.estimatedTargetTokens,
+    minimumTargetTokens: amounts.toAmountMin || quote.minimumTargetTokens,
+    grossUsd: quote.grossUsd,
+    netUsd: quote.netUsd,
+    feeBps: quote.fees.feeBps,
+    gasUsd: quote.fees.gasUsd,
+    holderPct: quote.holderEligibility.holderPct,
+    note: sanitizeSwapNote(value.note || "Direct user-wallet Robinhood Chain swap"),
+    createdAt: now,
+    updatedAt: now
+  });
+  const requests = [entry, ...(store.requests || []).filter((row) => String(row.id || "") !== id)].slice(0, 5000);
+  await writeRhSwapPersistent({ requests });
+  return {
+    entry,
+    quote: {
+      ...quote,
+      mode: "real-cross-chain-settlement",
+      executionConfigured: true,
+      routeProvider: "lifi-direct",
+      lifiRouteAvailable: true,
+      lifiTool: lifiQuote.tool || amounts.tool || ""
+    },
+    transactionBase64,
+    deposit: {
+      directRoute: true,
+      mint: OFFICIAL_PUMPFUN_MINT,
+      amountRaw: rpcState.amountRaw.toString(),
+      decimals: rpcState.decimals,
+      sourceTokenAccount: rpcState.sourceAta.toBase58(),
+      from: user.toBase58(),
+      to: recipient,
+      solanaGasTopup: rpcState.gasTopup || null,
+      tokenProgram: rpcState.tokenProgram.toBase58()
+    },
+    rpcUrl: rpcState.rpcUrl
+  };
+}
+
+async function buildRhSwapDepositRequest(value = {}) {
+  assertRhSwapRealExecutionConfigured();
+  if (rhSwapLifiEnabled() && rhSwapDirectUserLifiEnabled()) {
+    return await buildRhSwapDirectLifiRequest(value);
+  }
+  const quote = await buildRhSwapQuote(value);
+  const recipient = normalizeAddress(value.recipient || value.destination || "");
+  if (!recipient) throw new Error("Enter a valid Robinhood Chain destination wallet.");
+
+  const {
+    Connection: SolanaConnection,
+    Keypair: SolanaKeypair,
+    PublicKey: SolanaPublicKey,
+    Transaction: SolanaTransaction,
+    TransactionInstruction
+  } = await loadSolanaWeb3();
+  const splToken = require("@solana/spl-token");
+  const mint = new SolanaPublicKey(OFFICIAL_PUMPFUN_MINT);
+  const user = new SolanaPublicKey(quote.solanaAddress);
+  const treasuryKeypair = rhSwapSolanaTreasuryKeypair(SolanaKeypair);
+  const treasury = treasuryKeypair?.publicKey || new SolanaPublicKey(rhSwapSolanaTreasury());
+  const feePayerKeypair = rhSwapSolanaFeePayerKeypair(SolanaKeypair);
+  const feePayer = feePayerKeypair?.publicKey || treasuryKeypair?.publicKey || user;
+  const solanaGasSponsored = Boolean(feePayerKeypair);
+  const id = quote.quoteId.replace(/^quote_/, "rhswap_");
+
+  const rpcState = await withPumpFunSolanaRpc(
+    SolanaConnection,
+    "Robinhood swap deposit prep",
+    async (connection, rpcUrl) => {
+      const [latest, mintInfo] = await Promise.all([
+        connection.getLatestBlockhash("confirmed"),
+        connection.getAccountInfo(mint, "confirmed")
+      ]);
+      if (!mintInfo) throw new Error("Official PUMPR mint was not found on Solana.");
+      const tokenProgram = pickSplTokenProgramFromMintInfo(mintInfo, splToken);
+      const mintAccount = await splToken.getMint(connection, mint, "confirmed", tokenProgram);
+      const decimals = Number(mintAccount.decimals || 0);
+      const amountRaw = parseUnitsFloor(quote.amountPumpr, decimals);
+      if (amountRaw <= 0n) throw new Error("PUMPR amount is too small.");
+      await assertSolanaWalletHasLamports(
+        connection,
+        feePayer,
+        PUMPFUN_TRANSFER_BUFFER_LAMPORTS,
+        solanaGasSponsored ? "sponsored PUMPR swap fee payment" : "PUMPR swap deposit"
+      );
+      const sourceAta = splToken.getAssociatedTokenAddressSync(mint, user, true, tokenProgram);
+      const treasuryAta = splToken.getAssociatedTokenAddressSync(mint, treasury, true, tokenProgram);
+      const sourceBalance = await connection.getTokenAccountBalance(sourceAta, "confirmed").catch(() => null);
+      const sourceRaw = BigInt(String(sourceBalance?.value?.amount || "0"));
+      if (sourceRaw < amountRaw) {
+        throw new Error(`This wallet does not have enough PUMPR for the swap. Needed ${quote.amountPumpr} PUMPR.`);
+      }
+      const memoIx = new TransactionInstruction({
+        keys: [],
+        programId: new SolanaPublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
+        data: Buffer.from(`pumpr-rh-swap:${id}`, "utf8")
+      });
+      const instructions = [
+        splToken.createAssociatedTokenAccountIdempotentInstruction(feePayer, treasuryAta, treasury, mint, tokenProgram),
+        splToken.createTransferCheckedInstruction(sourceAta, mint, treasuryAta, user, amountRaw, decimals, [], tokenProgram),
+        memoIx
+      ];
+      const tx = new SolanaTransaction({ feePayer, recentBlockhash: latest.blockhash }).add(...instructions);
+      if (feePayerKeypair) tx.partialSign(feePayerKeypair);
+      return { rpcUrl, latest, tokenProgram, decimals, amountRaw, sourceAta, treasuryAta, tx };
+    },
+    { retryAll: true }
+  );
+
+  let lifiPreflight = null;
+  if (rhSwapLifiEnabled() && treasuryKeypair) {
+    lifiPreflight = await fetchLifiQuote({
+      fromChain: "SOL",
+      toChain: "4663",
+      fromToken: OFFICIAL_PUMPFUN_MINT,
+      toToken: quote.targetToken,
+      fromAmount: rpcState.amountRaw.toString(),
+      fromAddress: treasury.toBase58(),
+      toAddress: recipient,
+      slippage: Math.max(0.001, rhSwapSlippageBps() / 10_000)
+    }, { optional: true });
+    if (!lifiPreflight.ok && !(rhSwapTreasuryFallbackEnabled() && rhSwapEvmTreasuryPrivateKey())) {
+      throw new Error(`No automatic LI.FI route is available for this PUMPR -> ${quote.target.symbol || "Robinhood token"} swap yet. Try another token or a larger amount. LI.FI: ${lifiPreflight.error || "route unavailable"}`);
+    }
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const store = await readRhSwapPersistent({ refresh: true });
+  const entry = decorateRhSwapRequest({
+    id,
+    quoteId: quote.quoteId,
+    status: "awaiting_deposit_signature",
+    stage: "Sign PUMPR deposit",
+    statusMessage: solanaGasSponsored
+      ? "Open Phantom and sign the $PUMPR transfer. Pump-r sponsors Solana gas and routes the deposited PUMPR automatically."
+      : "Open Phantom and sign the $PUMPR transfer. This wallet pays the tiny Solana fee unless a dev/admin Solana fee-payer key is configured.",
+    mode: "real-cross-chain-settlement",
+    routeProvider: rhSwapLifiEnabled() && treasuryKeypair ? "lifi" : "treasury",
+    routeTool: lifiPreflight?.quote?.tool || "",
+    solanaAddress: quote.solanaAddress,
+    depositTreasury: treasury.toBase58(),
+    solanaFeePayer: feePayer.toBase58(),
+    solanaGasSponsored,
+    recipient,
+    recipientType: sanitizeSwapNote(value.recipientType || "existing", 40),
+    targetToken: quote.targetToken,
+    targetSymbol: quote.target.symbol,
+    targetName: quote.target.name,
+    targetImageUrl: quote.target.imageUrl,
+    amountPumpr: quote.amountPumpr,
+    expectedPumprRaw: rpcState.amountRaw.toString(),
+    pumprDecimals: rpcState.decimals,
+    estimatedTargetTokens: quote.estimatedTargetTokens,
+    minimumTargetTokens: quote.minimumTargetTokens,
+    grossUsd: quote.grossUsd,
+    netUsd: quote.netUsd,
+    feeBps: quote.fees.feeBps,
+    gasUsd: quote.fees.gasUsd,
+    holderPct: quote.holderEligibility.holderPct,
+    note: sanitizeSwapNote(value.note || "Real RH swap"),
+    createdAt: now,
+    updatedAt: now
+  });
+  const requests = [entry, ...(store.requests || []).filter((row) => String(row.id || "") !== id)].slice(0, 5000);
+  await writeRhSwapPersistent({ requests });
+  return {
+    entry,
+    quote: {
+      ...quote,
+      mode: "real-cross-chain-settlement",
+      executionConfigured: true,
+      routeProvider: rhSwapLifiEnabled() && treasuryKeypair ? "lifi" : "treasury",
+      lifiRouteAvailable: lifiPreflight ? Boolean(lifiPreflight.ok) : false,
+      lifiTool: lifiPreflight?.quote?.tool || ""
+    },
+    transactionBase64: rpcState.tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+    deposit: {
+      mint: OFFICIAL_PUMPFUN_MINT,
+      amountRaw: rpcState.amountRaw.toString(),
+      decimals: rpcState.decimals,
+      sourceTokenAccount: rpcState.sourceAta.toBase58(),
+      treasury: treasury.toBase58(),
+      treasuryTokenAccount: rpcState.treasuryAta.toBase58(),
+      solanaFeePayer: feePayer.toBase58(),
+      solanaGasSponsored,
+      tokenProgram: rpcState.tokenProgram.toBase58()
+    },
+    rpcUrl: rpcState.rpcUrl,
+    blockhash: rpcState.latest.blockhash,
+    lastValidBlockHeight: rpcState.latest.lastValidBlockHeight
+  };
+}
+
+function tokenBalanceDeltaForOwner(tx = {}, owner = "", mint = "") {
+  const ownerText = String(owner || "").trim();
+  const mintText = String(mint || "").trim();
+  const sumBalances = (rows = []) => rows.reduce((sum, row) => {
+    if (String(row?.owner || "").trim() !== ownerText) return sum;
+    if (String(row?.mint || "").trim() !== mintText) return sum;
+    return sum + BigInt(String(row?.uiTokenAmount?.amount || "0"));
+  }, 0n);
+  const pre = sumBalances(tx?.meta?.preTokenBalances || []);
+  const post = sumBalances(tx?.meta?.postTokenBalances || []);
+  return post - pre;
+}
+
+function tokenBalancePostForOwner(tx = {}, owner = "", mint = "") {
+  const ownerText = String(owner || "").trim();
+  const mintText = String(mint || "").trim();
+  return (tx?.meta?.postTokenBalances || []).reduce((sum, row) => {
+    if (String(row?.owner || "").trim() !== ownerText) return sum;
+    if (String(row?.mint || "").trim() !== mintText) return sum;
+    return sum + BigInt(String(row?.uiTokenAmount?.amount || "0"));
+  }, 0n);
+}
+
+async function verifyRhSwapDepositSignature(entry = {}, signature = "") {
+  const txSig = sanitizeSwapNote(signature, 140);
+  if (!txSig) throw new Error("Signed Solana deposit signature is required.");
+  const expectedRaw = BigInt(String(entry.expectedPumprRaw || "0"));
+  if (expectedRaw <= 0n) throw new Error("Swap request is missing expected PUMPR amount.");
+  const treasury = entry.depositTreasury || rhSwapSolanaTreasury();
+  const user = entry.solanaAddress;
+  const mint = OFFICIAL_PUMPFUN_MINT;
+  return await withPumpFunSolanaRpc(
+    (await loadSolanaWeb3()).Connection,
+    "Robinhood swap deposit confirmation",
+    async (connection) => {
+      let parsed = null;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        parsed = await connection.getParsedTransaction(txSig, {
+          commitment: "confirmed",
+          maxSupportedTransactionVersion: 0
+        }).catch(() => null);
+        if (parsed) break;
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+      }
+      if (!parsed) throw new Error("Solana deposit is not confirmed yet. Wait a few seconds and try again.");
+      if (parsed.meta?.err) throw new Error("Solana deposit transaction failed.");
+      const treasuryDelta = tokenBalanceDeltaForOwner(parsed, treasury, mint);
+      const userDelta = tokenBalanceDeltaForOwner(parsed, user, mint);
+      const selfTreasuryDeposit = String(treasury || "").trim() && String(treasury || "").trim() === String(user || "").trim();
+      if (selfTreasuryDeposit) {
+        const treasuryPostBalance = tokenBalancePostForOwner(parsed, treasury, mint);
+        if (treasuryPostBalance < expectedRaw) {
+          throw new Error("Dev treasury wallet does not hold enough PUMPR for this swap route.");
+        }
+        return {
+          signature: txSig,
+          slot: Number(parsed.slot || 0),
+          blockTime: Number(parsed.blockTime || Math.floor(Date.now() / 1000)),
+          treasuryDeltaRaw: treasuryDelta.toString(),
+          userDeltaRaw: userDelta.toString(),
+          selfTreasuryDeposit: true
+        };
+      }
+      if (treasuryDelta < expectedRaw) {
+        throw new Error("Deposit transaction does not send the expected PUMPR amount to the swap treasury.");
+      }
+      if (userDelta > -expectedRaw) {
+        throw new Error("Deposit transaction does not debit the expected PUMPR amount from the connected wallet.");
+      }
+      return {
+        signature: txSig,
+        slot: Number(parsed.slot || 0),
+        blockTime: Number(parsed.blockTime || Math.floor(Date.now() / 1000)),
+        treasuryDeltaRaw: treasuryDelta.toString(),
+        userDeltaRaw: userDelta.toString()
+      };
+    },
+    { retryAll: true }
+  );
+}
+
+async function sendRhSwapPayout(entry = {}) {
+  assertRhSwapRealExecutionConfigured();
+  const privateKey = rhSwapEvmTreasuryPrivateKey();
+  const recipient = normalizeAddress(entry.recipient || "");
+  const tokenAddress = normalizeAddress(entry.targetToken || "");
+  if (!recipient || !tokenAddress) throw new Error("Swap request is missing Robinhood Chain recipient or token.");
+
+  const provider = new ethers.JsonRpcProvider(pickRpcUrls(4663)[0], 4663, { staticNetwork: true });
+  const wallet = new ethers.Wallet(privateKey, provider);
+  const token = new ethers.Contract(tokenAddress, RH_SWAP_ERC20_ABI, wallet);
+  const [decimalsRaw, symbolRaw, nativeBalance] = await Promise.all([
+    token.decimals().catch(() => 18),
+    token.symbol().catch(() => entry.targetSymbol || "TOKEN"),
+    provider.getBalance(wallet.address)
+  ]);
+  const decimals = Number(decimalsRaw || 18);
+  const amountText = numberToUnitString(entry.minimumTargetTokens || entry.estimatedTargetTokens || 0, decimals);
+  const payoutRaw = ethers.parseUnits(amountText, decimals);
+  if (payoutRaw <= 0n) throw new Error("Payout amount is too small after fees and gas reserve.");
+  const tokenBalance = await token.balanceOf(wallet.address);
+  if (tokenBalance < payoutRaw) {
+    throw new Error(`Robinhood treasury has insufficient ${symbolRaw || entry.targetSymbol || "token"} balance for this payout.`);
+  }
+  if (nativeBalance <= 0n) {
+    throw new Error("Robinhood treasury needs native gas before it can send payouts.");
+  }
+  const tx = await token.transfer(recipient, payoutRaw);
+  const receipt = await tx.wait(rhSwapConfirmations());
+  if (!receipt?.hash || Number(receipt.status || 0) !== 1) {
+    throw new Error("Robinhood Chain payout transaction failed.");
+  }
+  return {
+    txHash: receipt.hash,
+    payoutRaw: payoutRaw.toString(),
+    payoutDecimals: decimals,
+    treasury: wallet.address,
+    symbol: String(symbolRaw || entry.targetSymbol || "TOKEN")
+  };
+}
+
+function deserializeSolanaTransactionBytes(solanaWeb3, bytes) {
+  try {
+    return solanaWeb3.Transaction.from(bytes);
+  } catch (legacyError) {
+    if (solanaWeb3.VersionedTransaction) {
+      try {
+        return solanaWeb3.VersionedTransaction.deserialize(bytes);
+      } catch {
+        // Throw the original parser error because it is usually more specific.
+      }
+    }
+    throw legacyError;
+  }
+}
+
+function signSolanaTransactionForBackend(transaction, keypair) {
+  if (transaction?.version !== undefined && typeof transaction.sign === "function") {
+    transaction.sign([keypair]);
+    return Buffer.from(transaction.serialize()).toString("base64");
+  }
+  if (typeof transaction.partialSign === "function") {
+    transaction.partialSign(keypair);
+    return transaction.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+  }
+  throw new Error("Unsupported Solana transaction format from route provider.");
+}
+
+async function maybeTopUpRhSwapUserGas({ connection, user, feePayerKeypair, requiredLamports = PUMPFUN_TRANSFER_BUFFER_LAMPORTS }) {
+  if (!feePayerKeypair || !user) return { toppedUp: false, reason: "no_fee_payer" };
+  const userAddress = user.toBase58();
+  const feePayerAddress = feePayerKeypair.publicKey.toBase58();
+  if (userAddress === feePayerAddress) return { toppedUp: false, reason: "user_is_fee_payer" };
+  const required = typeof requiredLamports === "bigint" ? requiredLamports : BigInt(Math.max(0, Number(requiredLamports || 0)));
+  const userBalance = BigInt(await connection.getBalance(user, "confirmed"));
+  if (userBalance >= required) return { toppedUp: false, userBalanceLamports: userBalance.toString(), requiredLamports: required.toString() };
+  const shortage = required - userBalance;
+  const sponsorBalance = BigInt(await connection.getBalance(feePayerKeypair.publicKey, "confirmed"));
+  const sponsorRequired = shortage + PUMPFUN_TRANSFER_BUFFER_LAMPORTS;
+  if (sponsorBalance < sponsorRequired) {
+    throw new Error(`Dev gas backup wallet needs ${formatSolLamports(sponsorRequired)} SOL to sponsor this user's gas. It has ${formatSolLamports(sponsorBalance)}.`);
+  }
+  const { Transaction: SolanaTransaction, SystemProgram: SolanaSystemProgram } = await loadSolanaWeb3();
+  const latest = await connection.getLatestBlockhash("confirmed");
+  const tx = new SolanaTransaction({
+    feePayer: feePayerKeypair.publicKey,
+    recentBlockhash: latest.blockhash
+  }).add(SolanaSystemProgram.transfer({
+    fromPubkey: feePayerKeypair.publicKey,
+    toPubkey: user,
+    lamports: Number(shortage)
+  }));
+  tx.sign(feePayerKeypair);
+  const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false, maxRetries: 5 });
+  await connection.confirmTransaction({
+    signature,
+    blockhash: latest.blockhash,
+    lastValidBlockHeight: latest.lastValidBlockHeight
+  }, "confirmed").catch(() => null);
+  return {
+    toppedUp: true,
+    signature,
+    lamports: shortage.toString(),
+    userBalanceBeforeLamports: userBalance.toString(),
+    requiredLamports: required.toString()
+  };
+}
+
+async function executeRhSwapViaLifi(entry = {}) {
+  if (!rhSwapLifiEnabled()) throw new Error("LI.FI routing is disabled.");
+  if (!rhSwapTreasuryRoutingEnabled()) {
+    throw new Error("Legacy treasury LI.FI routing is disabled. The connected user wallet must sign the PUMPR swap directly.");
+  }
+  const {
+    Connection: SolanaConnection,
+    Keypair: SolanaKeypair,
+    Transaction: SolanaTransaction,
+    VersionedTransaction: SolanaVersionedTransaction
+  } = await loadSolanaWeb3();
+  const treasuryKeypair = rhSwapSolanaTreasuryKeypair(SolanaKeypair);
+  if (!treasuryKeypair) {
+    throw new Error("PUMPR_RH_SWAP_SOLANA_TREASURY_SECRET_KEY is required only for explicit legacy treasury routing.");
+  }
+  const fromAddress = treasuryKeypair.publicKey.toBase58();
+  const expectedRaw = String(entry.expectedPumprRaw || "").replace(/[^0-9]/g, "");
+  if (!expectedRaw || BigInt(expectedRaw) <= 0n) throw new Error("Swap request is missing the deposited PUMPR amount.");
+  const quoteResult = await fetchLifiQuote({
+    fromChain: "SOL",
+    toChain: "4663",
+    fromToken: OFFICIAL_PUMPFUN_MINT,
+    toToken: entry.targetToken,
+    fromAmount: expectedRaw,
+    fromAddress,
+    toAddress: entry.recipient,
+    slippage: Math.max(0.001, rhSwapSlippageBps() / 10_000)
+  });
+  const lifiQuote = quoteResult.quote || {};
+  const txData = String(lifiQuote?.transactionRequest?.data || "").trim();
+  if (!txData) throw new Error("LI.FI did not return a Solana route transaction for this PUMPR -> Robinhood token pair.");
+  const amounts = extractLifiQuoteAmounts(lifiQuote);
+  const txBytes = Uint8Array.from(Buffer.from(txData, "base64"));
+  const solanaWeb3 = {
+    Transaction: SolanaTransaction,
+    VersionedTransaction: SolanaVersionedTransaction
+  };
+  const tx = deserializeSolanaTransactionBytes(solanaWeb3, txBytes);
+  const signedTransactionBase64 = signSolanaTransactionForBackend(tx, treasuryKeypair);
+  const execution = await withPumpFunSolanaRpc(
+    SolanaConnection,
+    "Robinhood LI.FI route execution",
+    async (connection, rpcUrl) => {
+      await assertSolanaWalletHasLamports(connection, treasuryKeypair.publicKey, PUMPFUN_TRANSFER_BUFFER_LAMPORTS, "LI.FI PUMPR route execution");
+      const signature = await connection.sendRawTransaction(Buffer.from(signedTransactionBase64, "base64"), {
+        skipPreflight: false,
+        maxRetries: 5
+      });
+      return { rpcUrl, signature };
+    },
+    { retryAll: true }
+  );
+  const status = await fetchLifiStatus({
+    bridge: lifiQuote.tool,
+    fromChain: "SOL",
+    toChain: "4663",
+    txHash: execution.signature
+  }).catch((error) => ({ ok: false, error: error?.message || "LI.FI status unavailable" }));
+  return {
+    provider: "lifi",
+    tool: amounts.tool || lifiQuote.tool || "",
+    txHash: execution.signature,
+    rpcUrl: execution.rpcUrl,
+    payoutRaw: amounts.toAmountMinRaw || amounts.toAmountRaw || "",
+    payoutDecimals: amounts.toDecimals,
+    estimatedTargetTokens: amounts.toAmount || entry.estimatedTargetTokens || 0,
+    minimumTargetTokens: amounts.toAmountMin || entry.minimumTargetTokens || 0,
+    routeStatus: String(status?.payload?.status || status?.payload?.substatus || (status?.ok ? "PENDING" : "SUBMITTED")),
+    destinationTx: status?.payload?.receiving?.txHash || status?.payload?.destinationTxHash || "",
+    statusPayload: status?.payload || null
+  };
+}
+
+async function settleRhSwapRequest(value = {}) {
+  const id = sanitizeSwapNote(value.id || value.requestId || "", 90);
+  const depositSignature = sanitizeSwapNote(value.depositSignature || value.signature || "", 140);
+  if (!id) throw new Error("Swap request id is required.");
+  if (!depositSignature) throw new Error("Solana deposit signature is required.");
+  const store = await readRhSwapPersistent({ refresh: true });
+  const requests = store.requests || [];
+  const index = requests.findIndex((row) => String(row.id || "") === id || String(row.quoteId || "") === id);
+  if (index < 0) throw new Error("Swap request not found.");
+  const duplicate = requests.find((row, rowIndex) => rowIndex !== index && row.depositSignature && row.depositSignature === depositSignature);
+  if (duplicate) throw new Error("This Solana deposit signature has already been used for another swap.");
+  let entry = decorateRhSwapRequest(requests[index]);
+  if (entry.executionTx || String(entry.status || "").toLowerCase() === "completed") return entry;
+  if (["executing"].includes(String(entry.status || "").toLowerCase())) {
+    throw new Error("This swap is already executing. Refresh status in a few seconds.");
+  }
+
+  try {
+    if (String(entry.routeProvider || "").toLowerCase() === "lifi-direct") {
+      const status = await fetchLifiStatus({
+        bridge: entry.routeTool || "lifi",
+        fromChain: "SOL",
+        toChain: "4663",
+        txHash: depositSignature
+      }).catch((error) => ({ ok: false, error: error?.message || "LI.FI status unavailable" }));
+      const payload = status?.payload || {};
+      const rawStatus = String(payload.status || payload.substatus || (status?.ok ? "PENDING" : "SUBMITTED")).toUpperCase();
+      const done = ["DONE", "COMPLETED", "SUCCESS"].includes(rawStatus);
+      const failed = ["FAILED", "INVALID"].includes(rawStatus);
+      entry = decorateRhSwapRequest({
+        ...entry,
+        status: failed ? "failed" : done ? "completed" : "executing",
+        stage: failed ? "Needs attention" : done ? "Completed" : "Bridge in progress",
+        statusMessage: failed
+          ? `LI.FI route failed: ${payload.substatusMessage || payload.error || rawStatus}`
+          : done
+            ? `${entry.targetSymbol || "Token"} delivered to ${entry.recipient}.`
+            : "User wallet swap submitted. Waiting for Robinhood Chain delivery.",
+        depositSignature,
+        executionTx: depositSignature,
+        bridgeTx: depositSignature,
+        destinationTx: payload.receiving?.txHash || payload.destinationTxHash || "",
+        routeStatus: rawStatus,
+        depositConfirmedAt: Math.floor(Date.now() / 1000),
+        completedAt: done ? Math.floor(Date.now() / 1000) : 0,
+        updatedAt: Math.floor(Date.now() / 1000),
+        error: failed ? (payload.substatusMessage || payload.error || "LI.FI route failed") : ""
+      });
+      requests[index] = entry;
+      await writeRhSwapPersistent({ requests });
+      return entry;
+    }
+
+    if (!rhSwapTreasuryRoutingEnabled()) {
+      throw new Error("Legacy treasury swap routing is disabled. Start a new RH swap so the connected wallet signs the PUMPR route directly.");
+    }
+
+    const deposit = await verifyRhSwapDepositSignature(entry, depositSignature);
+    entry = decorateRhSwapRequest({
+      ...entry,
+      status: "executing",
+      stage: "Sending RH token",
+      statusMessage: "PUMPR deposit confirmed. Sending the Robinhood Chain token now.",
+      depositSignature: deposit.signature,
+      depositSlot: deposit.slot,
+      depositConfirmedAt: deposit.blockTime,
+      updatedAt: Math.floor(Date.now() / 1000)
+    });
+    requests[index] = entry;
+    await writeRhSwapPersistent({ requests });
+
+    const useLifi = rhSwapTreasuryRoutingEnabled() && rhSwapLifiEnabled() && rhSwapSolanaTreasurySecret();
+    if (!useLifi && !rhSwapTreasuryFallbackEnabled()) {
+      throw new Error("Legacy treasury routing is disabled. New swaps must use direct user-wallet LI.FI routing.");
+    }
+    const payout = useLifi ? await executeRhSwapViaLifi(entry) : await sendRhSwapPayout(entry);
+    const routeDone = !useLifi || ["DONE", "COMPLETED", "SUCCESS"].includes(String(payout.routeStatus || "").toUpperCase());
+    entry = decorateRhSwapRequest({
+      ...entry,
+      status: routeDone ? "completed" : "executing",
+      stage: routeDone ? "Completed" : "Bridge in progress",
+      statusMessage: useLifi
+        ? (routeDone
+            ? `${entry.targetSymbol || "Token"} route completed to ${entry.recipient}.`
+            : `LI.FI route submitted. Waiting for Robinhood Chain delivery to ${entry.recipient}.`)
+        : `${payout.symbol || entry.targetSymbol || "Token"} sent to ${entry.recipient}.`,
+      routeProvider: useLifi ? "lifi" : "treasury",
+      routeTool: payout.tool || "",
+      routeStatus: payout.routeStatus || "",
+      executionTx: payout.txHash,
+      bridgeTx: payout.txHash,
+      destinationTx: payout.destinationTx || "",
+      payoutRaw: payout.payoutRaw,
+      payoutDecimals: payout.payoutDecimals,
+      executionChainId: 4663,
+      completedAt: routeDone ? Math.floor(Date.now() / 1000) : 0,
+      updatedAt: Math.floor(Date.now() / 1000)
+    });
+    requests[index] = entry;
+    await writeRhSwapPersistent({ requests });
+    return entry;
+  } catch (error) {
+    const failed = decorateRhSwapRequest({
+      ...entry,
+      status: "failed",
+      stage: "Needs attention",
+      statusMessage: error.message || "Swap settlement failed.",
+      error: error.message || "Swap settlement failed.",
+      depositSignature: depositSignature || entry.depositSignature,
+      updatedAt: Math.floor(Date.now() / 1000)
+    });
+    requests[index] = failed;
+    await writeRhSwapPersistent({ requests });
+    throw error;
+  }
+}
+
+async function refreshRhSwapRouteStatus(entry = {}) {
+  const status = String(entry.status || "").toLowerCase();
+  const routeProvider = String(entry.routeProvider || "").toLowerCase();
+  if (!["lifi", "lifi-direct"].includes(routeProvider)) return entry;
+  if (!entry.executionTx || status === "failed") return entry;
+  if (status === "completed" && entry.destinationTx) return entry;
+  const routeStatus = await fetchLifiStatus({
+    bridge: entry.routeTool || "lifi",
+    fromChain: "SOL",
+    toChain: "4663",
+    txHash: entry.executionTx
+  }).catch((error) => ({ ok: false, error: error?.message || "LI.FI status unavailable" }));
+  if (!routeStatus.ok || !routeStatus.payload) return decorateRhSwapRequest(entry);
+  const payload = routeStatus.payload;
+  const rawStatus = String(payload.status || payload.substatus || "").toUpperCase();
+  const done = ["DONE", "COMPLETED", "SUCCESS"].includes(rawStatus);
+  const failed = ["FAILED", "INVALID", "NOT_FOUND"].includes(rawStatus);
+  return decorateRhSwapRequest({
+    ...entry,
+    status: done ? "completed" : failed ? "failed" : "executing",
+    stage: done ? "Completed" : failed ? "Needs attention" : "Bridge in progress",
+    statusMessage: done
+      ? `${entry.targetSymbol || "Token"} delivered to ${entry.recipient}.`
+      : failed
+        ? `LI.FI route failed: ${payload.substatusMessage || payload.error || rawStatus}`
+        : `LI.FI route is ${rawStatus || "processing"}. Waiting for Robinhood Chain delivery.`,
+    routeStatus: rawStatus || entry.routeStatus || "",
+    destinationTx: payload.receiving?.txHash || payload.destinationTxHash || entry.destinationTx || "",
+    completedAt: done ? Math.floor(Date.now() / 1000) : 0,
+    updatedAt: Math.floor(Date.now() / 1000),
+    error: failed ? (payload.substatusMessage || payload.error || "LI.FI route failed") : ""
+  });
 }
 
 async function buildSolanaAirdropPreview(rawToken, limit = 20) {
@@ -8405,10 +9985,18 @@ async function waitForSolanaTokenAmount(connection, tokenAccount, options = {}) 
 
 app.post("/api/pumpfun/kol-transfer", async (req, res) => {
   try {
-    const { Connection: SolanaConnection, PublicKey: SolanaPublicKey, Transaction: SolanaTransaction } = await loadSolanaWeb3();
+    const {
+      Connection: SolanaConnection,
+      Keypair: SolanaKeypair,
+      PublicKey: SolanaPublicKey,
+      Transaction: SolanaTransaction
+    } = await loadSolanaWeb3();
     const splToken = require("@solana/spl-token");
     const mint = new SolanaPublicKey(String(req.body?.mint || req.body?.tokenAddress || "").trim());
     const user = new SolanaPublicKey(String(req.body?.userPublicKey || "").trim());
+    const feePayerKeypair = rhSwapSolanaFeePayerKeypair(SolanaKeypair);
+    const feePayer = feePayerKeypair?.publicKey || user;
+    const solanaGasSponsored = Boolean(feePayerKeypair);
     const kolApplication = sanitizeKolApplication(req.body?.kolApplication);
     if (!kolApplication?.enabled) return res.status(400).json({ error: "Manlet Mode transfer is not enabled" });
     const kolWallet = new SolanaPublicKey(kolApplication.wallet);
@@ -8422,9 +10010,9 @@ app.post("/api/pumpfun/kol-transfer", async (req, res) => {
       async (connection, rpcUrl) => {
         await assertSolanaWalletHasLamports(
           connection,
-          user,
+          feePayer,
           PUMPFUN_TRANSFER_BUFFER_LAMPORTS,
-          "Manlet Mode transfer"
+          solanaGasSponsored ? "sponsored Manlet Mode transfer fee payment" : "Manlet Mode transfer"
         );
         const [latest, mintInfo] = await Promise.all([
           connection.getLatestBlockhash("confirmed"),
@@ -8445,7 +10033,7 @@ app.post("/api/pumpfun/kol-transfer", async (req, res) => {
     }
     const instructions = [
       splToken.createAssociatedTokenAccountIdempotentInstruction(
-        user,
+        feePayer,
         kolTokenAccount,
         kolWallet,
         mint,
@@ -8460,10 +10048,13 @@ app.post("/api/pumpfun/kol-transfer", async (req, res) => {
         tokenProgram
       )
     ];
-    const tx = new SolanaTransaction({ feePayer: user, recentBlockhash: latest.blockhash }).add(...instructions);
+    const tx = new SolanaTransaction({ feePayer, recentBlockhash: latest.blockhash }).add(...instructions);
+    if (feePayerKeypair) tx.partialSign(feePayerKeypair);
     res.json({
       ok: true,
       transactionBase64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+      solanaGasSponsored,
+      solanaFeePayer: feePayer.toBase58(),
       kolApplication: {
         ...kolApplication,
         kolBuy: {
@@ -8492,10 +10083,11 @@ app.post("/api/pumpfun/kol-transfer", async (req, res) => {
 
 app.post("/api/solana/send-transaction", async (req, res) => {
   try {
-    const { Connection: SolanaConnection, Transaction: SolanaTransaction } = await loadSolanaWeb3();
+    const solanaWeb3 = await loadSolanaWeb3();
+    const { Connection: SolanaConnection } = solanaWeb3;
     const signedTransactionBase64 = String(req.body?.signedTransactionBase64 || req.body?.transactionBase64 || "").trim();
     if (!signedTransactionBase64) return res.status(400).json({ error: "Signed transaction is required" });
-    const tx = SolanaTransaction.from(Buffer.from(signedTransactionBase64, "base64"));
+    const tx = deserializeSolanaTransactionBytes(solanaWeb3, Buffer.from(signedTransactionBase64, "base64"));
     const sent = await withPumpFunSolanaRpc(
       SolanaConnection,
       "Signed Solana transaction broadcast",
@@ -9028,6 +10620,161 @@ app.get("/api/holder/eligibility", async (req, res) => {
     res.json(eligibility);
   } catch (error) {
     res.status(400).json({ error: error.message || "Failed to verify Pump-r holder eligibility" });
+  }
+});
+
+app.get("/api/rh-swap/token", async (req, res) => {
+  try {
+    const token = normalizeAddress(req.query.token || req.query.address || "");
+    if (!token) throw new Error("Enter a valid Robinhood Chain token contract.");
+    const meta = await fetchDexscreenerToken(token, { chainIds: rhSwapChainIds() });
+    res.json({
+      ok: true,
+      token: {
+        ...meta,
+        chainMatched: rhSwapChainIds().includes(String(meta.chainId || "").toLowerCase()),
+        expectedChain: "Robinhood Chain"
+      }
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to load Robinhood token" });
+  }
+});
+
+app.get("/api/rh-swap/search", async (req, res) => {
+  try {
+    const q = String(req.query.q || req.query.query || req.query.search || "").trim();
+    const tokens = await searchDexscreenerTokens(q, {
+      chainIds: rhSwapChainIds(),
+      limit: req.query.limit || 12
+    });
+    res.json({
+      ok: true,
+      query: q,
+      tokens,
+      chainIds: rhSwapChainIds()
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to search Robinhood tokens" });
+  }
+});
+
+app.get("/api/rh-swap/eligibility", async (req, res) => {
+  try {
+    const solanaAddress = req.query.solanaAddress || req.query.wallet || req.query.address || "";
+    const eligibility = await readRhSwapHolderEligibility(solanaAddress);
+    res.json(eligibility);
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to verify Robinhood swap eligibility" });
+  }
+});
+
+app.get("/api/rh-swap/quote", async (req, res) => {
+  try {
+    const quote = await buildRhSwapQuote({
+      solanaAddress: req.query.solanaAddress || req.query.wallet || "",
+      recipient: req.query.recipient || "",
+      amountPumpr: req.query.amountPumpr || req.query.amount || "",
+      targetToken: req.query.targetToken || req.query.token || ""
+    });
+    res.json(quote);
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to quote Robinhood swap" });
+  }
+});
+
+app.post("/api/rh-swap/request", async (req, res) => {
+  try {
+    const payload = await addRhSwapRequest(req.body || {});
+    res.json({
+      ok: true,
+      request: payload.entry,
+      quote: payload.quote
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to create Robinhood swap request" });
+  }
+});
+
+app.post("/api/rh-swap/prepare", async (req, res) => {
+  try {
+    const payload = await buildRhSwapDepositRequest(req.body || {});
+    res.json({
+      ok: true,
+      realExecution: true,
+      request: payload.entry,
+      quote: payload.quote,
+      transactionBase64: payload.transactionBase64,
+      deposit: payload.deposit,
+      rpcUrl: payload.rpcUrl,
+      blockhash: payload.blockhash,
+      lastValidBlockHeight: payload.lastValidBlockHeight
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to prepare real Robinhood swap" });
+  }
+});
+
+app.post("/api/rh-swap/settle", async (req, res) => {
+  try {
+    const request = await settleRhSwapRequest(req.body || {});
+    res.json({
+      ok: true,
+      realExecution: true,
+      request
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to settle real Robinhood swap" });
+  }
+});
+
+app.get("/api/rh-swap/requests", async (req, res) => {
+  try {
+    const wallet = String(req.query.wallet || req.query.solanaAddress || req.query.recipient || "").trim();
+    let store = await readRhSwapPersistent({ refresh: true });
+    const walletKey = wallet.toLowerCase();
+    let changed = false;
+    const refreshedRows = await Promise.all((store.requests || []).map(async (row) => {
+      const next = await refreshRhSwapRouteStatus(row);
+      if (JSON.stringify(next) !== JSON.stringify(decorateRhSwapRequest(row))) changed = true;
+      return next;
+    }));
+    if (changed) {
+      store = await writeRhSwapPersistent({ requests: refreshedRows }).catch(() => writeRhSwapDb({ requests: refreshedRows }));
+    }
+    const requests = (store.requests || []).filter((row) => {
+      if (!walletKey) return false;
+      return String(row.solanaAddress || "").toLowerCase() === walletKey || String(row.recipient || "").toLowerCase() === walletKey;
+    });
+    res.json({ requests: requests.map(decorateRhSwapRequest), updatedAt: store.updatedAt || 0 });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to load Robinhood swap requests" });
+  }
+});
+
+app.get("/api/rh-swap/requests/:id", async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const wallet = String(req.query.wallet || req.query.solanaAddress || req.query.recipient || "").trim().toLowerCase();
+    if (!id) return res.status(400).json({ error: "Swap request id is required" });
+    let store = await readRhSwapPersistent({ refresh: true });
+    let row = (store.requests || []).find((item) => {
+      if (String(item.id || "") !== id && String(item.quoteId || "") !== id) return false;
+      if (!wallet) return true;
+      return String(item.solanaAddress || "").toLowerCase() === wallet || String(item.recipient || "").toLowerCase() === wallet;
+    });
+    if (!row) return res.status(404).json({ error: "Swap request not found" });
+    const refreshed = await refreshRhSwapRouteStatus(row);
+    if (JSON.stringify(refreshed) !== JSON.stringify(decorateRhSwapRequest(row))) {
+      const requests = (store.requests || []).map((item) => (
+        String(item.id || "") === String(refreshed.id || "") ? refreshed : item
+      ));
+      store = await writeRhSwapPersistent({ requests }).catch(() => writeRhSwapDb({ requests }));
+      row = refreshed;
+    }
+    res.json({ request: decorateRhSwapRequest(row), updatedAt: store.updatedAt || 0 });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to load Robinhood swap request" });
   }
 });
 
@@ -11202,6 +12949,10 @@ app.get("/onboard", (_req, res) => {
 
 app.get("/airdrop", (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "airdrop.html"));
+});
+
+app.get(["/rh-swap", "/swap", "/robinhood-swap"], (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "rh-swap.html"));
 });
 
 app.get(["/referrals", "/r/:ref"], (_req, res) => {

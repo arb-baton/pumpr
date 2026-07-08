@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Pump-r.fun | Robinhood Swap</title>
+    <link rel="icon" type="image/png" href="/assets/favicon.png?v=20260609brand" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#07080a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Pump-r" />
+    <link rel="apple-touch-icon" href="/assets/pump-r-logo.png?v=20260609brand" />
+    <script defer src="/js/pwa.js?v=20260706android"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260708rhswap11" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="appSidebar">
+        <div class="sidebar-top">
+          <a class="logo" href="/">
+            <img class="logo-mark" src="/assets/pump-r-logo.png?v=20260609brand" alt="Pump-r logo" />
+            <span class="logo-title"><span class="logo-name">Pump-r</span><span class="logo-sep">.</span><span class="logo-tld">fun</span></span>
+          </a>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
+            <svg viewBox="0 0 20 12" aria-hidden="true"><rect x="1.5" y="1" width="1.5" height="10" rx="0.75"></rect><rect x="17" y="1" width="1.5" height="10" rx="0.75"></rect><path d="M11.2 3.2L8.2 6l3 2.8"></path></svg>
+          </button>
+        </div>
+        <nav class="side-nav">
+          <a class="side-link side-link-home" href="/"><span class="side-icon" aria-hidden="true"></span><span class="side-link-label">Home</span></a>
+        </nav>
+        <a class="side-create-btn" href="/create">Create</a>
+      </aside>
+
+      <main class="main-pane rhswap-page">
+        <div class="promo-strip home-contract-strip">
+          <span>Pump Fun Remastered is better</span>
+          <a href="https://pump.fun/coin/C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump" target="_blank" rel="noopener noreferrer">
+            CA: C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump
+          </a>
+        </div>
+
+        <header class="topbar create-topbar">
+          <div class="create-searchbar">
+            <a href="/" class="create-back-btn" aria-label="Back to home">&larr;</a>
+            <input value="Swap $PUMPR into Robinhood Chain tokens" readonly aria-label="Swap PUMPR into Robinhood Chain tokens" />
+          </div>
+          <div class="top-actions">
+            <button id="signInBtn" class="btn-primary top-action-btn sign-in-btn" type="button">Sign in</button>
+            <select id="walletChoice" hidden aria-hidden="true" tabindex="-1"></select>
+            <button id="connectBtn" hidden type="button">Connect</button>
+            <button id="disconnectBtn" hidden type="button">Disconnect</button>
+            <span id="walletAddress" hidden></span>
+          </div>
+        </header>
+
+        <section class="rhswap-shell rhswap-terminal-shell">
+          <article class="rhswap-feedback">
+            <div class="rhswap-feedback-icon">RH</div>
+            <div>
+              <strong>$PUMPR-powered Robinhood Chain swap</strong>
+              <span>Your connected wallet swaps $PUMPR through LI.FI. The dev wallet only backs SOL gas if your wallet needs it.</span>
+            </div>
+            <button class="rhswap-feedback-close" type="button" aria-label="Hide beta note">X</button>
+          </article>
+
+          <form id="rhswapForm" class="rhswap-terminal">
+            <div class="rhswap-tabs" role="tablist" aria-label="Swap mode">
+              <button class="active" type="button">Market</button>
+              <button type="button">Limit</button>
+              <button type="button">Recurring</button>
+              <span>Beta</span>
+            </div>
+
+            <section class="rhswap-swap-card rhswap-sell-card">
+              <div class="rhswap-card-head">
+                <span>Sell</span>
+                <b id="rhswapGrossUsd">$0.00</b>
+              </div>
+              <div class="rhswap-token-row">
+                <button class="rhswap-token-pill fixed" type="button" aria-label="Selling PUMPR">
+                  <img src="/assets/pump-r-logo.png?v=20260609brand" alt="" />
+                  <span>PUMPR</span>
+                </button>
+                <input id="rhswapAmount" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="PUMPR amount" />
+              </div>
+              <small id="rhswapGateMeta">0.1% $PUMPR minimum</small>
+            </section>
+
+            <button class="rhswap-flip-btn" type="button" aria-label="Swap direction" disabled>&#8645;</button>
+
+            <section class="rhswap-swap-card rhswap-buy-card">
+              <div class="rhswap-card-head">
+                <span>Buy on Robinhood Chain</span>
+                <button id="rhswapPasteToken" class="rhswap-mini-btn" type="button">Paste CA</button>
+              </div>
+              <div class="rhswap-token-row">
+                <button id="rhswapOpenTokenPicker" class="rhswap-token-pill" type="button">
+                  <span id="rhswapTokenIcon" class="rhswap-token-letter">RH</span>
+                  <span id="rhswapSelectedSymbol">Select token</span>
+                  <em>⌄</em>
+                </button>
+                <strong id="rhswapReceiveAmount" class="rhswap-receive-big">-</strong>
+              </div>
+              <input id="rhswapTargetToken" class="rhswap-hidden-address" autocomplete="off" placeholder="0x..." aria-label="Robinhood Chain token contract" />
+              <small id="rhswapSelectedMeta">Paste or search a Robinhood Chain token contract.</small>
+            </section>
+
+            <div class="rhswap-action-area">
+              <div class="rhswap-action-copy">
+                <strong>Live quote</strong>
+                <span>Quote updates as you type. You sign the $PUMPR swap from your wallet; Pump-r only helps with SOL gas if needed.</span>
+              </div>
+              <div class="rhswap-action-buttons">
+                <button id="rhswapQuoteBtn" class="btn-ghost rhswap-refresh-btn" type="submit">Refresh quote</button>
+                <button id="rhswapRequestBtn" class="btn-primary rhswap-main-btn" type="button" disabled>Submit swap</button>
+              </div>
+              <p id="rhswapStatus" class="alert"></p>
+            </div>
+
+            <section id="rhswapProgress" class="rhswap-progress-card" hidden aria-live="polite">
+              <div class="rhswap-progress-head">
+                <span id="rhswapProgressIcon" class="rhswap-spinner" aria-hidden="true"></span>
+                <div>
+                  <strong id="rhswapProgressTitle">Preparing swap</strong>
+                  <small id="rhswapProgressText">Quote and wallet are being checked.</small>
+                </div>
+                <b id="rhswapProgressEta">~15s</b>
+              </div>
+              <div class="rhswap-progress-bar" aria-hidden="true"><span id="rhswapProgressFill"></span></div>
+              <div class="rhswap-progress-steps">
+                <span data-rhswap-step="awaiting_deposit_signature">Sign</span>
+                <span data-rhswap-step="deposit_submitted">Submit</span>
+                <span data-rhswap-step="executing">Route</span>
+                <span data-rhswap-step="completed">Complete</span>
+              </div>
+              <small id="rhswapProgressMeta" class="rhswap-progress-meta">No tokens move until execution is complete.</small>
+            </section>
+
+            <section class="rhswap-live-details">
+              <div><span>Gate</span><b id="rhswapGateStatus">Connect wallet</b></div>
+              <div><span>After fees + gas</span><b id="rhswapNetUsd">$0.00</b></div>
+              <div><span>Minimum receive</span><b id="rhswapMinReceive">-</b></div>
+              <div><span>Platform fee</span><b id="rhswapFee">-</b></div>
+              <div><span>RH gas reserve</span><b id="rhswapGas">-</b></div>
+              <div><span>Gas model</span><b id="rhswapGasModel">Powered by $PUMPR</b></div>
+              <div><span>Route</span><b id="rhswapRoute">PUMPR -> RH token</b></div>
+            </section>
+          </form>
+
+          <div class="rhswap-market-strip">
+            <article>
+              <img src="/assets/pump-r-logo.png?v=20260609brand" alt="" />
+              <div><strong>PUMPR</strong><span>C64Fr3...pump</span></div>
+              <b id="rhswapPumprPrice">Live</b>
+            </article>
+            <article>
+              <span id="rhswapMarketIcon" class="rhswap-token-letter">RH</span>
+              <div><strong id="rhswapMarketSymbol">Robinhood token</strong><span id="rhswapMarketChain">Waiting for CA</span></div>
+              <b id="rhswapMarketPrice">-</b>
+            </article>
+          </div>
+
+          <details class="rhswap-destination" open>
+            <summary>
+              <span>Receive wallet</span>
+              <small>Generate a new RH wallet or use your own EVM wallet</small>
+            </summary>
+            <div class="rhswap-destination-body">
+              <div class="rhswap-mode-tabs" role="tablist" aria-label="Receive wallet mode">
+                <button id="rhswapUseGenerated" class="active" type="button">Generated</button>
+                <button id="rhswapUseExisting" type="button">Existing</button>
+              </div>
+
+              <div id="rhswapGeneratedPanel" class="rhswap-wallet-card">
+                <div>
+                  <small>Robinhood EVM wallet</small>
+                  <strong id="rhswapGeneratedAddress">No wallet generated yet</strong>
+                  <span id="rhswapGeneratedMeta">Create a fresh wallet for this profile.</span>
+                </div>
+                <div class="rhswap-wallet-actions">
+                  <button id="rhswapGenerateWallet" class="btn-primary" type="button">Generate wallet</button>
+                  <button id="rhswapExportWallet" class="btn-ghost" type="button" disabled>Export key</button>
+                </div>
+              </div>
+
+              <label id="rhswapExistingPanel" hidden>
+                Existing Robinhood Chain wallet
+                <input id="rhswapRecipient" autocomplete="off" placeholder="0x..." />
+              </label>
+            </div>
+          </details>
+
+          <section class="rhswap-panel panel-card">
+            <div class="rhswap-panel-head inline">
+              <div>
+                <small>Profile history</small>
+                <h2>Swap queue</h2>
+              </div>
+              <button id="rhswapRefreshHistory" class="btn-ghost" type="button">Refresh</button>
+            </div>
+            <div id="rhswapHistory" class="rhswap-history"><p class="muted">Connect wallet to load swap history.</p></div>
+          </section>
+        </section>
+
+        <div id="rhswapTokenModal" class="modal-overlay" aria-hidden="true">
+          <div class="rhswap-token-modal">
+            <div class="rhswap-token-search">
+              <span>⌕</span>
+              <input id="rhswapTokenSearch" autocomplete="off" placeholder="Search or paste token CA. Use 0x for exact match." />
+              <button id="rhswapTokenClose" type="button">Esc</button>
+            </div>
+            <div class="rhswap-token-tabs" role="tablist" aria-label="Token lists">
+              <button class="active" type="button">Top</button>
+              <button type="button">Robinhood</button>
+              <button type="button">Recent</button>
+            </div>
+            <div id="rhswapTokenResults" class="rhswap-token-results"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <div id="rhswapKeyModal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card private-key-card">
+        <div class="edit-profile-head">
+          <h3>Robinhood wallet private key</h3>
+          <button id="rhswapKeyClose" class="btn-ghost" type="button">X</button>
+        </div>
+        <p>This key controls the generated Robinhood Chain EVM wallet. Keep it private.</p>
+        <label class="private-key-field">
+          <span>Private key</span>
+          <textarea id="rhswapPrivateKey" readonly spellcheck="false"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button id="rhswapCopyKey" class="btn-primary" type="button">Copy private key</button>
+          <button id="rhswapKeyDone" class="btn-ghost" type="button">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/sidebar.js?v=20260708rhswap11"></script>
+    <script type="module" src="/js/rh-swap.js?v=20260708rhswap11"></script>
+  </body>
+</html>
