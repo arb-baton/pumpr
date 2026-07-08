@@ -4830,7 +4830,13 @@ async function buildRhSwapDirectLifiRequest(value = {}) {
   const recipient = normalizeAddress(value.recipient || value.destination || "");
   if (!recipient) throw new Error("Enter a valid Robinhood Chain destination wallet.");
 
-  const { Connection: SolanaConnection, Keypair: SolanaKeypair, PublicKey: SolanaPublicKey } = await loadSolanaWeb3();
+  const {
+    Connection: SolanaConnection,
+    Keypair: SolanaKeypair,
+    PublicKey: SolanaPublicKey,
+    Transaction: SolanaTransaction,
+    VersionedTransaction: SolanaVersionedTransaction
+  } = await loadSolanaWeb3();
   const splToken = require("@solana/spl-token");
   const mint = new SolanaPublicKey(OFFICIAL_PUMPFUN_MINT);
   const user = new SolanaPublicKey(quote.solanaAddress);
@@ -4888,6 +4894,19 @@ async function buildRhSwapDirectLifiRequest(value = {}) {
   const lifiQuote = lifiPreflight.quote || {};
   const transactionBase64 = String(lifiQuote?.transactionRequest?.data || "").trim();
   if (!transactionBase64) throw new Error("LI.FI did not return a user-wallet swap transaction for this route.");
+  const routeTx = deserializeSolanaTransactionBytes(
+    {
+      Transaction: SolanaTransaction,
+      VersionedTransaction: SolanaVersionedTransaction
+    },
+    Buffer.from(transactionBase64, "base64")
+  );
+  assertPhantomSingleUserSigner(routeTx, user, "Robinhood swap route");
+  try {
+    await simulateSolanaTransaction(rpcState.connection, routeTx, "Robinhood swap route");
+  } catch (error) {
+    throw new Error(phantomSimulationErrorMessage(error, "Robinhood swap route"));
+  }
   const amounts = extractLifiQuoteAmounts(lifiQuote);
 
   const now = Math.floor(Date.now() / 1000);
@@ -8774,6 +8793,45 @@ async function simulateSolanaTransaction(connection, tx, label = "Solana transac
   return simulated;
 }
 
+function solanaRequiredSignerTexts(tx = {}) {
+  try {
+    if (tx?.message?.header && Array.isArray(tx?.message?.staticAccountKeys)) {
+      const count = Number(tx.message.header.numRequiredSignatures || 0);
+      return tx.message.staticAccountKeys.slice(0, count).map((key) => key?.toBase58?.() || String(key || "")).filter(Boolean);
+    }
+    if (Array.isArray(tx?.signatures)) {
+      return tx.signatures.map((row) => row?.publicKey?.toBase58?.() || String(row?.publicKey || "")).filter(Boolean);
+    }
+  } catch {
+    // Fall through to an empty signer list.
+  }
+  return [];
+}
+
+function assertPhantomSingleUserSigner(tx = {}, expectedSigner = "", label = "Solana transaction") {
+  const expected = expectedSigner?.toBase58?.() || String(expectedSigner || "").trim();
+  const signers = [...new Set(solanaRequiredSignerTexts(tx))];
+  if (!expected) throw new Error(`${label} is missing the connected wallet signer.`);
+  if (!signers.includes(expected)) {
+    throw new Error(`${label} is not requesting a signature from the connected wallet. Reconnect Phantom and try again.`);
+  }
+  if (signers.length > 1) {
+    throw new Error(`${label} requires ${signers.length} signers. Phantom may block that as unsafe, so Pump-r is stopping it before the wallet popup. Try again or use a route that only needs your connected wallet.`);
+  }
+  return signers;
+}
+
+function phantomSimulationErrorMessage(error, label = "Solana transaction") {
+  const message = String(error?.message || error || "");
+  if (/insufficient|Attempt to debit|custom program error: 0x1|Custom\":1|Custom:1/i.test(message)) {
+    return `${label} cannot be simulated safely. This usually means the connected wallet needs more SOL for gas/rent or enough token balance for the route. Add a little SOL and try again.`;
+  }
+  if (/blockhash|Blockhash/i.test(message)) {
+    return `${label} quote expired before signing. Refresh the quote and submit again.`;
+  }
+  return `${label} cannot be simulated safely, so Pump-r stopped it before Phantom showed a risk warning. ${message}`;
+}
+
 function getPublicBaseUrl(req) {
   const explicit = String(process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL || "").trim().replace(/\/+$/, "");
   if (explicit) return explicit;
@@ -9529,13 +9587,10 @@ app.post("/api/pumpfun/launch", async (req, res) => {
           feePayer: user,
           recentBlockhash: latest.blockhash
         }).add(...instructions);
-    let presignSimulationWarning = "";
     try {
       await simulateSolanaTransaction(connection, tx, "Pump.fun create");
     } catch (error) {
-      // Phantom and finalization still perform the signed path; unsigned Pump.fun
-      // create simulation can fail before the browser wallet signature exists.
-      presignSimulationWarning = error.message || "Unsigned Pump.fun create simulation skipped";
+      throw new Error(phantomSimulationErrorMessage(error, "Pump.fun create"));
     }
     const mint = mintKeypair.publicKey.toBase58();
     const signingToken = encryptPumpFunSigningPayload({
@@ -9583,7 +9638,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       kolApplication,
       holderEligibility,
       devBuyLamports: devBuyLamports.toString(),
-      presignSimulationWarning,
+      presignSimulationWarning: "",
       walletBroadcast,
       rpcUrl,
       blockhash: latest.blockhash,
