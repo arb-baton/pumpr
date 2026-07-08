@@ -4072,7 +4072,14 @@ function rhSwapSolanaFeePayerSecret() {
 function rhSwapSolanaTreasurySecret() {
   return firstValidSolanaSecret(
     "PUMPR_RH_SWAP_SOLANA_TREASURY_SECRET_KEY",
-    "PUMPR_RH_SWAP_SOLANA_TREASURY_PRIVATE_KEY"
+    "PUMPR_RH_SWAP_SOLANA_TREASURY_PRIVATE_KEY",
+    "PUMPR_DEV_WALLET_SECRET_KEY",
+    "PUMPR_DEV_WALLET_PRIVATE_KEY",
+    "PUMPR_ADMIN_SOLANA_SECRET_KEY",
+    "PUMPR_ADMIN_SOLANA_PRIVATE_KEY",
+    "PUMPR_AIRDROP_SOLANA_SECRET_KEY",
+    "PUMPR_AIRDROP_SOLANA_PRIVATE_KEY",
+    "SOLANA_PRIVATE_KEY"
   );
 }
 
@@ -4157,7 +4164,7 @@ function assertRhSwapRealExecutionConfigured() {
     throw new Error("PUMPR_RH_SWAP_SOLANA_TREASURY is required for real swaps.");
   }
   if (!rhSwapDirectUserLifiEnabled() && !(rhSwapTreasuryRoutingEnabled() && rhSwapSolanaTreasurySecret()) && !(rhSwapTreasuryFallbackEnabled() && rhSwapEvmTreasuryPrivateKey())) {
-    throw new Error("Safe RH swaps require PUMPR_RH_SWAP_SOLANA_TREASURY_SECRET_KEY so the connected wallet only signs a simple PUMPR transfer. Direct Phantom LI.FI routing is disabled because Phantom may block complex cross-chain route transactions.");
+    throw new Error("Safe RH swaps need a Solana treasury key. Add PUMPR_RH_SWAP_SOLANA_TREASURY_SECRET_KEY or use the existing PUMPR_DEV_WALLET_SECRET_KEY/PUMPR_ADMIN_SOLANA_SECRET_KEY so the connected wallet only signs a simple PUMPR transfer.");
   }
 }
 
