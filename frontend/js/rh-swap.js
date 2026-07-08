@@ -222,8 +222,8 @@ function progressMetaFor(row = {}) {
   if (status === "failed") return row.error || "This request stopped before execution.";
   if (status === "awaiting_deposit_signature") {
     return row.solanaGasSponsored
-      ? "Dev wallet backed SOL gas only. Phantom still signs the PUMPR swap from your wallet."
-      : "Phantom will ask your connected wallet to sign the PUMPR swap.";
+      ? "Dev wallet can back SOL gas only. Phantom signs the PUMPR deposit from your wallet."
+      : "Phantom will ask your connected wallet to sign the PUMPR deposit.";
   }
   if (status === "deposit_submitted") {
     if (directRoute) return row.depositSignature ? `User-wallet route: ${shortAddress(row.depositSignature)}` : "Waiting for Solana route confirmation.";

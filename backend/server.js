@@ -4136,6 +4136,11 @@ function rhSwapDirectUserLifiEnabled() {
   return ["1", "true", "yes", "on"].includes(raw) && ["1", "true", "yes", "on"].includes(unsafeOverride);
 }
 
+function rhSwapForceDirectUserLifi() {
+  const raw = String(process.env.PUMPR_RH_SWAP_FORCE_DIRECT_USER_LIFI || "0").trim().toLowerCase();
+  return ["1", "true", "yes", "on"].includes(raw);
+}
+
 function rhSwapTreasuryRoutingEnabled() {
   const raw = String(process.env.PUMPR_RH_SWAP_TREASURY_ROUTING_ENABLED || "1").trim().toLowerCase();
   const hardDisable = String(process.env.PUMPR_RH_SWAP_DISABLE_TREASURY_ROUTING || "0").trim().toLowerCase();
@@ -4153,13 +4158,14 @@ function rhSwapRouteStatus() {
   const evmTreasuryConfigured = Boolean(rhSwapEvmTreasuryPrivateKey());
   const lifiTreasuryReady = treasuryRoutingEnabled && lifiEnabled && treasurySecretConfigured;
   const fallbackReady = treasuryFallbackEnabled && Boolean(rhSwapSolanaTreasury()) && evmTreasuryConfigured;
-  const executionConfigured = Boolean((lifiEnabled && directUserLifiEnabled) || lifiTreasuryReady || fallbackReady);
-  const routeProvider = lifiEnabled && directUserLifiEnabled
-    ? "lifi-direct"
-    : lifiTreasuryReady
+  const directReady = lifiEnabled && directUserLifiEnabled && rhSwapForceDirectUserLifi() && !lifiTreasuryReady;
+  const executionConfigured = Boolean(lifiTreasuryReady || fallbackReady || directReady);
+  const routeProvider = lifiTreasuryReady
     ? "lifi"
     : fallbackReady
     ? "treasury"
+    : directReady
+    ? "lifi-direct"
     : "setup-required";
   const setupReason = executionConfigured
     ? ""
@@ -4176,6 +4182,7 @@ function rhSwapRouteStatus() {
     setupReason,
     lifiEnabled,
     directUserLifiEnabled,
+    forceDirectUserLifi: rhSwapForceDirectUserLifi(),
     treasuryRoutingEnabled,
     treasurySecretConfigured,
     treasuryFallbackEnabled,
@@ -5030,7 +5037,8 @@ async function buildRhSwapDirectLifiRequest(value = {}) {
 
 async function buildRhSwapDepositRequest(value = {}) {
   assertRhSwapRealExecutionConfigured();
-  if (rhSwapLifiEnabled() && rhSwapDirectUserLifiEnabled()) {
+  const routeStatus = rhSwapRouteStatus();
+  if (routeStatus.routeProvider === "lifi-direct") {
     return await buildRhSwapDirectLifiRequest(value);
   }
   const quote = await buildRhSwapQuote(value);
@@ -8863,6 +8871,12 @@ function solanaRequiredSignerTexts(tx = {}) {
     if (tx?.message?.header && Array.isArray(tx?.message?.staticAccountKeys)) {
       const count = Number(tx.message.header.numRequiredSignatures || 0);
       return tx.message.staticAccountKeys.slice(0, count).map((key) => key?.toBase58?.() || String(key || "")).filter(Boolean);
+    }
+    if (typeof tx?.compileMessage === "function") {
+      const message = tx.compileMessage();
+      const count = Number(message?.header?.numRequiredSignatures || 0);
+      const keys = Array.isArray(message?.accountKeys) ? message.accountKeys : [];
+      return keys.slice(0, count).map((key) => key?.toBase58?.() || String(key || "")).filter(Boolean);
     }
     if (Array.isArray(tx?.signatures)) {
       return tx.signatures.map((row) => row?.publicKey?.toBase58?.() || String(row?.publicKey || "")).filter(Boolean);
