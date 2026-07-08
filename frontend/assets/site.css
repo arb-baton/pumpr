@@ -18067,6 +18067,32 @@ button[disabled] {
   color: #ff8fa6;
 }
 
+.rhswap-progress-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.rhswap-progress-foot .rhswap-progress-meta {
+  min-width: 0;
+}
+
+.rhswap-cancel-progress {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0.42rem 0.7rem;
+  border-color: rgba(146, 158, 197, 0.18);
+  background: rgba(13, 19, 25, 0.68);
+  color: #d8e0ff;
+  font-size: 0.76rem;
+}
+
+.rhswap-cancel-progress:hover {
+  border-color: rgba(111, 240, 165, 0.34);
+  color: #6ff0a5;
+}
+
 .rhswap-live-details {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

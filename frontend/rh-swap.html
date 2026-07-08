@@ -18,7 +18,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260708rhswap11" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260708rhswap13" />
   </head>
   <body>
     <div class="app-shell">
@@ -140,7 +140,10 @@
                 <span data-rhswap-step="executing">Route</span>
                 <span data-rhswap-step="completed">Complete</span>
               </div>
-              <small id="rhswapProgressMeta" class="rhswap-progress-meta">No tokens move until execution is complete.</small>
+              <div class="rhswap-progress-foot">
+                <small id="rhswapProgressMeta" class="rhswap-progress-meta">No tokens move until execution is complete.</small>
+                <button id="rhswapCancelProgress" class="btn-ghost rhswap-cancel-progress" type="button">Start new</button>
+              </div>
             </section>
 
             <section class="rhswap-live-details">
@@ -246,6 +249,6 @@
     </div>
 
     <script src="/js/sidebar.js?v=20260708rhswap11"></script>
-    <script type="module" src="/js/rh-swap.js?v=20260708rhswap12"></script>
+    <script type="module" src="/js/rh-swap.js?v=20260708rhswap13"></script>
   </body>
 </html>

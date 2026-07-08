@@ -64,6 +64,7 @@ const ui = {
   progressEta: document.getElementById("rhswapProgressEta"),
   progressFill: document.getElementById("rhswapProgressFill"),
   progressMeta: document.getElementById("rhswapProgressMeta"),
+  cancelProgress: document.getElementById("rhswapCancelProgress"),
   history: document.getElementById("rhswapHistory"),
   refreshHistory: document.getElementById("rhswapRefreshHistory"),
   keyModal: document.getElementById("rhswapKeyModal"),
@@ -277,6 +278,14 @@ function renderProgress(row = null, options = {}) {
     step.classList.toggle("is-active", index === activeIndex);
     step.classList.toggle("is-done", index >= 0 && index < activeIndex);
   });
+}
+
+function resetActiveSwap(message = "Ready for a new swap.") {
+  stopPolling();
+  state.activeRequest = null;
+  if (ui.progress) ui.progress.hidden = true;
+  setAlert(ui.status, message);
+  renderQuote();
 }
 
 function stopPolling() {
@@ -829,7 +838,8 @@ async function loadHistory() {
     renderHistoryRows(rows);
     const recentLive = rows.find((row) => {
       const age = Math.floor(Date.now() / 1000) - Number(row.createdAt || 0);
-      return age < 15 * 60 && !["completed", "failed"].includes(normalizeRequestStatus(row.status));
+      const status = normalizeRequestStatus(row.status);
+      return age < 15 * 60 && !["completed", "failed", "awaiting_deposit_signature"].includes(status);
     });
     if (!state.activeRequest && recentLive) {
       state.activeRequest = recentLive;
@@ -1135,6 +1145,9 @@ function bindEvents() {
     } finally {
       renderQuote();
     }
+  });
+  ui.cancelProgress?.addEventListener("click", () => {
+    resetActiveSwap("Canceled the old signing prompt. You can refresh the quote or submit a new swap.");
   });
   ui.refreshHistory?.addEventListener("click", () => loadHistory().catch(() => {}));
   window.addEventListener("etherpump:walletChanged", () => syncWallet().catch(() => {}));
