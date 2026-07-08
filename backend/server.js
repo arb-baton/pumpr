@@ -4099,13 +4099,20 @@ async function rhSwapSolanaTreasuryStatus() {
   const { Keypair: SolanaKeypair } = await loadSolanaWeb3();
   const treasuryKeypair = rhSwapSolanaTreasuryKeypair(SolanaKeypair);
   const feePayerKeypair = rhSwapSolanaFeePayerKeypair(SolanaKeypair);
+  const routeStatus = rhSwapRouteStatus();
   return {
     routeTreasuryConfigured: Boolean(treasuryKeypair),
     feePayerConfigured: Boolean(feePayerKeypair),
     treasuryAddress: treasuryKeypair?.publicKey?.toBase58?.() || rhSwapSolanaTreasury(),
     feePayerAddress: feePayerKeypair?.publicKey?.toBase58?.() || "",
     lifiEnabled: rhSwapLifiEnabled(),
-    treasuryFallbackEnabled: rhSwapTreasuryFallbackEnabled()
+    treasuryFallbackEnabled: rhSwapTreasuryFallbackEnabled(),
+    routeProvider: routeStatus.routeProvider,
+    executionConfigured: routeStatus.executionConfigured,
+    setupReason: routeStatus.setupReason,
+    treasuryRoutingEnabled: routeStatus.treasuryRoutingEnabled,
+    treasurySecretConfigured: routeStatus.treasurySecretConfigured,
+    directUserLifiEnabled: routeStatus.directUserLifiEnabled
   };
 }
 
@@ -4131,7 +4138,49 @@ function rhSwapDirectUserLifiEnabled() {
 
 function rhSwapTreasuryRoutingEnabled() {
   const raw = String(process.env.PUMPR_RH_SWAP_TREASURY_ROUTING_ENABLED || "1").trim().toLowerCase();
-  return ["1", "true", "yes", "on"].includes(raw);
+  const hardDisable = String(process.env.PUMPR_RH_SWAP_DISABLE_TREASURY_ROUTING || "0").trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(hardDisable)) return false;
+  if (["0", "false", "no", "off"].includes(raw) && !rhSwapSolanaTreasurySecret()) return false;
+  return true;
+}
+
+function rhSwapRouteStatus() {
+  const lifiEnabled = rhSwapLifiEnabled();
+  const directUserLifiEnabled = rhSwapDirectUserLifiEnabled();
+  const treasuryRoutingEnabled = rhSwapTreasuryRoutingEnabled();
+  const treasurySecretConfigured = Boolean(rhSwapSolanaTreasurySecret());
+  const treasuryFallbackEnabled = rhSwapTreasuryFallbackEnabled();
+  const evmTreasuryConfigured = Boolean(rhSwapEvmTreasuryPrivateKey());
+  const lifiTreasuryReady = treasuryRoutingEnabled && lifiEnabled && treasurySecretConfigured;
+  const fallbackReady = treasuryFallbackEnabled && Boolean(rhSwapSolanaTreasury()) && evmTreasuryConfigured;
+  const executionConfigured = Boolean((lifiEnabled && directUserLifiEnabled) || lifiTreasuryReady || fallbackReady);
+  const routeProvider = lifiEnabled && directUserLifiEnabled
+    ? "lifi-direct"
+    : lifiTreasuryReady
+    ? "lifi"
+    : fallbackReady
+    ? "treasury"
+    : "setup-required";
+  const setupReason = executionConfigured
+    ? ""
+    : !lifiEnabled
+    ? "LI.FI routing is disabled. Set PUMPR_RH_SWAP_LIFI_ENABLED=1 for live RH swaps."
+    : !treasuryRoutingEnabled && !directUserLifiEnabled
+    ? "Safe RH swaps are disabled by PUMPR_RH_SWAP_DISABLE_TREASURY_ROUTING. Remove it or set it to 0."
+    : !treasurySecretConfigured && !fallbackReady
+    ? "Safe RH swaps need a valid Solana treasury/dev key. Add PUMPR_RH_SWAP_SOLANA_TREASURY_SECRET_KEY or PUMPR_DEV_WALLET_SECRET_KEY."
+    : "Safe RH swap routing is not fully configured yet.";
+  return {
+    executionConfigured,
+    routeProvider,
+    setupReason,
+    lifiEnabled,
+    directUserLifiEnabled,
+    treasuryRoutingEnabled,
+    treasurySecretConfigured,
+    treasuryFallbackEnabled,
+    evmTreasuryConfigured
+  };
 }
 
 function rhSwapLifiBaseUrl() {
@@ -4152,19 +4201,16 @@ function rhSwapEvmTreasuryPrivateKey() {
 }
 
 function rhSwapRealExecutionConfigured() {
-  return Boolean(
-    (rhSwapLifiEnabled() && rhSwapDirectUserLifiEnabled()) ||
-    (rhSwapTreasuryRoutingEnabled() && rhSwapLifiEnabled() && rhSwapSolanaTreasurySecret()) ||
-      (rhSwapTreasuryFallbackEnabled() && rhSwapSolanaTreasury() && rhSwapEvmTreasuryPrivateKey())
-  );
+  return rhSwapRouteStatus().executionConfigured;
 }
 
 function assertRhSwapRealExecutionConfigured() {
   if (!rhSwapSolanaTreasury()) {
     throw new Error("PUMPR_RH_SWAP_SOLANA_TREASURY is required for real swaps.");
   }
-  if (!rhSwapDirectUserLifiEnabled() && !(rhSwapTreasuryRoutingEnabled() && rhSwapSolanaTreasurySecret()) && !(rhSwapTreasuryFallbackEnabled() && rhSwapEvmTreasuryPrivateKey())) {
-    throw new Error("Safe RH swaps need a Solana treasury key. Add PUMPR_RH_SWAP_SOLANA_TREASURY_SECRET_KEY or use the existing PUMPR_DEV_WALLET_SECRET_KEY/PUMPR_ADMIN_SOLANA_SECRET_KEY so the connected wallet only signs a simple PUMPR transfer.");
+  const routeStatus = rhSwapRouteStatus();
+  if (!routeStatus.executionConfigured) {
+    throw new Error(routeStatus.setupReason || "Safe RH swaps are not fully configured.");
   }
 }
 
@@ -4493,17 +4539,15 @@ async function buildRhSwapQuote(value = {}) {
     lifiEnabled: rhSwapLifiEnabled(),
     treasuryFallbackEnabled: rhSwapTreasuryFallbackEnabled()
   }));
+  const routeStatus = rhSwapRouteStatus();
   const quote = {
     quoteId: `rhswap_${Date.now().toString(36)}_${crypto.randomBytes(4).toString("hex")}`,
     createdAt: Math.floor(Date.now() / 1000),
     status: "quote",
-    mode: rhSwapRealExecutionConfigured() ? "real-cross-chain-settlement" : "beta-settlement",
-    executionConfigured: rhSwapRealExecutionConfigured(),
-    routeProvider: rhSwapLifiEnabled() && rhSwapDirectUserLifiEnabled()
-      ? "lifi-direct"
-      : rhSwapTreasuryRoutingEnabled() && rhSwapLifiEnabled() && rhSwapSolanaTreasurySecret()
-      ? "lifi"
-      : (rhSwapTreasuryFallbackEnabled() && rhSwapEvmTreasuryPrivateKey() ? "treasury" : "setup-required"),
+    mode: routeStatus.executionConfigured ? "real-cross-chain-settlement" : "beta-settlement",
+    executionConfigured: routeStatus.executionConfigured,
+    routeProvider: routeStatus.routeProvider,
+    setupReason: routeStatus.setupReason,
     treasuryStatus,
     solanaAddress,
     recipient,
@@ -4529,11 +4573,13 @@ async function buildRhSwapQuote(value = {}) {
       rhGasDeductedFromPumpr: true,
       solanaGasSponsored: rhSwapSolanaGasSponsored(),
       solanaFeePayerRequired: !rhSwapSolanaGasSponsored(),
-      routeProvider: rhSwapLifiEnabled() && rhSwapDirectUserLifiEnabled()
+      routeProvider: routeStatus.routeProvider === "lifi-direct"
         ? "LI.FI user wallet"
-        : rhSwapTreasuryRoutingEnabled() && rhSwapLifiEnabled() && rhSwapSolanaTreasurySecret()
+        : routeStatus.routeProvider === "lifi"
         ? "LI.FI"
-        : (rhSwapTreasuryFallbackEnabled() && rhSwapEvmTreasuryPrivateKey() ? "Treasury fallback" : "Setup required")
+        : routeStatus.routeProvider === "treasury"
+        ? "Treasury fallback"
+        : "Setup required"
     },
     grossUsd,
     netUsd: netUsdBeforeSlippage,
@@ -4541,9 +4587,9 @@ async function buildRhSwapQuote(value = {}) {
     minimumTargetTokens,
     warnings: [
       !chainMatched ? `Dexscreener returned chain "${target.chainId || "unknown"}"; confirm this token is on Robinhood Chain before settlement.` : "",
-      rhSwapRealExecutionConfigured()
-        ? "Live settlement quote. The connected user wallet signs and swaps PUMPR through LI.FI; dev wallet only backs SOL gas if needed."
-        : "Setup required: configure the dev/admin Solana treasury secret so Pump-r can route deposited PUMPR automatically."
+      routeStatus.executionConfigured
+        ? "Live settlement quote. The connected user wallet signs a simple PUMPR transfer; Pump-r routes the deposited PUMPR through LI.FI and only sponsors SOL gas if needed."
+        : routeStatus.setupReason || "Setup required: configure the dev/admin Solana treasury secret so Pump-r can route deposited PUMPR automatically."
     ].filter(Boolean)
   };
   return quote;
