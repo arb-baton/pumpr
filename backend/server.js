@@ -777,6 +777,41 @@ function pickPumpFunSolanaRpcUrls(preferred = "") {
   return urls;
 }
 
+function pickBrowserRpcUrls(chainId) {
+  const normalized = parseChainId(chainId);
+  const urls = [];
+  const pushIf = (value) => {
+    const text = String(value || "").trim();
+    if (!text) return;
+    if (!urls.includes(text)) urls.push(text);
+  };
+
+  if (normalized === 8453) {
+    pushIf("https://base-rpc.publicnode.com");
+    pushIf("https://mainnet.base.org");
+    return urls;
+  }
+
+  if (normalized === 143) {
+    pushIf("https://rpc.monad.xyz");
+    return urls;
+  }
+
+  if (normalized === 4663) {
+    pushIf("https://rpc.mainnet.chain.robinhood.com");
+    return urls;
+  }
+
+  if (normalized === 1) {
+    pushIf("https://ethereum-rpc.publicnode.com");
+    pushIf("https://rpc.ankr.com/eth");
+    pushIf("https://cloudflare-eth.com");
+    return urls;
+  }
+
+  return pickRpcUrls(normalized);
+}
+
 function isRetryableSolanaRpcError(error) {
   const message = String(error?.message || error || "").toLowerCase();
   return (
@@ -4331,8 +4366,25 @@ function extractLifiQuoteAmounts(lifiQuote = {}) {
 
 const LIFI_SOLANA_CHAIN_ID = "1151111081099710";
 const LIFI_SOLANA_NATIVE_TOKEN = "11111111111111111111111111111111";
+const LIFI_EVM_NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
 const LIFI_ROBINHOOD_CHAIN_ID = "4663";
-const LIFI_ROBINHOOD_NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
+
+function evmLaunchRailTarget(input = "") {
+  const chainId = Number(input || 4663);
+  if (chainId === 1) {
+    return { chainId, lifiChainId: "1", chainName: "Ethereum", shortName: "ETH", nativeSymbol: "ETH" };
+  }
+  if (chainId === 8453) {
+    return { chainId, lifiChainId: "8453", chainName: "Base", shortName: "BASE", nativeSymbol: "ETH" };
+  }
+  if (chainId === 143) {
+    return { chainId, lifiChainId: "143", chainName: "Monad", shortName: "MONAD", nativeSymbol: "MON" };
+  }
+  if (chainId === 4663) {
+    return { chainId, lifiChainId: LIFI_ROBINHOOD_CHAIN_ID, chainName: "Robinhood Chain", shortName: "RH", nativeSymbol: "ETH" };
+  }
+  throw new Error("Launch-from-SOL is only available for Ethereum, Base, Monad, and Robinhood Chain.");
+}
 
 function formatFixedAmount(value = 0, max = 8) {
   const n = Number(value || 0);
@@ -4366,29 +4418,30 @@ function normalizeLifiFees(lifiQuote = {}) {
 }
 
 async function buildRobinhoodSolBridgeQuote(value = {}, { includeTransaction = false } = {}) {
+  const target = evmLaunchRailTarget(value.targetChainId || value.chainId || value.toChain || 4663);
   const solanaAddress = String(value.solanaAddress || value.fromAddress || value.wallet || "").trim();
   const recipient = normalizeAddress(value.recipient || value.toAddress || value.destination || "");
   const amountSol = normalizeSwapAmount(value.amountSol || value.amount || value.sol || "");
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(solanaAddress)) {
-    throw new Error("Connect Phantom/Solana wallet before bridging SOL to Robinhood Chain.");
+    throw new Error(`Connect Phantom/Solana wallet before bridging SOL to ${target.chainName}.`);
   }
   if (!recipient) {
-    throw new Error("Enter a valid Robinhood Chain receive wallet.");
+    throw new Error(`Enter a valid ${target.chainName} receive wallet.`);
   }
   if (!Number.isFinite(amountSol) || amountSol <= 0) {
     throw new Error("Enter a SOL amount to bridge.");
   }
   if (amountSol < 0.05) {
-    throw new Error("Bridge at least 0.05 SOL so Robinhood Chain ETH is not dust after route fees.");
+    throw new Error(`Bridge at least 0.05 SOL so ${target.chainName} ${target.nativeSymbol} is not dust after route fees.`);
   }
   const fromAmountRaw = parseUnitsFloor(amountSol, 9);
   if (fromAmountRaw <= 0n) throw new Error("SOL amount is too small.");
   const slippage = Math.max(0.001, Math.min(0.05, Number(value.slippage || rhSwapSlippageBps() / 10_000) || 0.005));
   const quoteResult = await fetchLifiQuote({
     fromChain: LIFI_SOLANA_CHAIN_ID,
-    toChain: LIFI_ROBINHOOD_CHAIN_ID,
+    toChain: target.lifiChainId,
     fromToken: LIFI_SOLANA_NATIVE_TOKEN,
-    toToken: LIFI_ROBINHOOD_NATIVE_TOKEN,
+    toToken: LIFI_EVM_NATIVE_TOKEN,
     fromAmount: fromAmountRaw.toString(),
     fromAddress: solanaAddress,
     toAddress: recipient,
@@ -4406,16 +4459,24 @@ async function buildRobinhoodSolBridgeQuote(value = {}, { includeTransaction = f
   return {
     ok: true,
     quoteId: id,
-    mode: "sol-to-robinhood-eth",
+    mode: "sol-to-evm-native",
     fromChain: "Solana",
-    toChain: "Robinhood Chain",
+    toChain: target.chainName,
     fromToken: "SOL",
-    toToken: "ETH",
+    toToken: target.nativeSymbol,
+    targetChainId: target.chainId,
+    targetChainName: target.chainName,
+    targetShortName: target.shortName,
+    targetNativeSymbol: target.nativeSymbol,
     amountSol,
     amountSolText: formatFixedAmount(amountSol, 6),
     fromAmountRaw: fromAmountRaw.toString(),
     solanaAddress,
     recipient,
+    estimatedTargetNative: amounts.toAmount,
+    estimatedTargetNativeText: formatFixedAmount(amounts.toAmount, 8),
+    minimumTargetNative: amounts.toAmountMin,
+    minimumTargetNativeText: formatFixedAmount(amounts.toAmountMin, 8),
     estimatedRhEth: amounts.toAmount,
     estimatedRhEthText: formatFixedAmount(amounts.toAmount, 8),
     minimumRhEth: amounts.toAmountMin,
@@ -4430,7 +4491,7 @@ async function buildRobinhoodSolBridgeQuote(value = {}, { includeTransaction = f
     lifiStatusParams: {
       bridge: tool,
       fromChain: LIFI_SOLANA_CHAIN_ID,
-      toChain: LIFI_ROBINHOOD_CHAIN_ID
+      toChain: target.lifiChainId
     }
   };
 }
@@ -6408,6 +6469,520 @@ function openAiTextFromResponse(payload = {}) {
     }
   }
   return chunks.join("\n").trim();
+}
+
+function extractJsonBlock(text = "") {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {}
+  const match = raw.match(/```json\s*([\s\S]*?)```/i) || raw.match(/(\{[\s\S]*\})/);
+  if (!match) return null;
+  try {
+    return JSON.parse(String(match[1] || match[0] || "").trim());
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAssistantAction(action = {}) {
+  if (!action || typeof action !== "object") return null;
+  const type = String(action.type || "").trim();
+  if (!type) return null;
+  const next = { ...action, type };
+  if (next.path) next.path = String(next.path).trim();
+  return next;
+}
+
+function coerceAssistantLaunchActions(actions = [], launchDraft = null) {
+  const list = Array.isArray(actions) ? actions.filter(Boolean) : [];
+  if (!launchDraft || typeof launchDraft !== "object" || launchDraft.type !== "launch" || !launchDraft.complete) {
+    return list;
+  }
+  const hasInlineLaunch = list.some((action) => action?.type === "assistant_launch_draft");
+  const hasLegacyCreateLaunch = list.some((action) => action?.type === "fill_create_form" || action?.type === "submit_create");
+  if (!hasInlineLaunch && !hasLegacyCreateLaunch) return list;
+  const cleaned = list.filter((action) => {
+    if (!action || typeof action !== "object") return false;
+    if (action.type === "fill_create_form" || action.type === "submit_create") return false;
+    if (action.type === "open_page" && String(action.path || "").trim() === "/create") return false;
+    return true;
+  });
+  if (hasInlineLaunch) return cleaned;
+  return [{ type: "assistant_launch_draft", payload: launchDraft }, ...cleaned];
+}
+
+function assistantFallbackResponse(body = {}) {
+  const text = String(body.message || "").trim();
+  const lower = text.toLowerCase();
+  const page = String(body.page || "").trim() || "home";
+  const actions = [];
+  let reply =
+    "I can guide launches, swaps, social posts, profile edits, referrals, and site navigation. Tell me what you want to do and I’ll set it up step by step.";
+  let mood = "idle";
+
+  if (/(launch|create token|make token)/i.test(lower)) {
+    mood = "excited";
+    actions.push({ type: "open_page", path: "/create" });
+    reply = "Let’s build the launch. I’m opening Create, and I can prefill the chain, name, ticker, supply, and launch style if you tell me the details.";
+  } else if (/(swap|robinhood token|cashcat|bridge)/i.test(lower)) {
+    mood = "thinking";
+    actions.push({ type: "open_page", path: "/rh-swap" });
+    reply = "I’m sending us to RH Swap. Give me the token contract or symbol and the amount, and I’ll line the swap up for you.";
+  } else if (/(social|post|tweet inside|feed)/i.test(lower)) {
+    mood = "happy";
+    actions.push({ type: "open_page", path: "/social" });
+    reply = "Opening Social. I can draft a post, fill it in, and tee it up for you.";
+  } else if (/(profile|edit profile|avatar|bio)/i.test(lower)) {
+    mood = "happy";
+    actions.push({ type: "open_page", path: "/profile" });
+    reply = "Got it. I can take you to Profile and open the editor so you can update name, image, and bio.";
+  } else if (/(alpha|tip|bounty|go)/i.test(lower)) {
+    mood = "thinking";
+    actions.push({ type: "open_page", path: page === "go" ? "/go" : "/alpha" });
+    reply = "I can help with alpha and GO flows too. I’m opening the relevant page so we can work from there.";
+  }
+
+  return {
+    ok: true,
+    configured: false,
+    mood,
+    voiceStyle: mood === "excited" ? "energetic" : "calm",
+    reply,
+    followUp: "You can also tap the mic and talk to me.",
+    quickReplies: ["Launch a token", "Open RH Swap", "Draft a social post", "Edit my profile"],
+    actions
+  };
+}
+
+function assistantFallbackResponseV2(body = {}) {
+  const text = String(body.message || "").trim();
+  const lower = text.toLowerCase();
+  const page = String(body.page || "").trim() || "home";
+  const actions = [];
+  const hasExistingLaunchDraft = body?.context?.assistantLaunchDraft && typeof body.context.assistantLaunchDraft === "object";
+  const launchDraftUpdateIntent = /\b(ticker|symbol|name|named|called|description|desc|image|website|twitter|telegram|direct|bonding|chain|pump\.?fun|pump fun|ethereum|base|monad|robinhood|launch now)\b/i.test(text);
+  const isLaunchConversation = /\blaunch\b|(?:\bcreate\b.*\b(?:token|coin)\b)|(?:\bmake\b.*\b(?:token|coin)\b)/i.test(lower) || (hasExistingLaunchDraft && launchDraftUpdateIntent);
+  const launchDraft = buildAssistantLaunchDraft(body);
+  const amountMatch = text.match(/\b([0-9]+(?:\.[0-9]+)?)\s*(?:pumpr|tokens?)\b/i);
+  const contractMatch = text.match(/\b(0x[a-fA-F0-9]{40})\b/);
+  let reply =
+    "I can guide launches, swaps, social posts, profile edits, referrals, and site navigation. Tell me what you want to do and I'll set it up step by step.";
+  let mood = "idle";
+  let followUp = "You can also tap the mic and talk to me.";
+  let quickReplies = ["Launch a token", "Set up RH Swap", "Draft a social post", "Open profile"];
+
+  if (isLaunchConversation) {
+    mood = "excited";
+    if (!launchDraft.complete) {
+      const missingList = launchDraft.missingFields.join(", ");
+      reply = launchDraft.launchMode === "pumpfun" && launchDraft.missingFields.includes("image")
+        ? `I have the start of your ${launchDraft.chainLabel || "launch"} draft. Before I create it, I still need: ${missingList}. Pump.fun needs a hosted image, so attach one here and I’ll keep it in the draft.`
+        : `I have the start of your ${launchDraft.chainLabel || "launch"} draft. Before I create it, I still need: ${missingList}.`;
+      followUp = launchDraft.missingFields.includes("chain")
+        ? "Tell me the chain first, then I’ll keep filling the launch."
+        : "Send the missing details here and I’ll keep the launch draft together.";
+      quickReplies = launchDraft.missingFields.includes("chain")
+        ? ["Pump.fun", "Ethereum", "Base", "Robinhood Chain"]
+        : launchDraft.missingFields.includes("image")
+          ? ["Attach image", "Use Pump.fun", "Set bonding", "Set direct"]
+          : ["Add ticker", "Add description", "Set bonding", "Launch now"];
+    } else if (assistantLaunchWantsSubmit(text)) {
+      actions.push({
+        type: "assistant_launch_draft",
+        payload: launchDraft
+      });
+      reply = `Looks good. I’m starting the ${launchDraft.chainLabel || "launch"} directly from the assistant now, and your wallet will only open for the real signing steps.`;
+      followUp = "Stay here. I’ll keep the launch progress inside the assistant.";
+      quickReplies = ["Change chain", "Dev buy 0.05 SOL", "Manlet Mode Ansem 0.05 SOL", "Change image"];
+    } else if (false && page === "create") {
+      actions.push({
+        type: "fill_create_form",
+        payload: launchActionPayloadFromDraft(launchDraft)
+      });
+      reply = `I filled the current ${launchDraft.chainLabel || "launch"} draft on the page. If you want me to fire it, say launch now.`;
+      followUp = "I’ll stop and ask if anything required is still missing.";
+      quickReplies = ["Launch now", "Set direct", "Set bonding", "Change image"];
+    } else {
+      reply = launchDraft.launchMode === "pumpfun"
+        ? `I have a complete ${launchDraft.chainLabel || "launch"} draft in chat. You can set Dev buy and Manlet Mode in the draft card below, then say launch now when you want me to fire it here.`
+        : `I have a complete ${launchDraft.chainLabel || "launch"} draft in chat. Say launch now when you want me to create it here, or tell me what you want to change first.`;
+      followUp = "I can keep everything here until you’re ready.";
+      quickReplies = ["Launch now", "Dev buy 0.05 SOL", "Manlet Mode Ansem 0.05 SOL", "Set direct"];
+    }
+  } else if (/(swap|robinhood token|cashcat|bridge)/i.test(lower)) {
+    mood = "thinking";
+    actions.push({ type: "open_page", path: "/rh-swap" });
+    if (amountMatch || contractMatch) {
+      actions.push({
+        type: "fill_rh_swap",
+        payload: {
+          amountPumpr: Number(amountMatch?.[1] || 0) || undefined,
+          targetToken: String(contractMatch?.[1] || "").trim()
+        }
+      });
+      reply = "I'm sending us to RH Swap and filling the draft with the amount and token contract I spotted.";
+    } else {
+      reply = "I'm sending us to RH Swap. Give me the token contract or symbol and the amount, and I'll line the swap up for you.";
+    }
+  } else if (/(social|post|tweet inside|feed)/i.test(lower)) {
+    mood = "happy";
+    actions.push({ type: "open_page", path: "/social" });
+    reply = "Opening Social. I can draft a post, fill it in, and tee it up for you.";
+  } else if (/(profile|edit profile|avatar|bio)/i.test(lower)) {
+    mood = "happy";
+    actions.push({ type: "open_page", path: "/profile" });
+    reply = "Got it. I can take you to Profile and open the editor so you can update name, image, and bio.";
+  } else if (/(alpha|tip|bounty|go)/i.test(lower)) {
+    mood = "thinking";
+    actions.push({ type: "open_page", path: page === "go" ? "/go" : "/alpha" });
+    reply = "I can help with alpha and GO flows too. I'm opening the relevant page so we can work from there.";
+  }
+
+  return {
+    ok: true,
+    configured: false,
+    mood,
+    voiceStyle: mood === "excited" ? "energetic" : "calm",
+    reply,
+    followUp,
+    quickReplies,
+    draft: isLaunchConversation ? launchDraft : null,
+    actions
+  };
+}
+
+function extractAssistantUrls(text = "") {
+  return [...String(text || "").matchAll(/https?:\/\/[^\s)]+/gi)]
+    .map((match) => String(match?.[0] || "").trim())
+    .filter(Boolean);
+}
+
+function assistantLaunchChainFromText(text = "") {
+  const lower = String(text || "").toLowerCase();
+  if (/\b(pump\.?fun|pump fun|sol launch|solana launch)\b/.test(lower)) {
+    return { launchMode: "pumpfun", chainId: null, label: "Pump.fun" };
+  }
+  if (/\b(robinhood|rh chain|robinhood chain)\b/.test(lower)) {
+    return { launchMode: "chain", chainId: 4663, label: "Robinhood Chain" };
+  }
+  if (/\bbase\b/.test(lower)) {
+    return { launchMode: "chain", chainId: 8453, label: "Base" };
+  }
+  if (/\bmonad\b/.test(lower)) {
+    return { launchMode: "chain", chainId: 143, label: "Monad" };
+  }
+  if (/\b(ethereum|eth)\b/.test(lower) && !/\betherscan\b/.test(lower)) {
+    return { launchMode: "chain", chainId: 1, label: "Ethereum" };
+  }
+  return { launchMode: "", chainId: null, label: "" };
+}
+
+function assistantNumberFromMatch(match) {
+  const raw = String(match?.[1] || "").replace(/[,_]/g, "").trim();
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+let cachedAssistantKolRows = null;
+
+function safeKolRows() {
+  if (Array.isArray(cachedAssistantKolRows)) return cachedAssistantKolRows;
+  try {
+    const source = fs.readFileSync(path.join(FRONTEND_DIR, "js", "kolData.js"), "utf8");
+    const match = source.match(/KOL_LEADERBOARD\s*=\s*(\[[\s\S]*?\]);?\s*$/m);
+    if (!match) return [];
+    const rows = Function(`"use strict"; return (${match[1]});`)();
+    cachedAssistantKolRows = Array.isArray(rows)
+      ? rows
+          .filter((row) => row?.name && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(row.wallet || "")))
+          .map((row) => ({
+            name: String(row.name || "").trim().slice(0, 80),
+            wallet: String(row.wallet || "").trim(),
+            image: String(row.image || "").trim().slice(0, 2048)
+          }))
+      : [];
+    return cachedAssistantKolRows;
+  } catch {
+    cachedAssistantKolRows = [];
+    return cachedAssistantKolRows;
+  }
+}
+
+function buildAssistantLaunchDraft(body = {}) {
+  const currentText = String(body.message || "").trim();
+  const existingDraft = body?.context?.assistantLaunchDraft && typeof body.context.assistantLaunchDraft === "object"
+    ? body.context.assistantLaunchDraft
+    : null;
+  const mergedText = currentText;
+  const urls = extractAssistantUrls(mergedText);
+  const chain = assistantLaunchChainFromText(mergedText);
+  const image = String(body?.attachment?.imageUrl || body?.context?.assistantAttachment?.imageUrl || existingDraft?.image || "").trim();
+  const lower = mergedText.toLowerCase();
+  const launchNameMatch =
+    mergedText.match(/\b(?:name|named|called)\s+["']?(.+?)(?=["']?(?:\s+(?:ticker|symbol|description|desc|direct|bonding|on|chain|supply|with|image|website|twitter|telegram|dev buy|starter buy)\b|$))/i) ||
+    mergedText.match(/\blaunch\s+["']?(.+?)(?=["']?(?:\s+(?:ticker|symbol|description|desc|direct|bonding|on|chain|supply|with|image|website|twitter|telegram|dev buy|starter buy)\b|$))/i);
+  const symbolMatch =
+    mergedText.match(/\b(?:ticker|symbol)\s+([A-Za-z0-9]{2,11})\b/i) ||
+    mergedText.match(/\$([A-Za-z0-9]{2,11})\b/);
+  const descriptionMatch = mergedText.match(
+    /\b(?:description|desc)\s+["']?(.+?)(?=["']?(?:\s+(?:name|named|called|ticker|symbol|direct|bonding|on|chain|supply|with|image|website|twitter|telegram|dev buy|starter buy)\b|$))/i
+  );
+  const supplyMatch = mergedText.match(/\b(?:supply|total supply)\s+([0-9][0-9,._]*)\b/i);
+  const creatorPctMatch = mergedText.match(/\b(?:creator allocation|creator pct|creator percentage)\s+([0-9]+(?:\.[0-9]+)?)\b/i);
+  const starterBuyMatch =
+    mergedText.match(/\b(?:starter buy|dev buy|liquidity|direct liquidity|direct launch liquidity)(?:\s+(?:to|of))?\s+([0-9]+(?:\.[0-9]+)?)\b/i) ||
+    mergedText.match(/\b([0-9]+(?:\.[0-9]+)?)(?:\s+(?:eth|sol))?\s+(?:starter buy|dev buy|liquidity|direct liquidity|direct launch liquidity)\b/i);
+  const pumpfunDevBuyMatch =
+    mergedText.match(/\b(?:pump\.?fun\s+)?(?:dev buy|starter buy)\s+([0-9]+(?:\.[0-9]+)?)\s*sol\b/i) ||
+    mergedText.match(/\b([0-9]+(?:\.[0-9]+)?)\s*sol\s+(?:pump\.?fun\s+)?(?:dev buy|starter buy)\b/i);
+  const bridgeSolMatch = mergedText.match(/\b(?:bridge|fund(?:ing)?)(?:\s+sol)?\s+([0-9]+(?:\.[0-9]+)?)\b/i);
+  const kolBuyMatch =
+    mergedText.match(/\b(?:kol|manlet(?: mode)?|send to|transfer to)\b[\s\S]*?\b([0-9]+(?:\.[0-9]+)?)\s*sol\b/i) ||
+    mergedText.match(/\b([0-9]+(?:\.[0-9]+)?)\s*sol\b[\s\S]*?\b(?:kol|manlet(?: mode)?|send to|transfer to)\b/i);
+  const wantsDirect = /\b(direct|direct uniswap|burn(?:ed)? lp)\b/i.test(mergedText);
+  const wantsBonding = /\b(bonding|bonding curve)\b/i.test(mergedText);
+  const wantsKol = /\b(kol|manlet(?: mode)?|send to|transfer to)\b/i.test(mergedText);
+  const disableKol = /\b(?:disable|remove|clear|no)\s+(?:kol|manlet(?: mode)?)\b/i.test(mergedText);
+  const twitterUrl = urls.find((url) => /https?:\/\/(?:www\.)?(?:x\.com|twitter\.com)\//i.test(url)) || "";
+  const websiteUrl = urls.find((url) => !/https?:\/\/(?:www\.)?(?:x\.com|twitter\.com)\//i.test(url)) || "";
+  const inferredLaunchName = String(launchNameMatch?.[1] || "").trim();
+  const sanitizedLaunchName = /^(?:now|it|token|coin)$/i.test(inferredLaunchName) ? "" : inferredLaunchName;
+  const existingKol = existingDraft?.kolApplication && typeof existingDraft.kolApplication === "object" ? existingDraft.kolApplication : null;
+  const kolRows = safeKolRows();
+  const matchedKol = kolRows.find((row) => lower.includes(String(row.name || "").toLowerCase())) || null;
+  const nextKolEnabled = disableKol ? false : wantsKol || Boolean(existingKol?.enabled);
+  const nextKolBuySol = assistantNumberFromMatch(kolBuyMatch) ?? existingKol?.buySol ?? null;
+  const nextKolTotalSupply = assistantNumberFromMatch(supplyMatch) || Number(existingDraft?.totalSupply || 1000000000) || 1000000000;
+  const nextKolWallet = matchedKol?.wallet || String(existingKol?.wallet || "").trim();
+  const nextKolName = matchedKol?.name || String(existingKol?.name || "").trim();
+  const nextKolImage = matchedKol?.image || String(existingKol?.image || "").trim();
+  const nextKolEstimate = nextKolBuySol && nextKolBuySol > 0
+    ? {
+        estimatedTokens: (nextKolBuySol / (30 + nextKolBuySol)) * nextKolTotalSupply,
+        estimatedSupplyPct: (((nextKolBuySol / (30 + nextKolBuySol)) * nextKolTotalSupply) / nextKolTotalSupply) * 100
+      }
+    : {
+        estimatedTokens: Number(existingKol?.estimatedTokens || 0) || 0,
+        estimatedSupplyPct: Number(existingKol?.estimatedSupplyPct || 0) || 0
+      };
+
+  const launchDraft = {
+    type: "launch",
+    launchMode: chain.launchMode || String(existingDraft?.launchMode || "").trim(),
+    chainId: chain.chainId || Number(existingDraft?.chainId || 0) || null,
+    chainLabel: chain.label || String(existingDraft?.chainLabel || "").trim(),
+    name: String(sanitizedLaunchName || existingDraft?.name || "").trim(),
+    symbol: String(symbolMatch?.[1] || existingDraft?.symbol || "").trim().toUpperCase(),
+    description: String(descriptionMatch?.[1] || existingDraft?.description || "").trim(),
+    totalSupply: assistantNumberFromMatch(supplyMatch) || Number(existingDraft?.totalSupply || 1000000000) || 1000000000,
+    creatorAllocationPct: assistantNumberFromMatch(creatorPctMatch) ?? existingDraft?.creatorAllocationPct ?? null,
+    starterBuyEth: assistantNumberFromMatch(starterBuyMatch) ?? existingDraft?.starterBuyEth ?? null,
+    pumpfunDevBuySol: assistantNumberFromMatch(pumpfunDevBuyMatch) ?? existingDraft?.pumpfunDevBuySol ?? null,
+    bridgeSolAmount: assistantNumberFromMatch(bridgeSolMatch) ?? existingDraft?.bridgeSolAmount ?? null,
+    launchStyle: wantsDirect ? "direct" : wantsBonding ? "bonding" : String(existingDraft?.launchStyle || "").trim(),
+    image,
+    website: websiteUrl || String(existingDraft?.website || "").trim(),
+    twitter: twitterUrl || String(existingDraft?.twitter || "").trim(),
+    telegram: String(existingDraft?.telegram || "").trim(),
+    kolApplication: nextKolEnabled
+      ? {
+          enabled: true,
+          name: nextKolName || "Selected wallet",
+          wallet: nextKolWallet,
+          image: nextKolImage,
+          buySol: nextKolBuySol ?? 0,
+          estimatedTokens: nextKolEstimate.estimatedTokens,
+          estimatedSupplyPct: nextKolEstimate.estimatedSupplyPct
+        }
+      : null,
+    complete: false,
+    missingFields: []
+  };
+
+  const missing = [];
+  if (!launchDraft.launchMode) missing.push("chain");
+  if (!launchDraft.name) missing.push("coin name");
+  if (!launchDraft.symbol) missing.push("ticker");
+  if (launchDraft.launchMode === "pumpfun" && !launchDraft.image) missing.push("image");
+  if (launchDraft.launchMode === "chain" && launchDraft.launchStyle === "direct" && !(Number(launchDraft.starterBuyEth) > 0)) {
+    missing.push("direct launch liquidity");
+  }
+  if (launchDraft.launchMode === "pumpfun" && launchDraft.kolApplication?.enabled) {
+    if (!launchDraft.kolApplication.wallet) missing.push("KOL wallet");
+    if (!(Number(launchDraft.kolApplication.buySol) > 0)) missing.push("KOL buy amount");
+  }
+  launchDraft.missingFields = missing;
+  launchDraft.complete = missing.length === 0;
+  return launchDraft;
+}
+
+function assistantLaunchWantsSubmit(text = "") {
+  return /\b(launch now|create now|submit now|go ahead|do it now|send it now|launch it|create it)\b/i.test(String(text || ""));
+}
+
+function launchActionPayloadFromDraft(draft = {}) {
+  const hasNumber = (value) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
+  return {
+    launchMode: draft.launchMode || undefined,
+    chainId: hasNumber(draft.chainId) ? Number(draft.chainId) : undefined,
+    name: draft.name || "",
+    symbol: draft.symbol || "",
+    description: draft.description || "",
+    totalSupply: Number(draft.totalSupply || 1000000000) || 1000000000,
+    creatorAllocationPct: hasNumber(draft.creatorAllocationPct) ? Number(draft.creatorAllocationPct) : undefined,
+    starterBuyEth: hasNumber(draft.starterBuyEth) ? Number(draft.starterBuyEth) : undefined,
+    devBuyEth: hasNumber(draft.starterBuyEth) ? Number(draft.starterBuyEth) : undefined,
+    pumpfunDevBuySol: hasNumber(draft.pumpfunDevBuySol) ? Number(draft.pumpfunDevBuySol) : undefined,
+    launchStyle: draft.launchStyle || undefined,
+    image: draft.image || undefined,
+    website: draft.website || undefined,
+    twitter: draft.twitter || undefined,
+    telegram: draft.telegram || undefined,
+    bridgeSolAmount: hasNumber(draft.bridgeSolAmount) ? Number(draft.bridgeSolAmount) : undefined,
+    kolApplication: draft.kolApplication && typeof draft.kolApplication === "object" ? draft.kolApplication : undefined
+  };
+}
+
+function shouldUseAssistantFastPath(body = {}, fallback = null) {
+  const text = String(body?.message || "").trim();
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  const response = fallback && typeof fallback === "object" ? fallback : assistantFallbackResponseV2(body);
+  const actions = Array.isArray(response?.actions) ? response.actions : [];
+  if (!actions.length) return false;
+  if (body?.attachment?.imageUrl || body?.context?.assistantAttachment?.imageUrl) return true;
+  return /\b(launch|create|make|token|coin|swap|bridge|profile|avatar|bio|social|post|tweet|alpha|go)\b/i.test(lower);
+}
+
+async function respondWithOpenAIAssistant(body = {}) {
+  const fallback = assistantFallbackResponseV2(body);
+  if (shouldUseAssistantFastPath(body, fallback)) {
+    return {
+      ...fallback,
+      configured: false,
+      fastPath: true
+    };
+  }
+
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey) return fallback;
+
+  const model = String(process.env.OPENAI_ASSISTANT_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini").trim();
+  const page = String(body.page || "").trim() || "home";
+  const capabilities = [
+    "navigate between pages",
+    "launch tokens directly inside the assistant",
+    "prefill create/launch form fields when the user explicitly wants the page",
+    "toggle direct Uniswap vs bonding launch styles",
+    "prefill RH swap fields",
+    "draft or prefill social posts",
+    "open sign-in/profile actions",
+    "guide users through wallet-confirmed steps"
+  ];
+  const prompt = [
+    "You are Pump-r Sensei, a sharp but friendly anime-style AI guide embedded inside Pump-r.fun.",
+    "Your job is to help the user operate the site, answer questions, and trigger UI actions.",
+    "Be energetic, concise, and helpful. Do not roleplay excessively.",
+    "Never claim a wallet transaction already happened unless the app context explicitly says it did.",
+    "You may prepare or trigger UI actions, but only submit launches/swaps/posts if the user clearly asked to do it now.",
+    "If the user attached an image, prefer to include it in launch-form actions as payload.image.",
+    "If information is missing, ask for the minimum missing detail in your reply.",
+    "Return JSON only with this exact shape:",
+    "{",
+    '  "reply": "short helpful response",',
+    '  "mood": "idle|happy|thinking|excited|warning|celebrate",',
+    '  "voiceStyle": "calm|energetic|soft",',
+    '  "followUp": "optional short follow-up prompt",',
+    '  "quickReplies": ["up to 4 short buttons"],',
+    '  "actions": [',
+    "    { \"type\": \"assistant_launch_draft\", \"payload\": { \"chainId\": 1, \"name\": \"...\", \"symbol\": \"...\", \"description\": \"...\", \"image\": \"https://...\", \"totalSupply\": 1000000000, \"creatorAllocationPct\": 0, \"launchStyle\": \"direct\" | \"bonding\", \"directLaunchLiquidity\": 0.2, \"tradeTaxPct\": 0.5, \"bridgeSolAmount\": 0.1 } },",
+    "    { \"type\": \"open_page\", \"path\": \"/create\" },",
+    "    { \"type\": \"fill_create_form\", \"payload\": { \"chainId\": 1, \"name\": \"...\", \"symbol\": \"...\", \"description\": \"...\", \"image\": \"https://...\" } },",
+    "    { \"type\": \"fill_rh_swap\", \"payload\": { \"amountPumpr\": 50000, \"targetToken\": \"0x...\" } },",
+    "    { \"type\": \"submit_rh_swap\" },",
+    "    { \"type\": \"fill_social_post\", \"payload\": { \"body\": \"...\", \"token\": \"$PUMPR\", \"chain\": \"SOL\" } },",
+    "    { \"type\": \"submit_social_post\" },",
+    "    { \"type\": \"click\", \"target\": \"signIn\" | \"connect\" | \"editProfile\" },",
+    "    { \"type\": \"focus\", \"target\": \"launch\" | \"swap\" | \"social\" | \"profile\" }",
+    "  ]",
+    "}",
+    "",
+    `Current page: ${page}`,
+    `Capabilities: ${capabilities.join(", ")}`,
+    "",
+    `Client context:\n${JSON.stringify({
+      page,
+      pathname: body.pathname || "",
+      wallet: body.wallet || {},
+      context: body.context || {},
+      attachment: body.attachment || null,
+      selectedText: body.selectedText || ""
+    }, null, 2)}`,
+    "",
+    `Recent conversation:\n${JSON.stringify(Array.isArray(body.history) ? body.history.slice(-8) : [], null, 2)}`,
+    "",
+    `User message:\n${String(body.message || "").trim()}`
+  ].join("\n");
+
+  const response = await withTimeout(
+    fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        input: prompt,
+        temperature: 0.45,
+        max_output_tokens: Math.max(600, Math.min(2200, Number(process.env.OPENAI_ASSISTANT_MAX_OUTPUT_TOKENS || 1200)))
+      })
+    }),
+    35_000,
+    "OpenAI assistant"
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `OpenAI returned ${response.status}`);
+  }
+  const text = openAiTextFromResponse(payload);
+  const parsed = extractJsonBlock(text) || {};
+  let actions = (Array.isArray(parsed.actions) ? parsed.actions : []).map(normalizeAssistantAction).filter(Boolean);
+  const hasCreateFill = actions.some((action) => action?.type === "fill_create_form");
+  const hasAssistantLaunch = actions.some((action) => action?.type === "assistant_launch_draft");
+  const hasRhSwapFill = actions.some((action) => action?.type === "fill_rh_swap");
+  if (!hasAssistantLaunch && Array.isArray(fallback.actions) && fallback.actions.some((action) => action?.type === "assistant_launch_draft")) {
+    actions = [...actions, ...fallback.actions.filter((action) => action?.type === "assistant_launch_draft")];
+  }
+  if (!hasCreateFill && Array.isArray(fallback.actions) && fallback.actions.some((action) => action?.type === "fill_create_form")) {
+    actions = [...actions, ...fallback.actions.filter((action) => action?.type === "fill_create_form")];
+  }
+  if (!hasRhSwapFill && Array.isArray(fallback.actions) && fallback.actions.some((action) => action?.type === "fill_rh_swap")) {
+    actions = [...actions, ...fallback.actions.filter((action) => action?.type === "fill_rh_swap")];
+  }
+  actions = coerceAssistantLaunchActions(actions, fallback?.draft);
+  return {
+    ok: true,
+    configured: true,
+    model,
+    mood: ["idle", "happy", "thinking", "excited", "warning", "celebrate"].includes(String(parsed.mood || ""))
+      ? String(parsed.mood)
+      : "idle",
+    voiceStyle: ["calm", "energetic", "soft"].includes(String(parsed.voiceStyle || ""))
+      ? String(parsed.voiceStyle)
+      : "calm",
+    reply: String(parsed.reply || "").trim() || "I’m ready. Tell me what you want to do on Pump-r and I’ll guide or set it up.",
+    followUp: String(parsed.followUp || "").trim(),
+    quickReplies: (Array.isArray(parsed.quickReplies) ? parsed.quickReplies : [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .slice(0, 4),
+    actions,
+    draft: fallback?.draft ?? null
+  };
 }
 
 async function draftAgentBountyWithOpenAI(agent = {}, bounty = {}) {
@@ -9045,6 +9620,47 @@ async function simulateSolanaTransaction(connection, tx, label = "Solana transac
   return simulated;
 }
 
+async function confirmSolanaSignatureOrDetectLanded(connection, signature, blockhash = "", lastValidBlockHeight = 0, commitment = "confirmed") {
+  try {
+    if (blockhash && Number(lastValidBlockHeight || 0) > 0) {
+      await connection.confirmTransaction(
+        {
+          signature,
+          blockhash: String(blockhash),
+          lastValidBlockHeight: Number(lastValidBlockHeight)
+        },
+        commitment
+      );
+      return { signature, landed: true, expired: false };
+    }
+    await connection.confirmTransaction(signature, commitment);
+    return { signature, landed: true, expired: false };
+  } catch (error) {
+    const message = String(error?.message || error || "");
+    if (/block height exceeded|expired blockheight exceeded|signature has expired/i.test(message)) {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const status = await connection
+          .getSignatureStatuses([signature], { searchTransactionHistory: true })
+          .catch(() => ({ value: [null] }));
+        const row = Array.isArray(status?.value) ? status.value[0] : null;
+        if (
+          row?.confirmationStatus === "confirmed" ||
+          row?.confirmationStatus === "finalized" ||
+          (row?.slot && row?.err === null)
+        ) {
+          return { signature, landed: true, expired: false };
+        }
+        if (row?.err) {
+          return { signature, landed: false, expired: true, err: row.err };
+        }
+        await new Promise((resolve) => setTimeout(resolve, attempt < 3 ? 900 : 1500));
+      }
+      return { signature, landed: false, expired: true };
+    }
+    throw error;
+  }
+}
+
 function solanaRequiredSignerTexts(tx = {}) {
   try {
     if (tx?.message?.header && Array.isArray(tx?.message?.staticAccountKeys)) {
@@ -9096,6 +9712,59 @@ function getPublicBaseUrl(req) {
   const host = String(req.get("host") || "").trim();
   const proto = String(req.get("x-forwarded-proto") || req.protocol || "http").split(",")[0].trim();
   return host ? `${proto}://${host}` : "";
+}
+
+function isLocalHostname(hostname = "") {
+  const host = String(hostname || "").trim().toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function configuredPublicRelayBaseUrl(req) {
+  const explicit = String(
+    process.env.PUBLIC_BASE_URL ||
+    process.env.APP_BASE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    ""
+  ).trim().replace(/\/+$/, "");
+  const requestHost = String(req?.get?.("host") || "").trim();
+  const requestHostname = requestHost.split(":")[0].trim().toLowerCase();
+  const fallback = isLocalHostname(requestHostname) ? "https://pump-r.fun" : "";
+  const candidate = explicit || fallback;
+  if (!candidate || !isPublicHostedUrl(candidate)) return "";
+  try {
+    const relay = new URL(candidate);
+    if (requestHost && relay.host.toLowerCase() === requestHost.toLowerCase()) return "";
+    if (requestHostname && !isLocalHostname(requestHostname)) return "";
+    return relay.toString().replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+async function relayPumpFunMetadataToPublicApp(baseUrl, metadata = {}) {
+  const response = await fetch(`${String(baseUrl || "").replace(/\/+$/, "")}/api/pumpfun/public-metadata`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ metadata })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.metadataUri) {
+    throw new Error(String(payload?.error || "Public Pump.fun metadata relay failed"));
+  }
+  return String(payload.metadataUri || "").trim();
+}
+
+async function relayPumpFunLaunchToPublicApp(baseUrl, row = {}) {
+  const response = await fetch(`${String(baseUrl || "").replace(/\/+$/, "")}/api/pumpfun/record-launch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(row || {})
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(String(payload?.error || "Public Pump.fun launch relay failed"));
+  }
+  return payload;
 }
 
 function isPublicHostedUrl(value = "") {
@@ -9203,7 +9872,7 @@ async function writePumpFunMetadataPersistent(store) {
   return safe;
 }
 
-async function createPumpFunMetadataUri(req, metadata) {
+async function createPumpFunMetadataUri(req, metadata, options = {}) {
   const clean = {
     name: String(metadata?.name || "").slice(0, 32),
     symbol: String(metadata?.symbol || "").slice(0, 13),
@@ -9212,12 +9881,24 @@ async function createPumpFunMetadataUri(req, metadata) {
     showName: true
   };
   const binary = Buffer.from(JSON.stringify(clean), "utf8");
+  const allowRelay = options?.allowRelay !== false;
 
   if (isSupabaseStorageConfigured()) {
     try {
       return await uploadBinaryToSupabaseStorage(binary, "json", "pumpfun");
     } catch (error) {
       console.warn(`Supabase Pump.fun metadata object upload failed: ${error?.message || "connection error"}`);
+    }
+  }
+
+  if (allowRelay) {
+    const relayBase = configuredPublicRelayBaseUrl(req);
+    if (relayBase) {
+      try {
+        return await relayPumpFunMetadataToPublicApp(relayBase, clean);
+      } catch (error) {
+        console.warn(`Pump.fun metadata relay failed: ${error?.message || "connection error"}`);
+      }
     }
   }
 
@@ -9242,6 +9923,22 @@ async function createPumpFunMetadataUri(req, metadata) {
   const base = getPublicBaseUrl(req);
   return `${base}/api/pumpfun/metadata/${id}`;
 }
+
+app.post("/api/pumpfun/public-metadata", async (req, res) => {
+  try {
+    const metadataUri = await createPumpFunMetadataUri(
+      req,
+      req.body?.metadata || req.body || {},
+      { allowRelay: false }
+    );
+    if (!metadataUri) {
+      return res.status(500).json({ error: "Pump.fun public metadata upload failed" });
+    }
+    res.json({ ok: true, metadataUri });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Pump.fun public metadata upload failed" });
+  }
+});
 
 app.get("/api/pumpfun/metadata/:id", async (req, res) => {
   try {
@@ -9744,12 +10441,6 @@ app.post("/api/pumpfun/launch", async (req, res) => {
     if (!userPublicKey) {
       return res.status(400).json({ error: "Connect a Solana wallet first" });
     }
-    const holderEligibility = await assertOfficialHolderAccess({
-      solanaAddress: userPublicKey,
-      action: "launch tokens through Pump-r",
-      launchMode: "pumpfun",
-      targetChainId: 101
-    });
     const kolApplication = sanitizeKolApplication(req.body?.kolApplication);
 
     let user;
@@ -9894,7 +10585,6 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       mintPresigned: false,
       signingToken,
       kolApplication,
-      holderEligibility,
       devBuyLamports: devBuyLamports.toString(),
       presignSimulationWarning: "",
       walletBroadcast,
@@ -9976,16 +10666,20 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
               }
               tx.partialSign(mintKeypair);
             }
-            await simulateSolanaTransaction(connection, tx, "Signed Pump.fun create");
-            const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
-            await connection.confirmTransaction(
-              {
-                signature,
-                blockhash: String(pending.blockhash || ""),
-                lastValidBlockHeight: Number(pending.lastValidBlockHeight || 0)
-              },
+            const signature = await connection.sendRawTransaction(tx.serialize(), {
+              skipPreflight: true,
+              maxRetries: 5
+            });
+            const confirmation = await confirmSolanaSignatureOrDetectLanded(
+              connection,
+              signature,
+              String(pending.blockhash || ""),
+              Number(pending.lastValidBlockHeight || 0),
               "confirmed"
             );
+            if (!confirmation?.landed) {
+              throw new Error("Pump.fun signature expired before Pump-r could finish broadcast. Tap Launch now again for a fresh transaction.");
+            }
             return { signature, rpcUrl };
           },
           { preferredRpcUrl: pending.rpcUrl }
@@ -10013,11 +10707,31 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
       console.warn(`Pump.fun launch confirmed but record write failed: ${launchRecordWarning}`);
       recordedLaunch = normalizePumpFunLaunch(launchRow);
     }
+    const relayBase = configuredPublicRelayBaseUrl(req);
+    let publicRelayWarning = "";
+    if (relayBase && recordedLaunch) {
+      try {
+        await relayPumpFunLaunchToPublicApp(relayBase, {
+          ...recordedLaunch,
+          mint,
+          token: mint,
+          tokenAddress: mint,
+          imageUri: recordedLaunch.imageUri || pending.imageUri || "",
+          metadataUri: recordedLaunch.metadataUri || pending.metadataUri || "",
+          pumpfunUrl: recordedLaunch.pumpfunUrl || pickPumpFunUrl({}, mint),
+          signature
+        });
+      } catch (error) {
+        publicRelayWarning = error?.message || "Public launch relay failed";
+        console.warn(`Pump.fun public launch relay failed: ${publicRelayWarning}`);
+      }
+    }
 
     res.json({
       ok: true,
       recordSaved: !launchRecordWarning,
       recordWarning: launchRecordWarning || null,
+      publicRelayWarning: publicRelayWarning || null,
       signature,
       mint,
       tokenAddress: mint,
@@ -11002,24 +11716,26 @@ app.get("/api/rh-bridge/quote", async (req, res) => {
       solanaAddress: req.query.solanaAddress || req.query.wallet || "",
       recipient: req.query.recipient || req.query.toAddress || "",
       amountSol: req.query.amountSol || req.query.amount || "",
-      slippage: req.query.slippage || ""
+      slippage: req.query.slippage || "",
+      targetChainId: req.query.targetChainId || req.query.chainId || ""
     });
     res.json(quote);
   } catch (error) {
-    res.status(400).json({ error: error.message || "Failed to quote SOL to Robinhood bridge" });
+    res.status(400).json({ error: error.message || "Failed to quote SOL launch rail bridge" });
   }
 });
 
 app.post("/api/rh-bridge/prepare", async (req, res) => {
   try {
     const quote = await buildRobinhoodSolBridgeQuote(req.body || {}, { includeTransaction: true });
+    const target = evmLaunchRailTarget(quote.targetChainId);
     res.json({
       ...quote,
       ok: true,
-      statusMessage: `Open Phantom to bridge ${quote.amountSolText} SOL to ${shortAddressText(quote.recipient)} on Robinhood Chain.`
+      statusMessage: `Open Phantom to bridge ${quote.amountSolText} SOL to ${shortAddressText(quote.recipient)} on ${target.chainName}.`
     });
   } catch (error) {
-    res.status(400).json({ error: error.message || "Failed to prepare SOL to Robinhood bridge" });
+    res.status(400).json({ error: error.message || "Failed to prepare SOL launch rail bridge" });
   }
 });
 
@@ -11028,10 +11744,11 @@ app.get("/api/rh-bridge/status", async (req, res) => {
     const txHash = String(req.query.txHash || req.query.signature || "").trim();
     if (!txHash) throw new Error("Bridge transaction signature is required.");
     const bridge = String(req.query.bridge || req.query.tool || "").trim();
+    const target = evmLaunchRailTarget(req.query.targetChainId || req.query.chainId || "");
     const status = await fetchLifiStatus({
       bridge,
       fromChain: LIFI_SOLANA_CHAIN_ID,
-      toChain: LIFI_ROBINHOOD_CHAIN_ID,
+      toChain: target.lifiChainId,
       txHash
     });
     res.json({
@@ -11039,7 +11756,9 @@ app.get("/api/rh-bridge/status", async (req, res) => {
       txHash,
       bridge,
       fromChain: "Solana",
-      toChain: "Robinhood Chain",
+      toChain: target.chainName,
+      targetChainId: target.chainId,
+      targetNativeSymbol: target.nativeSymbol,
       status: status.payload?.status || status.payload?.substatus || "",
       payload: status.payload || null,
       error: status.error || ""
@@ -11236,7 +11955,8 @@ app.get("/api/config", async (req, res) => {
     const requestedChainId = resolveRequestedChainId(req, deployment);
     const chainId = requestedChainId;
     const factoryAddress = resolveFactoryAddress(chainId, deployment, quoteMode);
-    const rpcUrls = pickRpcUrls(chainId);
+    const backendRpcUrls = pickRpcUrls(chainId);
+    const browserRpcUrls = pickBrowserRpcUrls(chainId);
     const supportedChains = resolveSupportedChains(deployment);
     const quoteLaunchOptions = resolveQuoteLaunchOptions();
     const chainMeta = CHAIN_META[chainId] || {};
@@ -11264,8 +11984,12 @@ app.get("/api/config", async (req, res) => {
       supportedChains,
       quoteLaunchOptions,
       deployment: effectiveDeployment,
-      rpcUrl: rpcUrls[0] || "",
-      rpcUrls,
+      rpcUrl: browserRpcUrls[0] || backendRpcUrls[0] || "",
+      rpcUrls: browserRpcUrls.length ? browserRpcUrls : backendRpcUrls,
+      browserRpcUrl: browserRpcUrls[0] || backendRpcUrls[0] || "",
+      browserRpcUrls,
+      backendRpcUrl: backendRpcUrls[0] || "",
+      backendRpcUrls,
       explorerBaseUrl: explorerBaseForChain(chainId),
       dexRouter: effectiveDeployment.dexRouter || ethers.ZeroAddress
     });
@@ -11729,6 +12453,20 @@ app.get("/api/follow/state", async (req, res) => {
     res.json(payload);
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to load follow state" });
+  }
+});
+
+app.post("/api/assistant/respond", async (req, res) => {
+  try {
+    const payload = await respondWithOpenAIAssistant(req.body || {});
+    res.json(payload);
+  } catch (error) {
+    const fallback = assistantFallbackResponseV2(req.body || {});
+    res.status(200).json({
+      ...fallback,
+      ok: true,
+      warning: error?.message || "Assistant fell back to local guidance."
+    });
   }
 });
 

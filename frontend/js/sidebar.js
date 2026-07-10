@@ -7,6 +7,16 @@
   const ETH_USD_CACHE_TTL_MS = 5 * 60 * 1000;
   const REFRESH_INTERVAL_MS = 30_000;
   const CLAIM_MIN_USD = 8;
+
+  if (!window.__pumprAssistantBooted) {
+    window.__pumprAssistantBooted = true;
+    import("/js/assistant.js?v=20260710assistantlaunchinline11")
+      .then((module) => module?.initPumprAssistant?.())
+      .catch(() => {
+        window.__pumprAssistantBooted = false;
+      });
+  }
+
   const sidebar = document.getElementById("appSidebar") || document.querySelector(".sidebar");
   const toggle = document.getElementById("sidebarToggle") || sidebar?.querySelector(".sidebar-toggle");
   if (!sidebar || !toggle) return;
@@ -398,3 +408,4 @@ function profileHrefForAddress(value) {
   scheduleRefresh(60);
   setInterval(() => scheduleRefresh(0), REFRESH_INTERVAL_MS);
 })();
+

@@ -18,7 +18,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260706mobilepolish" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260709launchstylecors" />
   </head>
   <body>
     <div class="app-shell">
@@ -358,6 +358,23 @@
                   <p class="create-creator-sub" id="creatorAllocationTokens">0 TOKEN</p>
                   <p class="create-creator-sub" id="creatorAllocationHint">Max allowed is 20%.</p>
                 </div>
+                <div class="create-launch-style-card" id="launchStyleCard" hidden>
+                  <div class="create-launch-style-head">
+                    <strong>Launch style</strong>
+                    <span>Choose how this launch should open.</span>
+                  </div>
+                  <div class="create-launch-style-toggle" role="tablist" aria-label="Robinhood launch style">
+                    <button id="launchStyleBondingBtn" class="create-launch-style-option active" type="button" role="tab" aria-selected="true">
+                      <strong>Bonding curve</strong>
+                      <span>Launch first, optional starter buy after</span>
+                    </button>
+                    <button id="launchStyleDirectBtn" class="create-launch-style-option" type="button" role="tab" aria-selected="false">
+                      <strong>Direct Uniswap</strong>
+                      <span>Seed LP on launch and burn LP automatically</span>
+                    </button>
+                  </div>
+                  <p class="create-launch-style-hint" id="launchStyleHint">Bonding curve launches start normally, then optional starter buy can be added from the same wallet.</p>
+                </div>
                 <label>
                   <span id="starterBuyLabel">Optional starter buy (ETH)</span>
                   <input id="devBuyEth" type="number" step="any" min="0" placeholder="0" value="0" />
@@ -484,10 +501,13 @@
       </div>
     </div>
 
-    <script src="/js/sidebar.js?v=20260705cardwaitlist"></script>
-    <script type="module" src="/js/create.js?v=20260709rhsolautofund2"></script>
+    <script src="/js/sidebar.js?v=20260709assistantlaunchinline4"></script>
+    <script type="module" src="/js/create.js?v=20260709bridgefunding"></script>
   </body>
 </html>
+
+
+
 
 
 

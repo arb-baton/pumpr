@@ -264,6 +264,7 @@ export const api = {
     if (options.recipient) params.set("recipient", String(options.recipient));
     if (options.amountSol) params.set("amountSol", String(options.amountSol));
     if (options.slippage) params.set("slippage", String(options.slippage));
+    if (options.targetChainId) params.set("targetChainId", String(options.targetChainId));
     return apiGet(`/api/rh-bridge/quote?${params.toString()}`);
   },
   rhBridgePrepare: (body = {}) => apiPost("/api/rh-bridge/prepare", body),
@@ -271,6 +272,7 @@ export const api = {
     const params = new URLSearchParams();
     if (options.txHash) params.set("txHash", String(options.txHash));
     if (options.bridge) params.set("bridge", String(options.bridge));
+    if (options.targetChainId) params.set("targetChainId", String(options.targetChainId));
     return apiGet(`/api/rh-bridge/status?${params.toString()}`);
   },
   rhSellSolQuote: (options = {}) => {

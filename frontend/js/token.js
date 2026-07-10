@@ -192,6 +192,8 @@ const state = {
   ethUsd: 3000,
   rpcUrl: "",
   rpcUrls: [],
+  browserRpcUrl: "",
+  browserRpcUrls: [],
   isBuyTab: true,
   pendingProfileImageUri: "",
   activeChartEmbedUrl: "",
@@ -390,7 +392,8 @@ function setSellForSolBusy(active, label = "") {
 
 function showSellForSolBox() {
   if (!ui.sellForSolBox) return;
-  const show = isRobinhoodTokenPage() && !state.isBuyTab;
+  const sellFieldsVisible = ui.sellFields ? getComputedStyle(ui.sellFields).display !== "none" : false;
+  const show = isRobinhoodTokenPage() && (!state.isBuyTab || sellFieldsVisible);
   ui.sellForSolBox.hidden = !show;
 }
 
@@ -507,7 +510,7 @@ async function submitSellForSol() {
   });
   state.rhSellSol.quote = prepared;
 
-  const rpcUrl = String(state.rpcUrl || state.rpcUrls?.[0] || "").trim();
+  const rpcUrl = String(state.browserRpcUrl || state.browserRpcUrls?.[0] || state.rpcUrl || state.rpcUrls?.[0] || "").trim();
   if (!rpcUrl) throw new Error("Robinhood Chain RPC is not configured.");
   const provider = new ethers.JsonRpcProvider(rpcUrl, 4663);
   let signer = null;
@@ -2126,6 +2129,9 @@ function setTradeTab(isBuy) {
     ui.sellFields.style.display = isBuy ? "none" : "grid";
     ui.sellBtn.style.display = isBuy ? "none" : "block";
   }
+  if (ui.sellForSolBox) {
+    ui.sellForSolBox.hidden = !(isRobinhoodTokenPage() && !isBuy);
+  }
   if (!isBuy) scheduleSellForSolQuote();
   renderTradePanel();
 }
@@ -3050,6 +3056,8 @@ async function init() {
     state.explorerBaseUrl = cfg.explorerBaseUrl || "";
     state.rpcUrl = String(cfg.rpcUrl || "").trim();
     state.rpcUrls = Array.isArray(cfg.rpcUrls) ? cfg.rpcUrls : [];
+    state.browserRpcUrl = String(cfg.browserRpcUrl || "").trim();
+    state.browserRpcUrls = Array.isArray(cfg.browserRpcUrls) ? cfg.browserRpcUrls : [];
     if (ui.netChip) ui.netChip.textContent = `Chain ${cfg.chainId}`;
     if (ui.factoryChip) ui.factoryChip.textContent = shortAddress(cfg.factoryAddress);
   } catch {
@@ -3058,6 +3066,8 @@ async function init() {
     state.explorerBaseUrl = "";
     state.rpcUrl = "";
     state.rpcUrls = [];
+    state.browserRpcUrl = "";
+    state.browserRpcUrls = [];
   }
 
   try {

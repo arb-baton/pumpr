@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260709rhsolautofund2";
+import { api } from "./api.js?v=20260709evmsolrail1";
 import {
   FACTORY_ABI,
   POOL_ABI,
@@ -36,6 +36,7 @@ const HOME_LAUNCH_CACHE_MAX_ITEMS = 120;
 const DEFAULT_PUMPFUN_SUPPLY = 1_000_000_000;
 const PUMPFUN_ESTIMATE_VIRTUAL_SOL = 30;
 const RH_WALLET_STORE_KEY = "pumpr.robinhood.wallets.v1";
+const SOL_FUNDED_EVM_LAUNCH_CHAIN_IDS = new Set([1, 8453, 143, 4663]);
 
 const ui = {
   walletSelect: document.getElementById("walletChoice"),
@@ -78,6 +79,10 @@ const ui = {
   launchPumpVerseOptions: document.getElementById("launchPumpVerseOptions"),
   launchChainLabel: document.getElementById("launchChainLabel"),
   launchChainHint: document.getElementById("launchChainHint"),
+  launchStyleCard: document.getElementById("launchStyleCard"),
+  launchStyleBondingBtn: document.getElementById("launchStyleBondingBtn"),
+  launchStyleDirectBtn: document.getElementById("launchStyleDirectBtn"),
+  launchStyleHint: document.getElementById("launchStyleHint"),
   advancedDetails: document.querySelector(".create-advanced"),
   pumpfunOptions: null,
   rhSolBridgeCard: null,
@@ -89,6 +94,13 @@ const ui = {
   rhBridgePreview: null,
   rhBridgeProgress: null,
   rhBridgeTxLink: null,
+  rhBridgeEyebrow: null,
+  rhBridgeTitle: null,
+  rhBridgeBody: null,
+  rhBridgeAmountLabel: null,
+  rhBridgeRecipientLabel: null,
+  rhAttachedHeading: null,
+  rhAttachedAutoLabel: null,
   rhAttachedWallet: null,
   rhAttachedWalletMeta: null,
   rhAttachedGenerateBtn: null,
@@ -176,6 +188,12 @@ const state = {
   lastPumpVerseDetails: null,
   lastPumpVerseResults: [],
   solanaWallet: null,
+  launchStyleByChain: {
+    1: "bonding",
+    8453: "bonding",
+    143: "bonding",
+    4663: "bonding"
+  },
   rhBridge: {
     quote: null,
     signature: "",
@@ -272,25 +290,25 @@ function ensureRhSolBridgeOptions() {
   panel.innerHTML = `
     <div class="rh-sol-bridge-head">
       <div>
-        <p class="rh-sol-bridge-eyebrow">Robinhood Chain rail</p>
-        <h3>Launch from SOL</h3>
-        <p>Bridge SOL into your Robinhood Chain wallet, then launch or trade on RH without leaving Pump-r.</p>
+        <p id="rhBridgeEyebrow" class="rh-sol-bridge-eyebrow">Robinhood Chain rail</p>
+        <h3 id="rhBridgeTitle">Launch from SOL</h3>
+        <p id="rhBridgeBody">Bridge SOL into your Robinhood Chain wallet, then launch or trade on RH without leaving Pump-r.</p>
       </div>
       <span class="rh-sol-bridge-badge">beta</span>
     </div>
     <div class="rh-sol-bridge-grid">
       <label>
-        SOL to use if RH funding is needed
+        <span id="rhBridgeAmountLabel">SOL to use if RH funding is needed</span>
         <input id="rhBridgeAmount" type="number" step="any" min="0.05" placeholder="0.1" value="0.1" />
       </label>
       <label>
-        Robinhood receive wallet
+        <span id="rhBridgeRecipientLabel">Robinhood receive wallet</span>
         <input id="rhBridgeRecipient" type="text" placeholder="0x... RH Chain wallet" autocomplete="off" />
       </label>
     </div>
     <div class="rh-sol-bridge-attached">
       <div>
-        <span>Attached RH launch wallet</span>
+        <span id="rhAttachedHeading">Attached RH launch wallet</span>
         <strong id="rhAttachedWallet">Auto wallet ready on launch</strong>
         <small id="rhAttachedWalletMeta">Pump-r will create one wallet for this Solana profile when you launch.</small>
       </div>
@@ -301,7 +319,7 @@ function ensureRhSolBridgeOptions() {
     </div>
     <label class="rh-sol-bridge-auto">
       <input id="rhAttachedAutoLaunch" type="checkbox" checked />
-      <span>Use attached RH wallet to launch automatically after it is funded</span>
+      <span id="rhAttachedAutoLabel">Use attached launch wallet to launch automatically after it is funded</span>
     </label>
     <div id="rhBridgePreview" class="rh-sol-bridge-preview">
       <article>
@@ -319,12 +337,12 @@ function ensureRhSolBridgeOptions() {
     </div>
     <div class="rh-sol-bridge-actions">
       <button id="rhBridgeQuoteBtn" class="btn-ghost" type="button">Refresh funding quote</button>
-      <button id="rhBridgeSubmitBtn" class="btn-primary" type="button">Fund RH wallet now</button>
+      <button id="rhBridgeSubmitBtn" class="btn-primary" type="button">Fund launch wallet now</button>
     </div>
     <div class="rh-sol-bridge-progress" aria-live="polite">
       <div id="rhBridgeProgress" class="rh-sol-bridge-progress-bar"></div>
     </div>
-    <p id="rhBridgeStatus" class="rh-sol-bridge-status">Create will auto-fund this RH wallet from SOL if it is short. The user signs the SOL funding tx; Pump-r never spends your dev wallet tokens.</p>
+    <p id="rhBridgeStatus" class="rh-sol-bridge-status">Create will auto-fund this launch wallet from SOL if it is short. The user signs the SOL funding tx; Pump-r never spends your dev wallet tokens.</p>
     <a id="rhBridgeTxLink" class="rh-sol-bridge-link" href="#" target="_blank" rel="noreferrer" hidden>Open bridge transaction</a>
   `;
   ui.advancedDetails?.insertAdjacentElement("beforebegin", panel);
@@ -337,6 +355,13 @@ function ensureRhSolBridgeOptions() {
   ui.rhBridgePreview = panel.querySelector("#rhBridgePreview");
   ui.rhBridgeProgress = panel.querySelector("#rhBridgeProgress");
   ui.rhBridgeTxLink = panel.querySelector("#rhBridgeTxLink");
+  ui.rhBridgeEyebrow = panel.querySelector("#rhBridgeEyebrow");
+  ui.rhBridgeTitle = panel.querySelector("#rhBridgeTitle");
+  ui.rhBridgeBody = panel.querySelector("#rhBridgeBody");
+  ui.rhBridgeAmountLabel = panel.querySelector("#rhBridgeAmountLabel");
+  ui.rhBridgeRecipientLabel = panel.querySelector("#rhBridgeRecipientLabel");
+  ui.rhAttachedHeading = panel.querySelector("#rhAttachedHeading");
+  ui.rhAttachedAutoLabel = panel.querySelector("#rhAttachedAutoLabel");
   ui.rhAttachedWallet = panel.querySelector("#rhAttachedWallet");
   ui.rhAttachedWalletMeta = panel.querySelector("#rhAttachedWalletMeta");
   ui.rhAttachedGenerateBtn = panel.querySelector("#rhAttachedGenerateBtn");
@@ -354,7 +379,8 @@ function ensureRhSolBridgeOptions() {
       const wallet = ensureAttachedRhWallet({ create: true });
       renderAttachedRhWallet();
       if (ui.rhBridgeRecipient) ui.rhBridgeRecipient.value = wallet.address;
-      setRhBridgeStatus(`Attached RH wallet ${shortAddress(wallet.address)}. Bridge SOL here, then launch without MetaMask.`);
+      const target = launchFromSolTargetInfo();
+      setRhBridgeStatus(`Attached ${target.shortName} wallet ${shortAddress(wallet.address)}. Bridge SOL here, then launch without MetaMask.`);
       scheduleRhBridgeQuote();
     } catch (err) {
       setRhBridgeStatus(parseUiError(err), true);
@@ -363,16 +389,18 @@ function ensureRhSolBridgeOptions() {
   ui.rhAttachedExportBtn?.addEventListener("click", async () => {
     try {
       const wallet = ensureAttachedRhWallet({ create: false });
-      if (!wallet?.privateKey) throw new Error("No attached RH wallet private key found.");
+      if (!wallet?.privateKey) throw new Error("No attached launch wallet private key found.");
+      const target = launchFromSolTargetInfo();
       await navigator.clipboard.writeText(wallet.privateKey);
-      showCopyToast("Attached RH private key copied");
-      setRhBridgeStatus("Attached RH private key copied. Keep it safe.");
+      showCopyToast(target.copySuccess);
+      setRhBridgeStatus(target.copyStatus);
     } catch (err) {
       setRhBridgeStatus(parseUiError(err), true);
     }
   });
   ui.rhBridgeAmount?.addEventListener("input", scheduleRhBridgeQuote);
   ui.rhBridgeRecipient?.addEventListener("input", scheduleRhBridgeQuote);
+  updateRhBridgeUi();
   renderAttachedRhWallet();
 }
 
@@ -473,6 +501,16 @@ async function ensurePumpRHolderAccess({ address = "", solanaAddress = "", actio
     throw new Error("Official Pump-r token is not configured yet. Set PUMPR_TOKEN_ADDRESS and PUMPR_TOKEN_CHAIN_ID before enabling launches.");
   }
   if (eligibility.required !== false && !eligibility.eligibleToLaunch) {
+    if (String(context.launchMode || "").toLowerCase() === "evm" && String(solanaAddress || "").trim()) {
+      const symbol = String(eligibility.symbol || "PUMPR").replace(/^\$/, "").toUpperCase();
+      const held = Number(eligibility.balanceTokens || 0);
+      const heldText = Number.isFinite(held) && held > 0
+        ? held.toLocaleString(undefined, { maximumFractionDigits: 6 })
+        : "0";
+      throw new Error(
+        `You're using Launch from SOL, so the connected Phantom wallet must hold $${symbol}. This Phantom wallet currently holds ${heldText} $${symbol} on SOL. Hold any amount above 0 $${symbol}, or turn off the SOL-funded launch rail and launch from your EVM wallet instead.`
+      );
+    }
     throw new Error(formatHolderAccessMessage(eligibility, action));
   }
   return eligibility;
@@ -573,12 +611,129 @@ function chainShortNameForId(chainId) {
   return String(n);
 }
 
+function chainNativeSymbolForId(chainId) {
+  const n = Number(chainId || 0);
+  if (n === 143) return "MON";
+  if ([1, 8453, 4663].includes(n)) return "ETH";
+  if (n === 101) return "SOL";
+  return "ETH";
+}
+
+function selectedSolFundingLaunchChainId() {
+  const chainId = Number(state.selectedChainId || 0);
+  if (isPumpFunMode() || isPumpVerseMode() || selectedQuoteMode() !== "native") return 0;
+  return SOL_FUNDED_EVM_LAUNCH_CHAIN_IDS.has(chainId) ? chainId : 0;
+}
+
+function isSolFundingLaunchMode() {
+  return selectedSolFundingLaunchChainId() > 0;
+}
+
+function launchFromSolTargetInfo(chainId = selectedSolFundingLaunchChainId()) {
+  const targetChainId = Number(chainId || selectedSolFundingLaunchChainId() || ui.rhSolBridgeCard?.dataset?.chainId || 4663);
+  const shortName = chainShortNameForId(targetChainId);
+  const chainName = chainNameForId(targetChainId);
+  const nativeSymbol = chainNativeSymbolForId(targetChainId);
+  return {
+    chainId: targetChainId,
+    chainName,
+    shortName,
+    nativeSymbol,
+    receiveLabel: `${chainName} receive wallet`,
+    fundButtonLabel: `Fund ${shortName} wallet now`,
+    railLabel: `${chainName} rail`,
+    heading: "Launch from SOL",
+    description:
+      targetChainId === 4663
+        ? "Bridge SOL into your Robinhood Chain wallet, then launch or trade without leaving Pump-r."
+        : `Bridge SOL into your ${chainName} launch wallet, then launch without leaving Pump-r.`,
+    amountLabel: `SOL to use if ${shortName} funding is needed`,
+    attachedHeading: `Attached ${shortName} launch wallet`,
+    attachedReadyLabel: `Auto ${shortName} wallet ready on launch`,
+    attachedMissingMeta: `Pump-r will create one EVM wallet for this Solana profile and use it for ${chainName} launches.`,
+    attachedAutoLabel: `Use attached ${shortName} wallet to launch automatically after it is funded`,
+    defaultStatus: `Create will auto-fund this ${shortName} wallet from SOL if it is short. The user signs the SOL funding tx; Pump-r never spends your dev wallet tokens.`,
+    copySuccess: `Attached ${shortName} private key copied`,
+    copyStatus: `Attached ${shortName} private key copied. Keep it safe.`
+  };
+}
+
 function isRobinhoodChainSelected() {
   return Number(state.selectedChainId || 0) === 4663 && !isPumpFunMode() && !isPumpVerseMode() && selectedQuoteMode() === "native";
 }
 
+function directLaunchStyleSupported(chainId = state.selectedChainId) {
+  const normalized = Number(chainId || 0);
+  return SOL_FUNDED_EVM_LAUNCH_CHAIN_IDS.has(normalized) && !isPumpFunMode() && !isPumpVerseMode() && selectedQuoteMode() === "native";
+}
+
+function selectedLaunchStyle(chainId = state.selectedChainId) {
+  const normalized = Number(chainId || 0);
+  const style = String(state.launchStyleByChain?.[normalized] || "bonding").toLowerCase();
+  return style === "direct" ? "direct" : "bonding";
+}
+
 function isRobinhoodDirectLiquidityMode() {
-  return isRobinhoodChainSelected();
+  return directLaunchStyleSupported() && selectedLaunchStyle() === "direct";
+}
+
+function setLaunchStyle(style = "bonding", chainId = state.selectedChainId) {
+  const normalized = Number(chainId || 0);
+  if (!Number.isFinite(normalized) || normalized <= 0) return;
+  if (!state.launchStyleByChain || typeof state.launchStyleByChain !== "object") {
+    state.launchStyleByChain = {};
+  }
+  state.launchStyleByChain[normalized] = String(style || "").toLowerCase() === "direct" ? "direct" : "bonding";
+}
+
+function renderLaunchStyleToggle() {
+  if (!ui.launchStyleCard) return;
+  const supported = directLaunchStyleSupported();
+  ui.launchStyleCard.hidden = !supported;
+  if (!supported) return;
+  const chainName = chainNameForId(state.selectedChainId);
+  const direct = isRobinhoodDirectLiquidityMode();
+  ui.launchStyleBondingBtn?.classList.toggle("active", !direct);
+  ui.launchStyleBondingBtn?.setAttribute("aria-selected", direct ? "false" : "true");
+  ui.launchStyleDirectBtn?.classList.toggle("active", direct);
+  ui.launchStyleDirectBtn?.setAttribute("aria-selected", direct ? "true" : "false");
+  if (ui.launchStyleHint) {
+    ui.launchStyleHint.textContent = direct
+      ? `Direct launch on ${chainName} uses your entered native gas token as launch liquidity and burns LP automatically.`
+      : `Bonding curve launches start normally on ${chainName}, then any native gas token entered below is used as an optional starter buy after launch.`;
+  }
+}
+
+function updateRhBridgeUi() {
+  if (!ui.rhSolBridgeCard) return;
+  const targetChainId = selectedSolFundingLaunchChainId() || Number(ui.rhSolBridgeCard.dataset.chainId || 4663);
+  const target = launchFromSolTargetInfo(targetChainId);
+  const lastChainId = Number(ui.rhSolBridgeCard.dataset.chainId || 0);
+  const changedChain = lastChainId > 0 && lastChainId !== target.chainId;
+  ui.rhSolBridgeCard.dataset.chainId = String(target.chainId);
+  if (ui.rhBridgeEyebrow) ui.rhBridgeEyebrow.textContent = target.railLabel;
+  if (ui.rhBridgeTitle) ui.rhBridgeTitle.textContent = target.heading;
+  if (ui.rhBridgeBody) ui.rhBridgeBody.textContent = target.description;
+  if (ui.rhBridgeAmountLabel) ui.rhBridgeAmountLabel.textContent = target.amountLabel;
+  if (ui.rhBridgeRecipientLabel) ui.rhBridgeRecipientLabel.textContent = target.receiveLabel;
+  if (ui.rhBridgeRecipient) ui.rhBridgeRecipient.placeholder = `0x... ${target.shortName} wallet`;
+  if (ui.rhAttachedHeading) ui.rhAttachedHeading.textContent = target.attachedHeading;
+  if (ui.rhAttachedAutoLabel) ui.rhAttachedAutoLabel.textContent = target.attachedAutoLabel;
+  if (ui.rhBridgeSubmitBtn && !ui.rhBridgeSubmitBtn.disabled) ui.rhBridgeSubmitBtn.textContent = target.fundButtonLabel;
+  if (changedChain) {
+    state.rhBridge.quote = null;
+    state.rhBridge.signature = "";
+    renderRhBridgeQuote(null);
+    if (ui.rhBridgeTxLink) {
+      ui.rhBridgeTxLink.hidden = true;
+      ui.rhBridgeTxLink.removeAttribute("href");
+    }
+    setRhBridgeProgress(0);
+    setRhBridgeStatus(target.defaultStatus);
+  } else if (!state.rhBridge.quote && !state.rhBridge.signature && ui.rhBridgeStatus && !ui.rhBridgeStatus.classList.contains("error")) {
+    setRhBridgeStatus(target.defaultStatus);
+  }
+  if (ui.rhAttachedWallet) renderAttachedRhWallet();
 }
 
 function normalizePumpVerseChains(chains = state.selectedPumpVerseChains, { requireConfigured = true } = {}) {
@@ -617,12 +772,14 @@ function renderChainSelector() {
   const configuredCount = supported.size;
   ensurePumpFunOptions();
   ensureRhSolBridgeOptions();
+  updateRhBridgeUi();
+  renderLaunchStyleToggle();
   if (ui.advancedDetails) {
     ui.advancedDetails.hidden = isPumpFunMode();
     if (isPumpFunMode()) ui.advancedDetails.open = false;
   }
   if (ui.pumpfunOptions) ui.pumpfunOptions.hidden = !isPumpFunMode();
-  if (ui.rhSolBridgeCard) ui.rhSolBridgeCard.hidden = !isRobinhoodDirectLiquidityMode();
+  if (ui.rhSolBridgeCard) ui.rhSolBridgeCard.hidden = !isSolFundingLaunchMode();
   if (ui.kolApplicationCard) ui.kolApplicationCard.hidden = !isPumpFunMode();
   if (ui.pumpfunCreatorWalletWrap) ui.pumpfunCreatorWalletWrap.hidden = !isPumpFunMode();
   ui.createForm?.classList.toggle("create-mode-solana", isPumpFunMode());
@@ -630,12 +787,12 @@ function renderChainSelector() {
   syncRhBridgeRecipient();
   if (ui.starterBuyLabel) {
     ui.starterBuyLabel.textContent = isRobinhoodDirectLiquidityMode()
-      ? "Direct Uniswap liquidity (ETH)"
-      : "Optional starter buy (ETH)";
+      ? `Direct launch liquidity (${chainNativeSymbolForId(state.selectedChainId)})`
+      : `Optional starter buy (${chainNativeSymbolForId(state.selectedChainId)})`;
   }
   if (ui.starterMcapLabel) {
     ui.starterMcapLabel.textContent = isRobinhoodDirectLiquidityMode()
-      ? "Direct Uniswap launch market cap estimate (USD)"
+      ? "Direct launch market cap estimate (USD)"
       : "Starter buy market cap estimate (USD)";
   }
   updateKolEstimate();
@@ -656,11 +813,19 @@ function renderChainSelector() {
     ui.launchChainHint.textContent = isPumpFunMode()
       ? "Pump.fun launches require a Solana wallet, hosted image metadata, a valid ticker, and enough SOL for Pump.fun fees and network gas. After signing, you will be redirected to the Pump.fun coin page."
       : isPumpVerseMode()
-      ? `PumpVerse launches the same token details on ${pumpVerseLabel()}. MetaMask will ask for separate confirmations.`
+      ? `PumpVerse launches the same token details on ${pumpVerseLabel()}. MetaMask will ask for separate confirmations on each chain; the single-wallet SOL funding rail does not apply to this multichain mode.`
       : selectedQuoteMode() === "usdc"
-      ? "USDC launches use a USDC-paired bonding curve. Buyers can still route from ETH through Uniswap after graduation."
+      ? "USDC launches use a USDC-paired bonding curve on Ethereum. Buyers can still route from ETH through Uniswap after graduation; the SOL funding rail only applies to native-gas EVM launch modes."
       : Number(current?.chainId || state.selectedChainId) === 4663
-      ? "Robinhood Chain uses ETH for gas. Add starter liquidity only after a DEX router is configured; LP is burned automatically. Keep it at 0 to launch as-is."
+      ? isRobinhoodDirectLiquidityMode()
+        ? "Robinhood Chain uses ETH for gas. Direct Uniswap mode seeds liquidity on launch and burns LP automatically."
+        : "Robinhood Chain uses ETH for gas. Bonding curve mode launches first, then optional starter buy can be sent after launch."
+      : directLaunchStyleSupported()
+      ? isRobinhoodDirectLiquidityMode()
+        ? `${current?.name || chainNameForId(state.selectedChainId)} direct launch seeds liquidity on launch and burns LP automatically.`
+        : `${current?.name || chainNameForId(state.selectedChainId)} bonding curve mode launches first, then optional starter buy can be sent after launch.`
+      : isSolFundingLaunchMode()
+      ? `Pump-r can auto-fund an attached ${chainShortNameForId(state.selectedChainId)} launch wallet from SOL first, so you can launch on ${current?.name || chainNameForId(state.selectedChainId)} without holding native gas there upfront.`
       : monadConfigured
       ? "Wallet will switch to the selected network before launch."
       : "Monad launches are ready once the Monad factory address is configured.";
@@ -672,6 +837,11 @@ function renderChainSelector() {
         const isPumpVerseParent = mode === "pumpverse";
         const isUsdcMode = choice.quoteMode === "usdc";
         const isExternalLaunch = Boolean(choice.externalLaunch);
+        const isSolFundingChoice =
+          !isPumpVerseParent &&
+          !isExternalLaunch &&
+          !isUsdcMode &&
+          SOL_FUNDED_EVM_LAUNCH_CHAIN_IDS.has(Number(choice.chainId || 0));
         const requiredChains = Array.isArray(choice.requiredChains) ? choice.requiredChains : [choice.chainId];
         const enabled = isPumpVerseParent
           ? configuredCount >= Number(choice.requiredMinChains || 2)
@@ -689,6 +859,8 @@ function renderChainSelector() {
           ? "Solana launch + Pump.fun redirect"
           : isUsdcMode
           ? `USDC pair${enabled ? "" : " - configure USDC factory"}`
+          : isSolFundingChoice
+          ? `${row?.shortName || choice.shortName} ${choice.networkLabel}${enabled ? " - launch from SOL ready" : " - configure factory"}`
           : `${row?.shortName || choice.shortName} ${choice.networkLabel}${enabled ? "" : " - configure factory"}`;
         return `
           <button class="create-chain-option${isPumpVerseParent ? " pumpverse" : ""}${active ? " active" : ""}${enabled ? "" : " disabled"}" type="button" ${chainAttr} data-launch-mode="${mode}" role="tab" aria-selected="${active ? "true" : "false"}" ${enabled ? "" : "disabled aria-disabled=\"true\""}>
@@ -1098,7 +1270,10 @@ function updateLaunchMath({ source = "liquidity" } = {}) {
   if (!ui.launchMathCard) return;
   const economicsFromLiquidity = getLaunchEconomics(parseNumberInput(ui.devBuyEth?.value, 0));
   const targetMcapUsdInput = parseNumberInput(ui.launchMcapUsd?.value, 0);
-  const robinhoodDirect = isRobinhoodDirectLiquidityMode();
+  const directLaunch = isRobinhoodDirectLiquidityMode();
+  const nativeChainLaunch = directLaunchStyleSupported();
+  const nativeSymbol = chainNativeSymbolForId(state.selectedChainId);
+  const chainName = chainNameForId(state.selectedChainId);
 
   if (source === "target" && targetMcapUsdInput > 0 && economicsFromLiquidity.mcapMultiplier > 0) {
     const requiredLiquidityEthRaw = (targetMcapUsdInput / Math.max(state.ethUsd, 1)) / economicsFromLiquidity.mcapMultiplier;
@@ -1121,31 +1296,33 @@ function updateLaunchMath({ source = "liquidity" } = {}) {
   if (ui.launchMathPrimary) {
     ui.launchMathPrimary.textContent =
       economics.liquidityEth > 0
-        ? robinhoodDirect
-          ? `Direct Uniswap launch estimate: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ${economics.quoteSymbol} paired as starter liquidity)`
+        ? directLaunch
+          ? `Direct launch estimate: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ${economics.quoteSymbol} paired as launch liquidity)`
           : `Optional starter buy market cap: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ${economics.quoteSymbol})`
-        : robinhoodDirect
-        ? "0 ETH launches as a Pump-r bonding curve first."
+        : directLaunch
+        ? `0 ${nativeSymbol} means this will open as a bonding curve first.`
         : "Bonding curve starts at the configured virtual reserve price.";
   }
   if (ui.launchMathSecondary) {
-    ui.launchMathSecondary.textContent = robinhoodDirect
-      ? "Enter ETH here to skip the bonding curve and launch directly on Robinhood Uniswap V2 with burned LP."
+    ui.launchMathSecondary.textContent = directLaunch
+      ? `Enter ${nativeSymbol} here to skip the bonding curve and launch directly on ${chainName} with burned LP.`
+      : nativeChainLaunch
+      ? `Launch starts on the bonding curve; any ${nativeSymbol} entered below is used as a starter buy after the launch is created.`
       : "Launches stay on the bonding curve until the graduation target is reached.";
   }
   if (ui.launchMathTertiary) {
     ui.launchMathTertiary.textContent =
       economics.liquidityEth > 0
-        ? robinhoodDirect
+        ? directLaunch
           ? "Starter liquidity is added to Uniswap and LP tokens are burned automatically."
           : "Starter buy is sent as the first pool buy after launch."
-        : robinhoodDirect
+        : directLaunch
         ? "No direct Uniswap liquidity selected."
         : "No starter buy selected.";
   }
   if (ui.launchMathQuaternary) {
-    ui.launchMathQuaternary.textContent = robinhoodDirect
-      ? `At your settings, 1 ${economics.quoteSymbol} direct Uniswap liquidity estimates ${formatUsd(economics.oneEthMcapUsd)} market cap`
+    ui.launchMathQuaternary.textContent = directLaunch
+      ? `At your settings, 1 ${economics.quoteSymbol} direct launch liquidity estimates ${formatUsd(economics.oneEthMcapUsd)} market cap`
       : `At your settings, 1 ${economics.quoteSymbol} starter buy estimates ${formatUsd(economics.oneEthMcapUsd)} market cap`;
   }
   if (ui.creatorAllocationPreview) {
@@ -1473,17 +1650,16 @@ function renderLaunchResults(results = []) {
 }
 
 function confirmRobinhoodLiquidityChoice(details = {}) {
-  if (!isRobinhoodChainSelected() || BigInt(details.starterBuyEth || 0n) > 0n) return true;
-  const launchAsIs = window.confirm(
-    "Launch without initial liquidity?\n\nPress OK to continue with the default launch flow.\nPress Cancel if you want to add starting liquidity first."
-  );
-  if (launchAsIs) return true;
+  if (!directLaunchStyleSupported()) return true;
+  if (!isRobinhoodDirectLiquidityMode()) return true;
+  if (BigInt(details.starterBuyEth || 0n) > 0n) return true;
+  const chainName = chainNameForId(state.selectedChainId);
   if (ui.advancedDetails) {
     ui.advancedDetails.hidden = false;
     ui.advancedDetails.open = true;
   }
   ui.devBuyEth?.focus?.();
-  setAlert(ui.alert, "Add direct Uniswap liquidity, then launch again. Leave it at 0 only if you want Robinhood Chain to start as a bonding curve.");
+  setAlert(ui.alert, `${chainName} direct launch needs liquidity entered first. Add liquidity or switch the launch style back to Bonding curve.`, true);
   return false;
 }
 
@@ -1619,27 +1795,24 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
   state.selectedChainId = Number(state.config?.chainId || target);
   await ensureWalletChain(state.selectedChainId);
   await walletHub?.refresh();
-  await ensurePumpRHolderAccess({
-    address: walletState().address,
-    action: "launch tokens through Pump-r",
-    launchMode: "evm",
-    targetChainId: state.selectedChainId
-  });
 
   const factory = makeFactoryContract(state.config.factoryAddress);
   const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
   const dexRouter = String(state.config?.deployment?.dexRouter || ethers.ZeroAddress);
   const hasDexRouter = dexRouter && dexRouter.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
   const useTaxLaunch = Number(state.selectedChainId || 0) === 4663 && selectedQuoteMode() === "native";
-  if (useTaxLaunch && details.starterBuyEth > 0n && !hasDexRouter) {
-    throw new Error("Robinhood direct Uniswap liquidity needs a DEX router configured first. Set liquidity to 0 to launch as a bonding curve.");
+  const directLiquidityMode = directLaunchStyleSupported(state.selectedChainId) && isRobinhoodDirectLiquidityMode();
+  if (directLiquidityMode && details.starterBuyEth > 0n && !hasDexRouter) {
+    throw new Error(`${chainNameForId(state.selectedChainId)} direct launch mode needs a DEX router configured first. Switch to Bonding curve or set direct liquidity to 0.`);
   }
-  const useInstantLiquidity = useTaxLaunch && hasDexRouter && details.starterBuyEth > 0n;
+  const useInstantLiquidity = directLiquidityMode && hasDexRouter && details.starterBuyEth > 0n;
   const totalValue = launchFeeWei + (useInstantLiquidity ? details.starterBuyEth : 0n);
-  const launchMethodName = useTaxLaunch
-    ? useInstantLiquidity
+  const launchMethodName = useInstantLiquidity
+    ? useTaxLaunch
       ? "createLaunchInstantWithTax"
-      : "createLaunchWithTax"
+      : "createLaunchInstant"
+    : useTaxLaunch
+    ? "createLaunchWithTax"
     : "createLaunch";
   const launchMethod = factory[launchMethodName];
   const launchArgs = useTaxLaunch
@@ -1747,44 +1920,67 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
 }
 
 async function launchOnRobinhoodAttachedWallet(details, { showModal = true } = {}) {
-  if (!isRobinhoodDirectLiquidityMode()) {
-    throw new Error("Attached wallet launch is only available for Robinhood Chain.");
+  const targetChainId = selectedSolFundingLaunchChainId();
+  if (!targetChainId) {
+    throw new Error("Attached wallet launch is only available on supported EVM launch rails.");
   }
+  const target = launchFromSolTargetInfo(targetChainId);
   const attached = ensureAttachedRhWallet({ create: true });
-  await loadChainConfig(4663, "native");
-  const rpcUrl = String(state.config?.rpcUrl || state.config?.rpcUrls?.[0] || "").trim();
-  if (!rpcUrl) throw new Error("Robinhood Chain RPC is not configured.");
-  const provider = new ethers.JsonRpcProvider(rpcUrl, 4663);
+  await loadChainConfig(targetChainId, "native");
+  const rpcUrl = browserSafeRpcUrl();
+  if (!rpcUrl) throw new Error(`${target.chainName} RPC is not configured.`);
+  const provider = new ethers.JsonRpcProvider(rpcUrl, targetChainId);
   const signer = new ethers.Wallet(attached.privateKey, provider);
   const factory = new ethers.Contract(state.config.factoryAddress, FACTORY_ABI, signer);
   const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
   const dexRouter = String(state.config?.deployment?.dexRouter || ethers.ZeroAddress);
   const hasDexRouter = dexRouter && dexRouter.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
-  if (details.starterBuyEth > 0n && !hasDexRouter) {
-    throw new Error("Robinhood direct Uniswap liquidity needs a DEX router configured first. Set liquidity to 0 to launch as-is.");
+  const useTaxLaunch = targetChainId === 4663 && selectedQuoteMode() === "native";
+  const directLiquidityMode = directLaunchStyleSupported(targetChainId) && isRobinhoodDirectLiquidityMode();
+  if (directLiquidityMode && details.starterBuyEth > 0n && !hasDexRouter) {
+    throw new Error(`${target.chainName} direct launch mode needs a DEX router configured first. Switch to Bonding curve or set direct liquidity to 0.`);
   }
-  const useInstantLiquidity = hasDexRouter && details.starterBuyEth > 0n;
+  const useInstantLiquidity = directLiquidityMode && hasDexRouter && details.starterBuyEth > 0n;
   const totalValue = launchFeeWei + (useInstantLiquidity ? details.starterBuyEth : 0n);
+  const requiredFlowValue = totalValue + (useInstantLiquidity ? 0n : BigInt(details.starterBuyEth || 0n));
   const balance = await provider.getBalance(attached.address);
-  if (balance < totalValue) {
-    const needed = Number(ethers.formatEther(totalValue || 0n));
+  if (balance < requiredFlowValue) {
+    const needed = Number(ethers.formatEther(requiredFlowValue || 0n));
     const have = Number(ethers.formatEther(balance || 0n));
-    throw new Error(`Attached RH wallet needs more RH ETH before launch. Have ${have.toFixed(6)} ETH, need about ${needed.toFixed(6)} ETH plus gas. Bridge SOL into ${shortAddress(attached.address)} first.`);
+    throw new Error(`Attached ${target.shortName} wallet needs more ${target.nativeSymbol} before launch. Have ${have.toFixed(6)} ${target.nativeSymbol}, need about ${needed.toFixed(6)} ${target.nativeSymbol} plus gas. Bridge SOL into ${shortAddress(attached.address)} first.`);
   }
-  const launchMethodName = useInstantLiquidity ? "createLaunchInstantWithTax" : "createLaunchWithTax";
-  const launchArgs = [
-    details.name,
-    details.symbol,
-    details.imageUri,
-    details.description,
-    details.totalSupply,
-    details.creatorBps,
-    details.tokenTradeFeeBps
-  ];
+  const launchMethodName = useInstantLiquidity
+    ? useTaxLaunch
+      ? "createLaunchInstantWithTax"
+      : "createLaunchInstant"
+    : useTaxLaunch
+    ? "createLaunchWithTax"
+    : "createLaunch";
+  const launchArgs = useTaxLaunch
+    ? [
+        details.name,
+        details.symbol,
+        details.imageUri,
+        details.description,
+        details.totalSupply,
+        details.creatorBps,
+        details.tokenTradeFeeBps
+      ]
+    : [
+        details.name,
+        details.symbol,
+        details.imageUri,
+        details.description,
+        details.totalSupply,
+        details.creatorBps
+      ];
   const simulated = await factory[launchMethodName].staticCall(...launchArgs, { value: totalValue });
-  setAlert(ui.alert, useInstantLiquidity
-    ? `Launching on Robinhood from attached wallet ${shortAddress(attached.address)} with burned LP...`
-    : `Launching on Robinhood from attached wallet ${shortAddress(attached.address)}...`);
+  setAlert(
+    ui.alert,
+    useInstantLiquidity
+      ? `Launching on ${target.chainName} from attached wallet ${shortAddress(attached.address)} with burned LP...`
+      : `Launching on ${target.chainName} from attached wallet ${shortAddress(attached.address)}...`
+  );
   const tx = await factory[launchMethodName](...launchArgs, { value: totalValue });
   const receipt = await tx.wait();
   const launchInfo = extractLaunchCreated(receipt) || {
@@ -1793,7 +1989,7 @@ async function launchOnRobinhoodAttachedWallet(details, { showModal = true } = {
     pool: simulated?.[2]
   };
   if (!useInstantLiquidity && details.starterBuyEth > 0n && launchInfo?.pool) {
-    setAlert(ui.alert, "Robinhood launch created. Sending starter buy from attached RH wallet...");
+    setAlert(ui.alert, `${target.chainName} launch created. Sending starter buy from attached ${target.shortName} wallet...`);
     const pool = new ethers.Contract(launchInfo.pool, POOL_ABI, signer);
     const quoted = await pool.quoteBuy(details.starterBuyEth);
     const quotedTokens = BigInt(quoted?.[0] || 0n);
@@ -1802,16 +1998,16 @@ async function launchOnRobinhoodAttachedWallet(details, { showModal = true } = {
     await buyTx.wait();
   }
   if (launchInfo?.token) {
-    ui.resultLink.href = `/token?token=${launchInfo.token}&chainId=4663`;
-    ui.resultLink.textContent = `Open Robinhood ${shortAddress(launchInfo.token)} token page`;
+    ui.resultLink.href = `/token?token=${launchInfo.token}&chainId=${targetChainId}`;
+    ui.resultLink.textContent = `Open ${target.chainName} ${shortAddress(launchInfo.token)} token page`;
     ui.resultLink.style.display = "inline-block";
     if (showModal) {
-      showCreatedModal({ name: details.name, symbol: details.symbol, token: launchInfo.token, chainId: 4663, quoteMode: "native" });
+      showCreatedModal({ name: details.name, symbol: details.symbol, token: launchInfo.token, chainId: targetChainId, quoteMode: "native" });
     }
   }
   return {
     ok: true,
-    chainId: 4663,
+    chainId: targetChainId,
     quoteMode: "native",
     token: launchInfo?.token || "",
     pool: launchInfo?.pool || "",
@@ -2002,7 +2198,7 @@ function setRhBridgeBusy(active, label = "") {
   if (ui.rhBridgeQuoteBtn) ui.rhBridgeQuoteBtn.disabled = Boolean(active);
   if (ui.rhBridgeSubmitBtn) {
     ui.rhBridgeSubmitBtn.disabled = Boolean(active);
-    ui.rhBridgeSubmitBtn.textContent = active ? (label || "Working...") : "Fund RH wallet now";
+    ui.rhBridgeSubmitBtn.textContent = active ? (label || "Working...") : launchFromSolTargetInfo().fundButtonLabel;
   }
 }
 
@@ -2045,7 +2241,7 @@ function getAttachedRhWallet() {
 
 function saveAttachedRhWallet(row = {}) {
   const key = connectedSolanaProfileKey();
-  if (!key) throw new Error("Connect a Solana wallet before attaching a Robinhood wallet.");
+  if (!key) throw new Error("Connect a Solana wallet before attaching an EVM launch wallet.");
   const store = readRhWalletStore();
   store[key] = {
     ...store[key],
@@ -2062,7 +2258,7 @@ function ensureAttachedRhWallet({ create = false } = {}) {
   const existing = getAttachedRhWallet();
   if (existing) return existing;
   if (!create) return null;
-  if (!connectedSolanaProfileKey()) throw new Error("Connect a Solana wallet before attaching a Robinhood wallet.");
+  if (!connectedSolanaProfileKey()) throw new Error("Connect a Solana wallet before attaching an EVM launch wallet.");
   const wallet = ethers.Wallet.createRandom();
   return saveAttachedRhWallet({
     address: wallet.address,
@@ -2073,14 +2269,15 @@ function ensureAttachedRhWallet({ create = false } = {}) {
 }
 
 function renderAttachedRhWallet() {
+  const target = launchFromSolTargetInfo();
   const wallet = getAttachedRhWallet();
   if (ui.rhAttachedWallet) {
-    ui.rhAttachedWallet.textContent = wallet?.address || "Auto wallet ready on launch";
+    ui.rhAttachedWallet.textContent = wallet?.address || target.attachedReadyLabel;
   }
   if (ui.rhAttachedWalletMeta) {
     ui.rhAttachedWalletMeta.textContent = wallet
       ? `Saved to this Solana profile - ${shortAddress(wallet.address)}`
-      : "Pump-r will create one wallet for this Solana profile when you launch.";
+      : target.attachedMissingMeta;
   }
   if (ui.rhAttachedGenerateBtn) {
     ui.rhAttachedGenerateBtn.textContent = wallet ? "Attached" : "Attach wallet";
@@ -2088,30 +2285,64 @@ function renderAttachedRhWallet() {
   if (ui.rhAttachedExportBtn) ui.rhAttachedExportBtn.disabled = !wallet?.privateKey;
 }
 
-function attachedRhGasBufferWei() {
-  return ethers.parseEther("0.00035");
+function attachedLaunchGasBufferWei(chainId = selectedSolFundingLaunchChainId()) {
+  const targetChainId = Number(chainId || 0);
+  if (targetChainId === 1) return ethers.parseEther("0.003");
+  if (targetChainId === 143) return ethers.parseEther("0.001");
+  if (targetChainId === 4663) return ethers.parseEther("0.00035");
+  return ethers.parseEther("0.001");
 }
 
-async function getAttachedRhLaunchFunding(details) {
+function browserSafeRpcUrl(config = state.config) {
+  return String(
+    config?.browserRpcUrl ||
+      config?.browserRpcUrls?.[0] ||
+      config?.rpcUrl ||
+      config?.rpcUrls?.[0] ||
+      ""
+  ).trim();
+}
+
+function buildAttachedFundingShortfallMessage({ quote, funding, target, solAmountText = "" } = {}) {
+  const neededNative = Number(ethers.formatEther(BigInt(funding?.shortfall || 0n)));
+  const minimumNative = Number(quote?.minimumTargetNative || quote?.estimatedTargetNative || 0);
+  const shownSol = Number.parseFloat(String(quote?.amountSol || solAmountText || "0").replace(/[^\d.]+/g, "")) || 0;
+  let recommendation = "";
+  if (shownSol > 0 && minimumNative > 0 && neededNative > 0) {
+    const recommendedSol = shownSol * (neededNative / minimumNative) * 1.08;
+    if (Number.isFinite(recommendedSol) && recommendedSol > shownSol) {
+      recommendation = ` Try about ${recommendedSol.toFixed(recommendedSol < 1 ? 3 : 2)} SOL so the attached ${target.shortName} wallet clears launch fee + gas.`;
+    }
+  }
+  return `${solAmountText || quote?.amountSolText || "This SOL amount"} only routes about ${quote?.minimumTargetNativeText || minimumNative.toFixed(6)} ${target.nativeSymbol} minimum, but the launch wallet is short by about ${neededNative.toFixed(6)} ${target.nativeSymbol}.${recommendation}`;
+}
+
+async function getAttachedRhLaunchFunding(details, chainId = selectedSolFundingLaunchChainId()) {
+  const targetChainId = Number(chainId || 0);
+  const target = launchFromSolTargetInfo(targetChainId);
   const attached = ensureAttachedRhWallet({ create: true });
-  await loadChainConfig(4663, "native");
-  const rpcUrl = String(state.config?.rpcUrl || state.config?.rpcUrls?.[0] || "").trim();
-  if (!rpcUrl) throw new Error("Robinhood Chain RPC is not configured.");
-  const provider = new ethers.JsonRpcProvider(rpcUrl, 4663);
+  await loadChainConfig(targetChainId, "native");
+  const rpcUrl = browserSafeRpcUrl();
+  if (!rpcUrl) throw new Error(`${target.chainName} RPC is not configured.`);
+  const provider = new ethers.JsonRpcProvider(rpcUrl, targetChainId);
   const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
   const dexRouter = String(state.config?.deployment?.dexRouter || ethers.ZeroAddress);
   const hasDexRouter = dexRouter && dexRouter.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
-  if (details.starterBuyEth > 0n && !hasDexRouter) {
-    throw new Error("Robinhood direct Uniswap liquidity needs a DEX router configured first. Set liquidity to 0 to launch as-is.");
+  const useTaxLaunch = targetChainId === 4663 && selectedQuoteMode() === "native";
+  const directLiquidityMode = directLaunchStyleSupported(targetChainId) && isRobinhoodDirectLiquidityMode();
+  if (directLiquidityMode && details.starterBuyEth > 0n && !hasDexRouter) {
+    throw new Error(`${target.chainName} direct launch mode needs a DEX router configured first. Switch to Bonding curve or set direct liquidity to 0.`);
   }
-  const useInstantLiquidity = hasDexRouter && details.starterBuyEth > 0n;
+  const useInstantLiquidity = directLiquidityMode && hasDexRouter && details.starterBuyEth > 0n;
   const totalValue = launchFeeWei + (useInstantLiquidity ? details.starterBuyEth : 0n);
-  const requiredWithGas = totalValue + attachedRhGasBufferWei();
+  const requiredWithGas = totalValue + (useInstantLiquidity ? 0n : BigInt(details.starterBuyEth || 0n)) + attachedLaunchGasBufferWei(targetChainId);
   const balance = await provider.getBalance(attached.address);
   return {
+    target,
     attached,
     provider,
     launchFeeWei,
+    useTaxLaunch,
     hasDexRouter,
     useInstantLiquidity,
     totalValue,
@@ -2124,12 +2355,12 @@ async function getAttachedRhLaunchFunding(details) {
 function syncRhBridgeRecipient() {
   if (!ui.rhBridgeRecipient || ui.rhBridgeRecipient.value.trim()) return;
   const attached = getAttachedRhWallet();
-  if (attached?.address && Number(state.selectedChainId || 0) === 4663) {
+  if (attached?.address && isSolFundingLaunchMode()) {
     ui.rhBridgeRecipient.value = attached.address;
     return;
   }
   const evmAddress = normalizeEvmAddress(walletState().address || "");
-  if (evmAddress && Number(state.selectedChainId || 0) === 4663) {
+  if (evmAddress && isSolFundingLaunchMode()) {
     ui.rhBridgeRecipient.value = evmAddress;
   }
 }
@@ -2144,8 +2375,9 @@ function renderRhBridgeQuote(quote = state.rhBridge.quote) {
     return;
   }
   const feeUsd = Number(quote?.fees?.totalUsd || 0);
-  articles[0].textContent = `${quote.estimatedRhEthText || formatNumber(quote.estimatedRhEth, 8)} RH ETH`;
-  articles[1].textContent = `${quote.minimumRhEthText || formatNumber(quote.minimumRhEth, 8)} RH ETH`;
+  const nativeSymbol = String(quote?.targetNativeSymbol || launchFromSolTargetInfo(Number(quote?.targetChainId || 0)).nativeSymbol || "ETH");
+  articles[0].textContent = `${quote.estimatedTargetNativeText || formatNumber(quote.estimatedTargetNative, 8)} ${nativeSymbol}`;
+  articles[1].textContent = `${quote.minimumTargetNativeText || formatNumber(quote.minimumTargetNative, 8)} ${nativeSymbol}`;
   articles[2].textContent = feeUsd > 0 ? `$${feeUsd.toFixed(2)} via ${quote.tool || "LI.FI"}` : quote.tool || "LI.FI";
 }
 
@@ -2154,7 +2386,7 @@ let rhBridgeQuoteTimer = null;
 function scheduleRhBridgeQuote() {
   window.clearTimeout(rhBridgeQuoteTimer);
   rhBridgeQuoteTimer = window.setTimeout(() => {
-    if (!isRobinhoodDirectLiquidityMode()) return;
+    if (!isSolFundingLaunchMode()) return;
     quoteRhSolBridge({ silent: true }).catch(() => {});
   }, 650);
 }
@@ -2172,7 +2404,11 @@ async function signSolanaTransactionBase64(transactionBase64 = "") {
 
 async function quoteRhSolBridge({ silent = false } = {}) {
   ensureRhSolBridgeOptions();
+  updateRhBridgeUi();
   syncRhBridgeRecipient();
+  const targetChainId = selectedSolFundingLaunchChainId();
+  if (!targetChainId) throw new Error("Launch-from-SOL is only available for supported EVM chains.");
+  const target = launchFromSolTargetInfo(targetChainId);
   const existingSolana = solanaWalletState();
   if (silent && (!existingSolana?.provider || !existingSolana?.address)) {
     throw new Error("Connect Phantom to quote the SOL bridge.");
@@ -2188,24 +2424,25 @@ async function quoteRhSolBridge({ silent = false } = {}) {
     if (ui.rhBridgeRecipient) ui.rhBridgeRecipient.value = recipient;
   }
   const amountSol = String(ui.rhBridgeAmount?.value || "").trim();
-  if (!recipient) throw new Error("Enter a valid Robinhood Chain receive wallet.");
+  if (!recipient) throw new Error(`Enter a valid ${target.chainName} receive wallet.`);
   if (!amountSol || Number(amountSol) <= 0) throw new Error("Enter SOL amount to bridge.");
   if (!silent) {
     setRhBridgeBusy(true, "Quoting...");
     setRhBridgeProgress(18);
-    setRhBridgeStatus("Fetching live SOL -> Robinhood Chain ETH route...");
+    setRhBridgeStatus(`Fetching live SOL -> ${target.chainName} ${target.nativeSymbol} route...`);
   }
   try {
     const quote = await api.rhBridgeQuote({
       solanaAddress: solana.publicKey,
       recipient,
-      amountSol
+      amountSol,
+      targetChainId
     });
     state.rhBridge.quote = quote;
     renderRhBridgeQuote(quote);
     if (!silent) {
       setRhBridgeProgress(0);
-      setRhBridgeStatus(`Quote ready. Estimated ${quote.estimatedRhEthText} RH ETH to ${shortAddress(recipient)}.`);
+      setRhBridgeStatus(`Quote ready. Estimated ${quote.estimatedTargetNativeText} ${target.nativeSymbol} to ${shortAddress(recipient)}.`);
     }
     return quote;
   } finally {
@@ -2218,35 +2455,41 @@ function rhBridgeExplorerUrl(signature = "") {
   return sig ? `https://solscan.io/tx/${encodeURIComponent(sig)}` : "";
 }
 
-async function pollRhBridgeStatus(signature = "", bridge = "", { wait = false } = {}) {
+async function pollRhBridgeStatus(signature = "", bridge = "", { wait = false, targetChainId = 0 } = {}) {
   const sig = String(signature || "").trim();
   if (!sig) return;
+  const resolvedChainId = Number(targetChainId || selectedSolFundingLaunchChainId() || state.rhBridge.quote?.targetChainId || 4663);
+  const target = launchFromSolTargetInfo(resolvedChainId);
   window.clearTimeout(state.rhBridge.statusTimer);
   let count = 0;
   return await new Promise((resolve, reject) => {
     const tick = async () => {
       count += 1;
       try {
-        const status = await api.rhBridgeStatus({ txHash: sig, bridge });
+        const status = await api.rhBridgeStatus({ txHash: sig, bridge, targetChainId: resolvedChainId });
         const text = String(status?.status || status?.payload?.status || "").toUpperCase();
         if (["DONE", "COMPLETED", "SUCCESS", "FINISHED"].includes(text)) {
           setRhBridgeProgress(100);
           setRhBridgeBusy(false);
-          setRhBridgeStatus(wait ? "Bridge complete. Continuing Robinhood launch..." : "Bridge complete. Switch/connect your Robinhood Chain wallet and launch or trade with the funded RH ETH.");
+          setRhBridgeStatus(
+            wait
+              ? `Bridge complete. Continuing ${target.chainName} launch...`
+              : `Bridge complete. Switch/connect your ${target.chainName} wallet and launch or trade with the funded ${target.nativeSymbol}.`
+          );
           resolve(status);
           return;
         }
         if (["FAILED", "INVALID", "NOT_FOUND"].includes(text)) {
-          const message = `Bridge status: ${text || "unknown"}. Open the transaction link and check LI.FI/Robinhood delivery.`;
+          const message = `Bridge status: ${text || "unknown"}. Open the transaction link and check LI.FI/${target.chainName} delivery.`;
           setRhBridgeBusy(false);
           setRhBridgeStatus(message, true);
           reject(new Error(message));
           return;
         }
         setRhBridgeProgress(Math.min(92, 52 + count * 6));
-        setRhBridgeStatus(`Bridge submitted. Waiting for Robinhood delivery${text ? ` (${text})` : ""}...`);
+        setRhBridgeStatus(`Bridge submitted. Waiting for ${target.chainName} delivery${text ? ` (${text})` : ""}...`);
       } catch (error) {
-        setRhBridgeStatus("Bridge submitted. Waiting for Robinhood delivery...");
+        setRhBridgeStatus(`Bridge submitted. Waiting for ${target.chainName} delivery...`);
         if (count > 8 && wait) {
           // Keep waiting unless the bridge API explicitly fails; status APIs can lag behind settlement.
         }
@@ -2267,7 +2510,11 @@ async function pollRhBridgeStatus(signature = "", bridge = "", { wait = false } 
 async function submitRhSolBridge(options = {}) {
   const waitForDelivery = Boolean(options.waitForDelivery);
   ensureRhSolBridgeOptions();
+  updateRhBridgeUi();
   syncRhBridgeRecipient();
+  const targetChainId = selectedSolFundingLaunchChainId();
+  if (!targetChainId) throw new Error("Launch-from-SOL is only available for supported EVM chains.");
+  const target = launchFromSolTargetInfo(targetChainId);
   const solana = await connectSolanaWallet();
   let recipient = normalizeEvmAddress(ui.rhBridgeRecipient?.value || "");
   if (!recipient && ui.rhAttachedAutoLaunch?.checked) {
@@ -2277,21 +2524,22 @@ async function submitRhSolBridge(options = {}) {
     if (ui.rhBridgeRecipient) ui.rhBridgeRecipient.value = recipient;
   }
   const amountSol = String(ui.rhBridgeAmount?.value || "").trim();
-  if (!recipient) throw new Error("Enter a valid Robinhood Chain receive wallet.");
+  if (!recipient) throw new Error(`Enter a valid ${target.chainName} receive wallet.`);
   setRhBridgeBusy(true, "Preparing...");
   setRhBridgeProgress(16);
   setRhBridgeStatus("Preparing SOL bridge transaction for Phantom...");
   const prepared = await api.rhBridgePrepare({
     solanaAddress: solana.publicKey,
     recipient,
-    amountSol
+    amountSol,
+    targetChainId
   });
   state.rhBridge.quote = prepared;
   renderRhBridgeQuote(prepared);
   if (!prepared.transactionBase64) throw new Error("Bridge route did not return a transaction.");
   setRhBridgeProgress(32);
   setRhBridgeBusy(true, "Sign in Phantom...");
-  setRhBridgeStatus(`Open Phantom to bridge ${prepared.amountSolText} SOL to ${shortAddress(recipient)}. This signs from your Solana wallet.`);
+  setRhBridgeStatus(`Open Phantom to bridge ${prepared.amountSolText} SOL to ${shortAddress(recipient)} on ${target.chainName}. This signs from your Solana wallet.`);
   const signedTransactionBase64 = await signSolanaTransactionBase64(prepared.transactionBase64);
   setRhBridgeProgress(48);
   setRhBridgeBusy(true, "Broadcasting...");
@@ -2305,63 +2553,74 @@ async function submitRhSolBridge(options = {}) {
     ui.rhBridgeTxLink.hidden = false;
   }
   setRhBridgeProgress(58);
-  setRhBridgeStatus(`Bridge sent: ${shortAddress(signature)}. Tracking Robinhood delivery...`);
+  setRhBridgeStatus(`Bridge sent: ${shortAddress(signature)}. Tracking ${target.chainName} delivery...`);
   if (!waitForDelivery) {
-    pollRhBridgeStatus(signature, prepared.tool || "").catch(() => {});
+    pollRhBridgeStatus(signature, prepared.tool || "", { targetChainId }).catch(() => {});
     return signature;
   }
-  const status = await pollRhBridgeStatus(signature, prepared.tool || "", { wait: true });
+  const status = await pollRhBridgeStatus(signature, prepared.tool || "", { wait: true, targetChainId });
   return { signature, status, quote: prepared };
 }
 
-async function waitForAttachedRhFunding(details, { minWaitMs = 2500, timeoutMs = 120000 } = {}) {
+async function waitForAttachedRhFunding(details, { minWaitMs = 2500, timeoutMs = 120000, chainId = selectedSolFundingLaunchChainId() } = {}) {
+  const target = launchFromSolTargetInfo(chainId);
   const started = Date.now();
   if (minWaitMs > 0) await new Promise((resolve) => window.setTimeout(resolve, minWaitMs));
   let lastFunding = null;
   while (Date.now() - started < timeoutMs) {
-    lastFunding = await getAttachedRhLaunchFunding(details);
+    lastFunding = await getAttachedRhLaunchFunding(details, chainId);
     if (lastFunding.balance >= lastFunding.requiredWithGas) return lastFunding;
     setRhBridgeStatus(
-      `Bridge delivered, waiting for RH wallet balance. Have ${Number(ethers.formatEther(lastFunding.balance)).toFixed(6)} ETH; need about ${Number(ethers.formatEther(lastFunding.requiredWithGas)).toFixed(6)} ETH.`
+      `Bridge delivered, waiting for ${target.shortName} wallet balance. Have ${Number(ethers.formatEther(lastFunding.balance)).toFixed(6)} ${target.nativeSymbol}; need about ${Number(ethers.formatEther(lastFunding.requiredWithGas)).toFixed(6)} ${target.nativeSymbol}.`
     );
     await new Promise((resolve) => window.setTimeout(resolve, 4500));
   }
-  const funding = lastFunding || await getAttachedRhLaunchFunding(details);
-  throw new Error(`Attached RH wallet is still short after bridging. Have ${Number(ethers.formatEther(funding.balance)).toFixed(6)} ETH; need about ${Number(ethers.formatEther(funding.requiredWithGas)).toFixed(6)} ETH.`);
+  const funding = lastFunding || await getAttachedRhLaunchFunding(details, chainId);
+  throw new Error(`Attached ${target.shortName} wallet is still short after bridging. Have ${Number(ethers.formatEther(funding.balance)).toFixed(6)} ${target.nativeSymbol}; need about ${Number(ethers.formatEther(funding.requiredWithGas)).toFixed(6)} ${target.nativeSymbol}.`);
 }
 
 async function ensureAttachedRhFundingBeforeLaunch(details) {
   ensureRhSolBridgeOptions();
+  updateRhBridgeUi();
+  const targetChainId = selectedSolFundingLaunchChainId();
+  const target = launchFromSolTargetInfo(targetChainId);
   await connectSolanaWallet();
   const attached = ensureAttachedRhWallet({ create: true });
   renderAttachedRhWallet();
   if (ui.rhBridgeRecipient) ui.rhBridgeRecipient.value = attached.address;
-  const funding = await getAttachedRhLaunchFunding(details);
+  const funding = await getAttachedRhLaunchFunding(details, targetChainId);
   if (funding.balance >= funding.requiredWithGas) {
-    setRhBridgeStatus(`Attached RH wallet is funded (${Number(ethers.formatEther(funding.balance)).toFixed(6)} ETH). Launching now...`);
+    setRhBridgeStatus(`Attached ${target.shortName} wallet is funded (${Number(ethers.formatEther(funding.balance)).toFixed(6)} ${target.nativeSymbol}). Launching now...`);
     return funding;
   }
   const solAmount = String(ui.rhBridgeAmount?.value || "").trim();
   if (!solAmount || Number(solAmount) <= 0) {
-    throw new Error("Enter SOL amount to use for the automatic Robinhood launch bridge.");
+    throw new Error(`Enter SOL amount to use for the automatic ${target.chainName} launch bridge.`);
   }
-  setSubmitting(true, "Bridging SOL for Robinhood launch...");
+  const quote = await quoteRhSolBridge({ silent: true });
+  const quotedMinimumNative = Number(quote?.minimumTargetNative || quote?.estimatedTargetNative || 0);
+  const neededNative = Number(ethers.formatEther(BigInt(funding.shortfall || 0n)));
+  if (quotedMinimumNative > 0 && neededNative > 0 && quotedMinimumNative + 1e-12 < neededNative) {
+    const message = buildAttachedFundingShortfallMessage({
+      quote,
+      funding,
+      target,
+      solAmountText: `${solAmount} SOL`
+    });
+    setRhBridgeStatus(message, true);
+    throw new Error(message);
+  }
+  setSubmitting(true, `Bridging SOL for ${target.chainName} launch...`);
   setRhBridgeStatus(
-    `Attached RH wallet needs RH ETH. Pump-r will ask Phantom to bridge ${solAmount} SOL, then launch from ${shortAddress(attached.address)} automatically.`
+    `Attached ${target.shortName} wallet needs ${target.nativeSymbol}. Pump-r will ask Phantom to bridge ${solAmount} SOL, then launch from ${shortAddress(attached.address)} automatically.`
   );
   const bridge = await submitRhSolBridge({ waitForDelivery: true });
-  setAlert(ui.alert, `Bridge ${shortAddress(bridge.signature)} delivered. Waiting for RH balance before launch...`);
-  return await waitForAttachedRhFunding(details);
+  setAlert(ui.alert, `Bridge ${shortAddress(bridge.signature)} delivered. Waiting for ${target.shortName} balance before launch...`);
+  return await waitForAttachedRhFunding(details, { chainId: targetChainId });
 }
 
 async function launchPumpFun(details) {
   const { provider, publicKey } = await connectSolanaWallet();
-  await ensurePumpRHolderAccess({
-    solanaAddress: publicKey,
-    action: "launch tokens through Pump-r",
-    launchMode: "pumpfun",
-    targetChainId: 101
-  });
   const solanaWeb3 = await loadSolanaWeb3();
   let signature = "";
   let devBuySignature = "";
@@ -2634,7 +2893,7 @@ async function onCreate(event) {
     const details = await prepareLaunchDetails();
     setSubmitting(true, "Checking token name and ticker...");
     await ensureLaunchIdentityAvailable(details);
-    const useAttachedRhWallet = isRobinhoodDirectLiquidityMode() && ui.rhAttachedAutoLaunch?.checked;
+    const useAttachedRhWallet = isSolFundingLaunchMode() && ui.rhAttachedAutoLaunch?.checked;
     if (!isPumpFunMode() && !isPumpVerseMode() && !useAttachedRhWallet && !confirmRobinhoodLiquidityChoice(details)) {
       return;
     }
@@ -2654,19 +2913,19 @@ async function onCreate(event) {
       if (!useAttachedRhWallet && !ws.signer) throw new Error("Connect wallet first");
       if (useAttachedRhWallet) {
         await ensureAttachedRhFundingBeforeLaunch(details);
-        setSubmitting(true, "Launching on Robinhood Chain...");
+        setSubmitting(true, `Launching on ${chainNameForId(state.selectedChainId)}...`);
       }
       const result = useAttachedRhWallet
         ? await launchOnRobinhoodAttachedWallet(details, { showModal: true })
         : await launchOnChain(state.selectedChainId, details, { showModal: true });
       renderLaunchResults([result]);
-      const isRobinhood = Number(state.selectedChainId || 0) === 4663 && selectedQuoteMode() === "native";
+      const directLaunch = directLaunchStyleSupported(state.selectedChainId) && isRobinhoodDirectLiquidityMode();
       setAlert(
         ui.alert,
         useAttachedRhWallet
-          ? `Robinhood launch created from attached wallet ${shortAddress(result.attachedWallet || "")}`
-          : isRobinhood && details.starterBuyEth > 0n
-          ? "Robinhood Uniswap launch created with burned LP"
+          ? `${chainNameForId(result.chainId)} launch created from attached wallet ${shortAddress(result.attachedWallet || "")}`
+          : directLaunch && details.starterBuyEth > 0n
+          ? `${chainNameForId(result.chainId)} direct launch created with burned LP`
           : details.starterBuyEth > 0n
           ? "Bonding-curve launch created with starter buy"
           : "Bonding-curve launch created"
@@ -2708,7 +2967,7 @@ async function init() {
     syncLiquidityInputMin();
     renderAttachedRhWallet();
     syncRhBridgeRecipient();
-    if (isRobinhoodDirectLiquidityMode()) scheduleRhBridgeQuote();
+    if (isSolFundingLaunchMode()) scheduleRhBridgeQuote();
     updateLaunchMath({ source: "liquidity" });
     await walletHub?.refresh();
   };
@@ -2753,6 +3012,21 @@ async function init() {
       selectPumpVerseMode(button.dataset.launchMode);
       return;
     }
+  });
+  ui.launchStyleBondingBtn?.addEventListener("click", () => {
+    setLaunchStyle("bonding", state.selectedChainId);
+    renderChainSelector();
+    updateLaunchMath({ source: "liquidity" });
+  });
+  ui.launchStyleDirectBtn?.addEventListener("click", () => {
+    setLaunchStyle("direct", state.selectedChainId);
+    if (ui.advancedDetails) {
+      ui.advancedDetails.hidden = false;
+      ui.advancedDetails.open = true;
+    }
+    renderChainSelector();
+    updateLaunchMath({ source: "liquidity" });
+    ui.devBuyEth?.focus?.();
   });
 
   ui.launchResultList?.addEventListener("click", (event) => {
