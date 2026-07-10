@@ -902,6 +902,12 @@ function togglePanel(forceOpen) {
   assistantState.open = next;
   assistantDom?.root.classList.toggle("collapsed", !next);
   persistState();
+  if (next) {
+    window.requestAnimationFrame(() => {
+      clampWindowPosition();
+      window.requestAnimationFrame(() => clampWindowPosition());
+    });
+  }
 }
 
 function clampWindowPosition() {

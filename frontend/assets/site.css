@@ -18813,6 +18813,7 @@ button[disabled] {
   top: calc(100vh - 660px);
   width: 468px;
   max-width: calc(100vw - 24px);
+  box-sizing: border-box;
   z-index: 1300;
   pointer-events: none;
 }
@@ -19021,8 +19022,12 @@ button[disabled] {
   backdrop-filter: blur(20px);
   transition: opacity 180ms ease, transform 180ms ease;
   pointer-events: auto;
-  max-height: calc(100vh - 28px);
-  overflow: auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-height: min(calc(100vh - 24px), 760px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .pumpr-assistant-head {
@@ -19060,6 +19065,8 @@ button[disabled] {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .pumpr-assistant-head-btn,
@@ -19092,6 +19099,7 @@ button[disabled] {
   display: grid;
   grid-template-columns: 164px minmax(0, 1fr);
   gap: 12px;
+  align-items: start;
 }
 
 .pumpr-assistant-avatar-card,
@@ -19165,6 +19173,7 @@ button[disabled] {
   color: #9fb0d1;
   font-size: 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .pumpr-assistant-launch-draft {
@@ -19352,6 +19361,7 @@ button[disabled] {
 
 .pumpr-assistant-log {
   max-height: 170px;
+  min-height: 0;
   overflow: auto;
   padding: 10px;
   display: grid;
@@ -19399,6 +19409,9 @@ button[disabled] {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  max-height: 92px;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .pumpr-assistant-quick {
@@ -19539,6 +19552,7 @@ button[disabled] {
   .pumpr-assistant-panel {
     padding: 12px;
     border-radius: 20px;
+    max-height: calc(100vh - 14px);
   }
 
   .pumpr-assistant-head {
@@ -19556,7 +19570,7 @@ button[disabled] {
   }
 
   .pumpr-assistant-log {
-    max-height: 180px;
+    max-height: min(180px, 24vh);
   }
 
   .pumpr-assistant-composer {
