@@ -10,7 +10,7 @@
 
   if (!window.__pumprAssistantBooted) {
     window.__pumprAssistantBooted = true;
-    import("/js/assistant.js?v=20260710assistantviewport12")
+    import("/js/assistant.js?v=20260710assistantviewport13")
       .then((module) => module?.initPumprAssistant?.())
       .catch(() => {
         window.__pumprAssistantBooted = false;

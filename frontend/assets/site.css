@@ -19024,10 +19024,11 @@ button[disabled] {
   pointer-events: auto;
   box-sizing: border-box;
   width: 100%;
-  max-height: min(calc(100vh - 24px), 760px);
+  max-height: min(calc(100vh - 18px), 700px);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .pumpr-assistant-head {
@@ -19097,8 +19098,8 @@ button[disabled] {
 
 .pumpr-assistant-stage {
   display: grid;
-  grid-template-columns: 164px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 10px;
   align-items: start;
 }
 
@@ -19112,13 +19113,13 @@ button[disabled] {
 
 .pumpr-assistant-avatar-card {
   position: relative;
-  min-height: 164px;
+  min-height: 152px;
   overflow: hidden;
 }
 
 .pumpr-assistant-portrait {
   width: 100%;
-  height: 164px;
+  height: 152px;
   display: block;
   object-fit: cover;
   object-position: center 34%;
@@ -19159,11 +19160,12 @@ button[disabled] {
   align-content: center;
   gap: 8px;
   padding: 4px 2px;
+  min-width: 0;
 }
 
 .pumpr-assistant-stage-copy h3 {
   margin: 0;
-  font-size: 17px;
+  font-size: 15px;
   line-height: 1.08;
   color: #f7fbff;
 }
@@ -19171,8 +19173,8 @@ button[disabled] {
 .pumpr-assistant-stage-copy p {
   margin: 0;
   color: #9fb0d1;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.42;
   overflow-wrap: anywhere;
 }
 
@@ -19360,7 +19362,7 @@ button[disabled] {
 }
 
 .pumpr-assistant-log {
-  max-height: 170px;
+  max-height: min(136px, 22vh);
   min-height: 0;
   overflow: auto;
   padding: 10px;

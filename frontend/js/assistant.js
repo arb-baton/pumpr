@@ -55,6 +55,8 @@ let recognitionActive = false;
 let messageBusy = false;
 let assistantUpload = null;
 let assistantLaunchDraft = null;
+let assistantVoice = null;
+let assistantLayoutClampQueued = false;
 let companionMotionState = null;
 let companionReactionTimer = null;
 let companionGestureTimer = null;
@@ -592,6 +594,7 @@ function renderLaunchDraft() {
   if (!assistantLaunchDraft || assistantLaunchDraft.type !== "launch") {
     assistantDom.launchDraft.hidden = true;
     assistantDom.launchDraft.innerHTML = "";
+    scheduleAssistantLayoutClamp();
     return;
   }
 
@@ -751,6 +754,7 @@ function renderLaunchDraft() {
       clearLaunchDraft();
       setStatus("Launch draft cleared.", "idle");
     });
+  scheduleAssistantLayoutClamp();
 }
 
 function clearAssistantUpload() {
@@ -836,6 +840,7 @@ function setStatus(text, tone = "idle") {
   persistState();
   if (assistantScene?.setMood) assistantScene.setMood(assistantState.mood, assistantState.speaking);
   setCompanionReaction(text || "Ready.", nextTone || "idle", 2200);
+  scheduleAssistantLayoutClamp();
 }
 
 function setSpeaking(isSpeaking) {
@@ -858,6 +863,7 @@ function renderHistory() {
     })
     .join("");
   assistantDom.log.scrollTop = assistantDom.log.scrollHeight;
+  scheduleAssistantLayoutClamp();
 }
 
 function renderQuickReplies(items = []) {
@@ -879,6 +885,7 @@ function renderQuickReplies(items = []) {
       submitPrompt(label);
     });
   });
+  scheduleAssistantLayoutClamp();
 }
 
 function escapeHtml(text) {
@@ -910,10 +917,22 @@ function togglePanel(forceOpen) {
   }
 }
 
+function scheduleAssistantLayoutClamp() {
+  if (assistantLayoutClampQueued) return;
+  assistantLayoutClampQueued = true;
+  window.requestAnimationFrame(() => {
+    assistantLayoutClampQueued = false;
+    clampWindowPosition();
+  });
+}
+
 function clampWindowPosition() {
   if (!assistantDom) return;
   const margin = 18;
-  const rect = assistantDom.root.getBoundingClientRect();
+  const panelRect = assistantDom.panel?.getBoundingClientRect?.();
+  const rect = panelRect && panelRect.width > 0 && panelRect.height > 0
+    ? panelRect
+    : assistantDom.root.getBoundingClientRect();
   const maxX = Math.max(margin, window.innerWidth - rect.width - margin);
   const maxY = Math.max(margin, window.innerHeight - rect.height - margin);
   const x = Math.min(Math.max(Number(assistantState.x ?? maxX), margin), maxX);
@@ -1250,13 +1269,47 @@ function speakReply(text) {
   const line = String(text || "").trim();
   if (!line) return;
   const utterance = new SpeechSynthesisUtterance(line);
+  const voice = pickAssistantVoice();
+  if (voice) utterance.voice = voice;
   utterance.rate = assistantState.mood === "excited" ? 1.08 : 1;
-  utterance.pitch = 1.18;
+  utterance.pitch = 1.24;
   utterance.onstart = () => setSpeaking(true);
   utterance.onend = () => setSpeaking(false);
   utterance.onerror = () => setSpeaking(false);
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
+}
+
+function pickAssistantVoice() {
+  if (!("speechSynthesis" in window)) return null;
+  if (assistantVoice) return assistantVoice;
+  const voices = window.speechSynthesis.getVoices?.() || [];
+  if (!voices.length) return null;
+  const femaleHints = [
+    "female",
+    "woman",
+    "girl",
+    "zira",
+    "aria",
+    "ava",
+    "samantha",
+    "victoria",
+    "karen",
+    "allison",
+    "susan",
+    "moira",
+    "serena",
+    "google uk english female",
+    "google us english"
+  ];
+  const englishVoices = voices.filter((voice) => String(voice.lang || "").toLowerCase().startsWith("en"));
+  const searchPool = englishVoices.length ? englishVoices : voices;
+  const preferred = searchPool.find((voice) => {
+    const label = `${String(voice.name || "")} ${String(voice.voiceURI || "")}`.toLowerCase();
+    return femaleHints.some((hint) => label.includes(hint));
+  });
+  assistantVoice = preferred || searchPool[0] || voices[0] || null;
+  return assistantVoice;
 }
 
 function findButtonByText(labels = []) {
@@ -2393,6 +2446,14 @@ export function initPumprAssistant() {
   initVoice();
   initThreeAvatar();
   runPendingActions();
+
+  if ("speechSynthesis" in window && typeof window.speechSynthesis.onvoiceschanged !== "undefined") {
+    window.speechSynthesis.onvoiceschanged = () => {
+      assistantVoice = null;
+      pickAssistantVoice();
+    };
+    pickAssistantVoice();
+  }
 
   window.addEventListener("resize", clampWindowPosition);
   window.addEventListener("keydown", (event) => {
