@@ -13297,6 +13297,55 @@ async function fetchAiriGitHubCommits(branch = "main") {
   }
 }
 
+const airiCoderDispatchCooldown = new Map();
+
+function airiIssueDispatchKey(issue = {}) {
+  return [
+    sanitizeAiriText(issue.kind || "issue", 40),
+    sanitizeAiriText(issue.pathname || issue.page || "app", 100),
+    sanitizeAiriText(issue.summary || "", 120)
+  ].join("|").toLowerCase();
+}
+
+async function dispatchAiriCoderForIssue(issue = {}) {
+  const token = String(process.env.AIRI_GITHUB_TOKEN || process.env.GITHUB_TOKEN || "").trim();
+  if (!token) return { skipped: true, reason: "missing_github_token" };
+  const repo = sanitizeAiriText(process.env.AIRI_GITHUB_REPO || "pumpr-fun/pumpr", 120);
+  if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(repo)) return { skipped: true, reason: "invalid_repo" };
+  const workflow = sanitizeAiriText(process.env.AIRI_CODER_WORKFLOW || "airi-autonomous-coder.yml", 120);
+  const ref = sanitizeAiriText(process.env.AIRI_CODER_REF || "main", 80);
+  const key = airiIssueDispatchKey(issue);
+  const now = Date.now();
+  const cooldownMs = Math.max(60_000, Number(process.env.AIRI_CODER_DISPATCH_COOLDOWN_MS || 8 * 60_000));
+  const last = Number(airiCoderDispatchCooldown.get(key) || 0);
+  if (last && now - last < cooldownMs) return { skipped: true, reason: "cooldown" };
+  airiCoderDispatchCooldown.set(key, now);
+  const url = `https://api.github.com/repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`;
+  try {
+    const response = await withTimeout(fetch(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "User-Agent": "PumpR-Airi-Issue-Dispatch/1.0"
+      },
+      body: JSON.stringify({
+        ref,
+        inputs: {
+          branch: "airi/self-improvements",
+          auto_merge: "true"
+        }
+      })
+    }), 3500, "Airi coder dispatch");
+    if (response.status === 204) return { ok: true, workflow, ref };
+    const text = await response.text().catch(() => "");
+    return { skipped: true, reason: `github_${response.status}`, detail: sanitizeAiriText(text, 240) };
+  } catch (error) {
+    return { skipped: true, reason: "dispatch_failed", detail: sanitizeAiriText(error?.message || error, 180) };
+  }
+}
+
 function airiWorkItemFromFile(file = "") {
   const name = sanitizeAiriText(file || "", 180);
   const lower = name.toLowerCase();
@@ -13512,13 +13561,15 @@ app.post("/api/airi/issue", async (req, res) => {
       importance: String(issue.severity || "").toLowerCase() === "error" ? 8 : 6
     });
     const saved = saveAiriSession(store, session);
+    const coderDispatch = await dispatchAiriCoderForIssue(issue);
     res.json({
       ok: true,
       sessionId: saved.sessionId,
       issue,
       publicMessage: airiIssuePublicMessage(issue),
       reply: airiIssuePublicMessage(issue),
-      issueCount: listAiriIssues(store, 100).length
+      issueCount: listAiriIssues(store, 100).length,
+      coderDispatch
     });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message || "Failed to record Airi issue" });

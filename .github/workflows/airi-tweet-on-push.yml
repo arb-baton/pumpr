@@ -12,7 +12,7 @@ on:
           - thought
           - push
   schedule:
-    - cron: "7 */6 * * *"
+    - cron: "17 */3 * * *"
   push:
     branches:
       - main
@@ -31,6 +31,10 @@ jobs:
       AIRI_TWEET_ENABLED: ${{ vars.AIRI_TWEET_ENABLED || 'true' }}
       AIRI_TWEET_DRY_RUN: ${{ vars.AIRI_TWEET_DRY_RUN || 'false' }}
       AIRI_TWEET_MODE: ${{ github.event_name == 'schedule' && 'thought' || github.event.inputs.mode || 'push' }}
+      AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
+      AIRI_THOUGHT_TWEET_CHANCE: ${{ vars.AIRI_THOUGHT_TWEET_CHANCE || '0.35' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_AIRI_TWEET_MODEL: ${{ vars.OPENAI_AIRI_TWEET_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
       TWEXAPI_ALLOW_AUTO_COOKIE: ${{ vars.TWEXAPI_ALLOW_AUTO_COOKIE || 'false' }}
       TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN }}
       TWEXAPI_X_COOKIE: ${{ secrets.TWEXAPI_X_COOKIE }}
@@ -44,6 +48,21 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Restore Airi tweet memory
+        uses: actions/cache/restore@v4
+        with:
+          path: .airi-tweet-history.json
+          key: airi-tweet-history-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            airi-tweet-history-
+
       - name: Let Airi tweet
         continue-on-error: true
         run: node scripts/airi-tweet-on-push.js
+
+      - name: Save Airi tweet memory
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .airi-tweet-history.json
+          key: airi-tweet-history-${{ github.run_id }}-${{ github.run_attempt }}
