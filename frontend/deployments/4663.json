@@ -1,14 +1,19 @@
 {
   "chainId": 4663,
-  "deployedAt": "2026-07-03T17:42:58.306Z",
-  "memeLaunchFactory": "0x73230F236c6929192659fd6e8f527303A61325f2",
+  "deployedAt": "2026-07-10T22:58:31.899Z",
+  "memeLaunchFactory": "0x93c27D68bdDcAE90879838E25Bdc9767A7DE1D59",
   "feeRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3",
   "platformFeeRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3",
   "feeBps": 50,
   "launchFeeWei": "1500000000000000",
   "virtualEthReserve": "500000000000000000",
   "virtualTokenReserve": "1000000000000000000000000",
-  "graduationTargetEth": "12000000000000000000",
+  "graduationTargetEth": "13333333333333333925",
   "dexRouter": "0x89e5db8b5aa49aa85ac63f691524311aeb649eba",
-  "lpRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3"
+  "lpRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3",
+  "v3PositionManager": "0x73991a25c818bf1f1128deaab1492d45638de0d3",
+  "v3SwapRouter": "0xcaf681a66d020601342297493863e78c959e5cb2",
+  "v3Fee": 10000,
+  "tokenDeployer": "0xAe99029Af3300AC173aC6DC2335C61c1AE982292",
+  "poolDeployer": "0x278469C618d42676699A6adCE2dF83379F125926"
 }

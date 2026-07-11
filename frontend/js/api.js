@@ -38,7 +38,16 @@ export async function apiGet(path) {
 export async function apiPost(path, body) {
   const target = withPreferredChain(path);
   const ctrl = new AbortController();
-  const timeoutMs = path.startsWith("/api/pumpfun/") || path.startsWith("/api/agents/") || path.startsWith("/api/referrals/") || path.startsWith("/api/rh-swap/") ? 60000 : 15000;
+  const timeoutMs =
+    path.startsWith("/api/solana/send-transaction")
+      ? 120000
+      : path.startsWith("/api/pumpfun/") ||
+        path.startsWith("/api/agents/") ||
+        path.startsWith("/api/referrals/") ||
+        path.startsWith("/api/rh-swap/") ||
+        path.startsWith("/api/rh-bridge/")
+      ? 60000
+      : 15000;
   const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
   const res = await fetch(target, {
     method: "POST",
@@ -214,6 +223,7 @@ export const api = {
     const params = new URLSearchParams();
     if (options.name) params.set("name", String(options.name));
     if (options.symbol) params.set("symbol", String(options.symbol));
+    if (options.timeoutMs) params.set("timeoutMs", String(options.timeoutMs));
     return apiGet(`/api/launch-availability?${params.toString()}`);
   },
   pumpfunLaunch: (body = {}) => apiPost("/api/pumpfun/launch", body),

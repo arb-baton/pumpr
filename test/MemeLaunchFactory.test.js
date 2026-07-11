@@ -4,15 +4,28 @@ const { ethers } = require("hardhat");
 describe("MemeLaunchFactory", function () {
   const DEAD_ADDRESS = "0x000000000000000000000000000000000000dEaD";
 
-  async function deployFixture({ withDex = false, targetEth = "20", launchFeeWei = 0n } = {}) {
+  async function deployFixture({ withDex = false, withV3 = false, targetEth = "20", launchFeeWei = 0n } = {}) {
     const [owner, creator, trader, feeRecipient, lpRecipient, platformRecipient] = await ethers.getSigners();
 
     let dexRouter = ethers.ZeroAddress;
+    let v3PositionManager = ethers.ZeroAddress;
+    let v3Weth = ethers.ZeroAddress;
     if (withDex) {
       const MockRouter = await ethers.getContractFactory("MockDexRouter");
       const mockRouter = await MockRouter.deploy("0x4200000000000000000000000000000000000006");
       await mockRouter.waitForDeployment();
       dexRouter = await mockRouter.getAddress();
+    }
+    if (withV3) {
+      const MockQuote = await ethers.getContractFactory("MockQuoteToken");
+      const quote = await MockQuote.deploy();
+      await quote.waitForDeployment();
+      v3Weth = await quote.getAddress();
+
+      const MockV3Manager = await ethers.getContractFactory("MockV3PositionManager");
+      const manager = await MockV3Manager.deploy(v3Weth);
+      await manager.waitForDeployment();
+      v3PositionManager = await manager.getAddress();
     }
 
     const Factory = await ethers.getContractFactory("MemeLaunchFactory");
@@ -25,11 +38,13 @@ describe("MemeLaunchFactory", function () {
       ethers.parseUnits("1000000", 18),
       ethers.parseEther(targetEth),
       dexRouter,
-      withDex ? lpRecipient.address : ethers.ZeroAddress
+      withDex ? lpRecipient.address : ethers.ZeroAddress,
+      v3PositionManager,
+      10000
     );
     await factory.waitForDeployment();
 
-    return { owner, creator, trader, feeRecipient, lpRecipient, platformRecipient, factory, dexRouter };
+    return { owner, creator, trader, feeRecipient, lpRecipient, platformRecipient, factory, dexRouter, v3PositionManager, v3Weth };
   }
 
   it("creates a launch and seeds the pool", async function () {
@@ -75,6 +90,7 @@ describe("MemeLaunchFactory", function () {
     const launch = await factory.getLaunch(0);
     const token = await ethers.getContractAt("MemeToken", launch.token);
     const pool = await ethers.getContractAt("MemePool", launch.pool);
+    expect(launch.totalSupply).to.equal(ethers.parseUnits("1000000000", 18));
 
     const buyAmount = ethers.parseEther("1");
     const [tokensOut] = await pool.quoteBuy(buyAmount);
@@ -132,6 +148,103 @@ describe("MemeLaunchFactory", function () {
     await expect(pool.connect(trader).buy(1n, { value: ethers.parseEther("0.1") })).to.be.revertedWith("graduated");
   });
 
+  it("opens Robinhood-style live Uniswap bonding curves without marking them graduated", async function () {
+    const { creator, trader, factory } = await deployFixture({ withDex: true, targetEth: "1" });
+
+    await factory
+      .connect(creator)
+      .createLaunchLiveDexCurve("Live Curve", "LIVE", "", "dex from block one", ethers.parseUnits("1000000", 18), 0, {
+        value: ethers.parseEther("0.1")
+      });
+
+    const launch = await factory.getLaunch(0);
+    const token = await ethers.getContractAt("MemeToken", launch.token);
+    const pool = await ethers.getContractAt("MemePool", launch.pool);
+
+    const pairAddress = await pool.migratedPair();
+    const pair = await ethers.getContractAt("MockDexPair", pairAddress);
+
+    expect(pairAddress).to.not.equal(ethers.ZeroAddress);
+    expect(await pool.liveDexCurve()).to.equal(true);
+    expect(await pool.graduated()).to.equal(false);
+    expect(await pool.ethReserve()).to.equal(0n);
+    expect(await pool.tokenReserve()).to.equal(0n);
+    expect(await token.dexPair()).to.equal(pairAddress);
+    expect(await token.factoryControlRenounced()).to.equal(true);
+    expect(await pair.ethLiquidity()).to.equal(ethers.parseEther("0.1"));
+    expect(await pair.balanceOf(launch.pool)).to.be.greaterThan(0n);
+    expect(await pool.targetProgressBps()).to.equal(1000n);
+
+    await expect(pool.connect(trader).buy(1n, { value: ethers.parseEther("0.01") })).to.be.revertedWith("dex curve live");
+    await expect(pool.triggerGraduation()).to.be.revertedWith("target not reached");
+  });
+
+  it("burns live Uniswap curve LP when the bonding target is reached", async function () {
+    const { creator, factory } = await deployFixture({ withDex: true, targetEth: "0.05" });
+
+    await factory
+      .connect(creator)
+      .createLaunchLiveDexCurve("Bonded Live", "BOND", "", "burns at bond", ethers.parseUnits("1000000", 18), 0, {
+        value: ethers.parseEther("0.1")
+      });
+
+    const launch = await factory.getLaunch(0);
+    const pool = await ethers.getContractAt("MemePool", launch.pool);
+    const pairAddress = await pool.migratedPair();
+    const pair = await ethers.getContractAt("MockDexPair", pairAddress);
+
+    expect(await pool.liveDexCurve()).to.equal(false);
+    expect(await pool.graduated()).to.equal(true);
+    expect(await pair.balanceOf(launch.pool)).to.equal(0n);
+    expect(await pair.balanceOf(DEAD_ADDRESS)).to.be.greaterThan(0n);
+    expect(await pool.targetProgressBps()).to.equal(10000n);
+  });
+
+  it("opens zero-seed Uniswap V3 live bonding curves when a position manager is configured", async function () {
+    const launchFeeWei = ethers.parseEther("0.0017");
+    const { creator, platformRecipient, factory, v3PositionManager } = await deployFixture({
+      withV3: true,
+      targetEth: "1",
+      launchFeeWei
+    });
+
+    const before = await ethers.provider.getBalance(platformRecipient.address);
+    await factory
+      .connect(creator)
+      .createLaunchLiveDexCurve("V3 Live", "V3LIVE", "", "single-sided", ethers.parseUnits("1000000", 18), 0, {
+        value: launchFeeWei
+      });
+    const after = await ethers.provider.getBalance(platformRecipient.address);
+
+    const launch = await factory.getLaunch(0);
+    const token = await ethers.getContractAt("MemeToken", launch.token);
+    const pool = await ethers.getContractAt("MemePool", launch.pool);
+    const manager = await ethers.getContractAt("MockV3PositionManager", v3PositionManager);
+    const v3PoolAddress = await pool.migratedPair();
+    const v3Pool = await ethers.getContractAt("MockV3Pool", v3PoolAddress);
+    const positionId = await pool.v3TokenId();
+
+    expect(after - before).to.equal(launchFeeWei);
+    expect(v3PoolAddress).to.not.equal(ethers.ZeroAddress);
+    expect(positionId).to.be.greaterThan(0n);
+    expect(await manager.ownerOf(positionId)).to.equal(launch.pool);
+    expect(await pool.liveDexCurve()).to.equal(true);
+    expect(await pool.liveDexCurveV3()).to.equal(true);
+    expect(await pool.migratedDexV3()).to.equal(true);
+    expect(await pool.ethReserve()).to.equal(0n);
+    expect(await pool.tokenReserve()).to.equal(0n);
+    expect(await pool.spotPrice()).to.equal(673223281n);
+    expect(await token.dexPair()).to.equal(v3PoolAddress);
+    expect(await token.factoryControlRenounced()).to.equal(true);
+    expect(await token.balanceOf(v3PoolAddress)).to.be.greaterThan(0n);
+
+    const weth = await manager.WETH9();
+    const tokenIsToken0 = launch.token.toLowerCase() < weth.toLowerCase();
+    expect(await v3Pool.sqrtPriceX96()).to.equal(
+      tokenIsToken0 ? 2055697212782694920257830n : 3053514737654229152956308097490832n
+    );
+  });
+
   it("restricts default updates to owner", async function () {
     const { creator, factory } = await deployFixture();
 
@@ -145,7 +258,9 @@ describe("MemeLaunchFactory", function () {
         ethers.parseUnits("2000000", 18),
         ethers.parseEther("20"),
         ethers.ZeroAddress,
-        ethers.ZeroAddress
+        ethers.ZeroAddress,
+        ethers.ZeroAddress,
+        10000
       )
     ).to.be.revertedWith("only owner");
   });

@@ -3,11 +3,15 @@ import { ethers } from "./ethers.esm.min.js?v=20260630esm";
 export { ethers };
 
 export const FACTORY_ABI = [
-  "event LaunchCreated(uint256 indexed launchId,address indexed creator,address indexed token,address pool,uint256 totalSupply,uint256 creatorAllocation,uint256 feeBps,uint256 graduationTargetEth,address dexRouter,address lpRecipient)",
+  "event LaunchCreated(uint256 indexed launchId,address indexed creator,address indexed token,address pool,uint256 totalSupply,uint256 creatorAllocation,uint256 feeBps,uint256 graduationTargetEth,address dexRouter,address lpRecipient,address v3PositionManager,uint24 v3Fee)",
   "function createLaunch(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps) payable returns (uint256 launchId,address tokenAddress,address poolAddress)",
   "function createLaunchWithTax(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps,uint256 tokenTradeFeeBps) payable returns (uint256 launchId,address tokenAddress,address poolAddress)",
+  "function createLaunchLiveDexCurve(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps) payable returns (uint256 launchId,address tokenAddress,address poolAddress)",
+  "function createLaunchLiveDexCurveWithTax(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps,uint256 tokenTradeFeeBps) payable returns (uint256 launchId,address tokenAddress,address poolAddress)",
   "function createLaunchInstant(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps) payable returns (uint256 launchId,address tokenAddress,address poolAddress)",
   "function createLaunchInstantWithTax(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps,uint256 tokenTradeFeeBps) payable returns (uint256 launchId,address tokenAddress,address poolAddress)",
+  "function defaultV3PositionManager() view returns (address)",
+  "function defaultV3Fee() view returns (uint24)",
   "function getLaunchCount() view returns (uint256)",
   "function getLaunch(uint256 launchId) view returns ((address token,address pool,address creator,string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocation,uint256 createdAt))"
 ];
@@ -18,7 +22,9 @@ export const POOL_ABI = [
   "function sell(uint256 tokenAmountIn,uint256 minEthOut) returns (uint256 ethOut)",
   "function quoteBuy(uint256 ethAmountIn) view returns (uint256 tokensOut,uint256 feePaid)",
   "function quoteSell(uint256 tokenAmountIn) view returns (uint256 ethOut,uint256 feePaid)",
-  "function quoteToken() view returns (address)"
+  "function triggerGraduation()",
+  "function quoteToken() view returns (address)",
+  "function liveDexCurve() view returns (bool)"
 ];
 
 export const TOKEN_ABI = [
@@ -118,7 +124,7 @@ export const CHAIN_OPTIONS = {
     name: "Solana",
     shortName: "SOL",
     nativeCurrency: { name: "Solana", symbol: "SOL", decimals: 9 },
-    rpcUrls: ["https://sparkling-blue-sponge.solana-mainnet.quiknode.pro/1a7f99d93cb6940285e9a095de8fc546c3c76d35/"],
+    rpcUrls: ["https://api.mainnet-beta.solana.com", "https://solana-rpc.publicnode.com"],
     blockExplorerUrls: ["https://solscan.io"]
   }
 };
@@ -694,7 +700,10 @@ export function parseUiError(err) {
   const low = clean.toLowerCase();
 
   if (low.includes("insufficient funds")) {
-    return "Insufficient ETH for launch fee + liquidity + gas.";
+    return "Insufficient ETH for the transaction value and gas. Add more ETH to the launch wallet or lower the optional dev buy.";
+  }
+  if (low.includes("signal is aborted") || low.includes("aborterror") || low.includes("the operation was aborted")) {
+    return "Solana broadcast timed out before the RPC returned. Check your wallet/history for a signature, then retry if nothing was sent.";
   }
   if (low.includes("insufficient eth for fee+liquidity")) {
     return "Not enough ETH for launch fee plus initial liquidity.";

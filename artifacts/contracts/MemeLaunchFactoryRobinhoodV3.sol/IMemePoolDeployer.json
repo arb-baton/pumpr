@@ -1,0 +1,80 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "IMemePoolDeployer",
+  "sourceName": "contracts/MemeLaunchFactoryRobinhoodV3.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "factory",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "feeRecipient",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "feeBps",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "virtualEthReserve",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "virtualTokenReserve",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "graduationTargetEth",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "dexRouter",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "lpRecipient",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "v3PositionManager",
+          "type": "address"
+        },
+        {
+          "internalType": "uint24",
+          "name": "v3Fee",
+          "type": "uint24"
+        }
+      ],
+      "name": "deployPool",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

@@ -119,6 +119,13 @@ const V2_PAIR_ABI = [
   "event Swap(address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"
 ];
 const V2_ROUTER_ABI = ["function WETH() view returns (address)"];
+const V3_POSITION_MANAGER_ABI = ["function WETH9() view returns (address)"];
+const V3_POOL_ABI = [
+  "function token0() view returns (address)",
+  "function token1() view returns (address)",
+  "function slot0() view returns (uint160 sqrtPriceX96,int24 tick,uint16 observationIndex,uint16 observationCardinality,uint16 observationCardinalityNext,uint8 feeProtocol,bool unlocked)"
+];
+const ERC20_BALANCE_ABI = ["function balanceOf(address account) view returns (uint256)"];
 const POOL_READ_ABI = [
   ...POOL_ARTIFACT.abi,
   "function quoteToken() view returns (address)"
@@ -176,7 +183,7 @@ const CHAIN_META = {
     shortName: "SOL",
     nativeCurrency: "SOL",
     explorerBaseUrl: "https://solscan.io",
-    rpcUrls: ["https://sparkling-blue-sponge.solana-mainnet.quiknode.pro/1a7f99d93cb6940285e9a095de8fc546c3c76d35/"],
+    rpcUrls: ["https://api.mainnet-beta.solana.com", "https://solana-rpc.publicnode.com"],
     dexRouter: ethers.ZeroAddress
   },
   11155111: {
@@ -737,7 +744,6 @@ function pickRpcUrls(chainId) {
     pushIf(process.env.ALCHEMY_SOLANA_RPC_URL);
     pushIf(process.env.HELIUS_SOLANA_RPC_URL);
     pushIf(process.env.SOLANA_RPC_URL);
-    pushIf("https://sparkling-blue-sponge.solana-mainnet.quiknode.pro/1a7f99d93cb6940285e9a095de8fc546c3c76d35/");
     pushIf("https://solana-rpc.publicnode.com");
     pushIf("https://api.mainnet-beta.solana.com");
     return urls;
@@ -822,6 +828,8 @@ function isRetryableSolanaRpcError(error) {
     message.includes("timeout") ||
     message.includes("timed out") ||
     message.includes("fetch failed") ||
+    message.includes("aborted") ||
+    message.includes("abort") ||
     message.includes("econnreset") ||
     message.includes("econnrefused") ||
     message.includes("enotfound") ||
@@ -8289,12 +8297,77 @@ function toNumberSafe(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function dexSnapshotFromPair(row = {}, chainSlug = "", options = {}) {
+  if (!row || typeof row !== "object") return null;
+  const pairAddress = options.solana
+    ? normalizeSolanaAddress(row?.pairAddress || "")
+    : normalizeAddress(row?.pairAddress || "");
+  return {
+    chainId: String(row?.chainId || chainSlug),
+    dexId: String(row?.dexId || ""),
+    pairAddress: pairAddress || "",
+    pairUrl: String(row?.url || ""),
+    baseSymbol: String(row?.baseToken?.symbol || ""),
+    quoteSymbol: String(row?.quoteToken?.symbol || ""),
+    priceNative: toNumberSafe(row?.priceNative, 0),
+    priceUsd: toNumberSafe(row?.priceUsd, 0),
+    marketCapUsd: toNumberSafe(row?.marketCap, 0),
+    fdvUsd: toNumberSafe(row?.fdv, 0),
+    liquidityUsd: toNumberSafe(row?.liquidity?.usd, 0),
+    volume24hUsd: toNumberSafe(row?.volume?.h24, 0),
+    priceChange24hPct: toNumberSafe(row?.priceChange?.h24, 0),
+    pairCreatedAt: Number(row?.pairCreatedAt || 0),
+    raw: row
+  };
+}
+
+async function readDexScreenerPairSnapshot(chainId, pairAddress) {
+  const numericChainId = Number(chainId || 0);
+  const pair = normalizeAddress(pairAddress || "");
+  if (!pair) return null;
+
+  const chainSlug = dexscreenerChainForChain(numericChainId);
+  const key = `${chainSlug}:pair:${pair.toLowerCase()}`;
+  const cached = getCachedValue(dexTokenCache, key);
+  if (cached) return cached;
+
+  const url = `https://api.dexscreener.com/latest/dex/pairs/${encodeURIComponent(chainSlug)}/${encodeURIComponent(pair)}`;
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(2500)
+    });
+
+    if (!response.ok) {
+      setCachedValue(dexTokenCache, key, null, DEX_TOKEN_CACHE_TTL_MS);
+      return null;
+    }
+
+    const payload = await response.json();
+    const rows = Array.isArray(payload?.pairs) ? payload.pairs : [];
+    const exact = rows.find((row) => String(row?.pairAddress || "").toLowerCase() === pair.toLowerCase()) || rows[0];
+    const value = dexSnapshotFromPair(exact, chainSlug);
+    setCachedValue(dexTokenCache, key, value, DEX_TOKEN_CACHE_TTL_MS);
+    return value;
+  } catch {
+    setCachedValue(dexTokenCache, key, null, DEX_TOKEN_CACHE_TTL_MS);
+    return null;
+  }
+}
+
 async function readDexScreenerTokenSnapshot(chainId, tokenAddress, pairHint = "") {
   const numericChainId = Number(chainId || 0);
   const token = numericChainId === 101 ? normalizeSolanaAddress(tokenAddress || "") : normalizeAddress(tokenAddress || "");
   if (!token) return null;
 
   const chainSlug = dexscreenerChainForChain(numericChainId);
+  const targetPair = numericChainId === 101 ? normalizeSolanaAddress(pairHint || "") : normalizeAddress(pairHint || "");
+  if (targetPair && numericChainId !== 101) {
+    const byPair = await readDexScreenerPairSnapshot(numericChainId, targetPair);
+    if (byPair) return byPair;
+  }
+
   const key = `${chainSlug}:${token.toLowerCase()}:${String(pairHint || "").toLowerCase()}`;
   const cached = getCachedValue(dexTokenCache, key);
   if (cached !== null) return cached;
@@ -8314,7 +8387,6 @@ async function readDexScreenerTokenSnapshot(chainId, tokenAddress, pairHint = ""
 
     const payload = await response.json();
     const rows = Array.isArray(payload?.pairs) ? payload.pairs : [];
-    const targetPair = numericChainId === 101 ? normalizeSolanaAddress(pairHint || "") : normalizeAddress(pairHint || "");
     const filtered = rows.filter((row) => String(row?.chainId || "").toLowerCase() === chainSlug.toLowerCase());
     const candidates = filtered.length ? filtered : rows;
     if (!candidates.length) {
@@ -8344,23 +8416,7 @@ async function readDexScreenerTokenSnapshot(chainId, tokenAddress, pairHint = ""
       })[0];
     }
 
-    const value = {
-      chainId: String(best?.chainId || chainSlug),
-      dexId: String(best?.dexId || ""),
-      pairAddress: (numericChainId === 101 ? normalizeSolanaAddress(best?.pairAddress || "") : normalizeAddress(best?.pairAddress || "")) || "",
-      pairUrl: String(best?.url || ""),
-      baseSymbol: String(best?.baseToken?.symbol || ""),
-      quoteSymbol: String(best?.quoteToken?.symbol || ""),
-      priceNative: toNumberSafe(best?.priceNative, 0),
-      priceUsd: toNumberSafe(best?.priceUsd, 0),
-      marketCapUsd: toNumberSafe(best?.marketCap, 0),
-      fdvUsd: toNumberSafe(best?.fdv, 0),
-      liquidityUsd: toNumberSafe(best?.liquidity?.usd, 0),
-      volume24hUsd: toNumberSafe(best?.volume?.h24, 0),
-      priceChange24hPct: toNumberSafe(best?.priceChange?.h24, 0),
-      pairCreatedAt: Number(best?.pairCreatedAt || 0),
-      raw: best
-    };
+    const value = dexSnapshotFromPair(best, chainSlug, { solana: numericChainId === 101 });
 
     setCachedValue(dexTokenCache, key, value, DEX_TOKEN_CACHE_TTL_MS);
     return value;
@@ -8477,6 +8533,26 @@ function buildPoolFallbackFromLaunch(launch) {
   };
 }
 
+function priceWeiFromV3Slot0(sqrtPriceX96, token0, token1, launchToken) {
+  const sqrtPrice = BigInt(sqrtPriceX96 || 0);
+  if (sqrtPrice <= 0n) return 0n;
+
+  const priceX192 = sqrtPrice * sqrtPrice;
+  const q192 = 1n << 192n;
+  const scale = 10n ** 18n;
+  const token0Lower = String(token0 || "").toLowerCase();
+  const token1Lower = String(token1 || "").toLowerCase();
+  const launchTokenLower = String(launchToken || "").toLowerCase();
+
+  if (token0Lower === launchTokenLower) {
+    return (priceX192 * scale) / q192;
+  }
+  if (token1Lower === launchTokenLower) {
+    return (q192 * scale) / priceX192;
+  }
+  return 0n;
+}
+
 async function readPoolSnapshot(provider, launch, options = {}) {
   const snapshotCacheKey = String(launch.pool || "").toLowerCase();
   const cachedSnapshot = options.fresh ? null : getCachedValue(poolSnapshotCache, snapshotCacheKey);
@@ -8493,13 +8569,17 @@ async function readPoolSnapshot(provider, launch, options = {}) {
     }
   };
 
-  const [spotPrice, tokenReserve, ethReserve, feeBps, graduated, graduationTargetEth, targetProgressBps, migratedPair, dexRouter, lpRecipient, quoteToken] =
+  const [spotPrice, tokenReserve, ethReserve, feeBps, graduated, liveDexCurve, liveDexCurveV3, v3PositionManager, v3Fee, graduationTargetEth, targetProgressBps, migratedPair, dexRouter, lpRecipient, quoteToken] =
     await Promise.all([
       callOr(() => pool.spotPrice(), 0n),
       callOr(() => pool.tokenReserve(), 0n),
       callOr(() => pool.ethReserve(), 0n),
       callOr(() => pool.feeBps(), 50n),
       callOr(() => pool.graduated(), false),
+      callOr(() => pool.liveDexCurve(), false),
+      callOr(() => pool.liveDexCurveV3(), false),
+      callOr(() => pool.v3PositionManager(), ethers.ZeroAddress),
+      callOr(() => pool.v3Fee(), 10000),
       callOr(() => pool.graduationTargetEth(), 0n),
       callOr(() => pool.targetProgressBps(), 0n),
       callOr(() => pool.migratedPair(), ethers.ZeroAddress),
@@ -8519,8 +8599,39 @@ async function readPoolSnapshot(provider, launch, options = {}) {
   let dexWethReserveWei = 0n;
   let dexTokenReserveWei = 0n;
   let dexWethAddress = ethers.ZeroAddress;
+  const chainDeployment = loadChainDeploymentConfig(options.chainId || launch.chainId || 0) || {};
 
-  if (Boolean(graduated) && !isZeroAddress(migratedPair)) {
+  if (Boolean(liveDexCurveV3) && !isZeroAddress(v3PositionManager)) {
+    try {
+      const manager = new ethers.Contract(v3PositionManager, V3_POSITION_MANAGER_ABI, provider);
+      dexWethAddress = normalizeAddress(await manager.WETH9()) || ethers.ZeroAddress;
+    } catch {
+      dexWethAddress = ethers.ZeroAddress;
+    }
+  }
+
+  if (Boolean(liveDexCurveV3) && !isZeroAddress(migratedPair)) {
+    try {
+      const v3Pool = new ethers.Contract(migratedPair, V3_POOL_ABI, provider);
+      const [token0, token1, slot0] = await Promise.all([v3Pool.token0(), v3Pool.token1(), v3Pool.slot0()]);
+      const slotPriceWei = priceWeiFromV3Slot0(slot0?.[0], token0, token1, launch.token);
+      if (slotPriceWei > 0n) {
+        currentPriceWei = slotPriceWei;
+        priceSource = "dex-v3";
+      }
+
+      if (!isZeroAddress(dexWethAddress)) {
+        const [tokenBalance, wethBalance] = await Promise.all([
+          new ethers.Contract(launch.token, ERC20_BALANCE_ABI, provider).balanceOf(migratedPair),
+          new ethers.Contract(dexWethAddress, ERC20_BALANCE_ABI, provider).balanceOf(migratedPair)
+        ]);
+        dexTokenReserveWei = BigInt(tokenBalance);
+        dexWethReserveWei = BigInt(wethBalance);
+      }
+    } catch {
+      // Keep the pool contract spot price fallback when V3 slot0 reads fail.
+    }
+  } else if ((Boolean(graduated) || Boolean(liveDexCurve)) && !isZeroAddress(migratedPair)) {
     try {
       const pair = new ethers.Contract(migratedPair, V2_PAIR_ABI, provider);
       const [token0, token1, reserves, wethFromPair] = await Promise.all([
@@ -8582,8 +8693,13 @@ async function readPoolSnapshot(provider, launch, options = {}) {
   const snapshot = {
     feeBps: Number(feeBps),
     graduated: Boolean(graduated),
+    liveDexCurve: Boolean(liveDexCurve),
+    liveDexCurveV3: Boolean(liveDexCurveV3),
     migratedPair,
     dexRouter,
+    v3PositionManager,
+    v3SwapRouter: normalizeAddress(chainDeployment?.v3SwapRouter || "") || ethers.ZeroAddress,
+    v3Fee: Number(v3Fee || chainDeployment?.v3Fee || 10000),
     lpRecipient,
     priceSource,
     spotPriceWei: spotPrice.toString(),
@@ -8595,7 +8711,7 @@ async function readPoolSnapshot(provider, launch, options = {}) {
     tokenReserve: tokenReserve.toString(),
     ethReserveWei: ethReserve.toString(),
     ethReserveEth: toFloat(ethReserve, quoteDecimals),
-    quoteReserve: toFloat(ethReserve, quoteDecimals),
+    quoteReserve: toFloat(Boolean(liveDexCurve) ? dexWethReserveWei : ethReserve, quoteDecimals),
     dexWethReserveWei: dexWethReserveWei.toString(),
     dexWethReserveEth: toFloat(dexWethReserveWei),
     dexWethAddress,
@@ -11120,7 +11236,7 @@ app.post("/api/solana/send-transaction", async (req, res) => {
       "Signed Solana transaction broadcast",
       async (connection, rpcUrl) => {
         await simulateSolanaTransaction(connection, tx, "Signed Solana transaction");
-        const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
+        const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: true });
         if (req.body?.blockhash && Number(req.body?.lastValidBlockHeight || 0) > 0) {
           await connection.confirmTransaction(
             {
@@ -11130,12 +11246,10 @@ app.post("/api/solana/send-transaction", async (req, res) => {
             },
             "confirmed"
           );
-        } else {
-          await connection.confirmTransaction(signature, "confirmed");
         }
         return { signature, rpcUrl };
       },
-      { preferredRpcUrl: req.body?.rpcUrl }
+      { preferredRpcUrl: req.body?.rpcUrl, retryAll: !req.body?.blockhash }
     );
     const { signature, rpcUrl } = sent;
     res.json({ ok: true, signature, rpcUrl });
@@ -11184,7 +11298,7 @@ app.get("/api/airdrop/preview", async (req, res) => {
         creatorClaimableTokens: 0,
         creatorClaimedTokens: 0
       })),
-      readPoolSnapshot(ctx.provider, launch, { quoteMode: ctx.quoteMode, quoteAsset: ctx.quoteAsset }).catch(() => buildPoolFallbackFromLaunch(launch))
+      readPoolSnapshot(ctx.provider, launch, { chainId: ctx.chainId, quoteMode: ctx.quoteMode, quoteAsset: ctx.quoteAsset }).catch(() => buildPoolFallbackFromLaunch(launch))
     ]);
 
     const holders = (Array.isArray(holdersRaw) ? holdersRaw : [])
@@ -11922,12 +12036,21 @@ app.get("/api/launch-availability", async (req, res) => {
   try {
     const name = String(req.query.name || "").trim();
     const symbol = String(req.query.symbol || "").trim();
-    const result = await findDuplicateLaunchIdentity({ name, symbol });
+    const timeoutMs = Math.max(1_000, Math.min(10_000, Number(req.query.timeoutMs || 5_000)));
+    const result = await withTimeout(findDuplicateLaunchIdentity({ name, symbol }), timeoutMs, "launch availability");
     res.json({
       available: !result.duplicate,
       ...result
     });
   } catch (error) {
+    if (String(error?.message || "").toLowerCase().includes("timed out")) {
+      return res.json({
+        available: true,
+        duplicate: false,
+        skipped: true,
+        warning: "Token name and ticker check timed out; launch can continue."
+      });
+    }
     res.status(Number(error.status || 500)).json({ error: error.message || "Failed to check token availability" });
   }
 });
@@ -12013,6 +12136,7 @@ function compactPoolForHome(pool) {
   return {
     address: String(pool.address || "").trim(),
     graduated: Boolean(pool.graduated),
+    liveDexCurve: Boolean(pool.liveDexCurve),
     migratedPair: String(pool.migratedPair || "").trim(),
     quoteMode: String(pool.quoteMode || "").trim(),
     quoteAsset: pool.quoteAsset
@@ -12161,7 +12285,7 @@ app.get("/api/launches", async (req, res) => {
           try {
             // Even in lite mode, read live pool snapshot so non-home card requests don't stick to seeded defaults.
             pool = await withTimeout(
-              readPoolSnapshot(ctx.provider, launch, { quoteMode: ctx.quoteMode, quoteAsset: ctx.quoteAsset }),
+              readPoolSnapshot(ctx.provider, launch, { chainId: ctx.chainId, quoteMode: ctx.quoteMode, quoteAsset: ctx.quoteAsset }),
               lite ? 1800 : RPC_READ_TIMEOUT_MS,
               "pool snapshot"
             );
@@ -13476,7 +13600,7 @@ app.get("/api/stats", async (req, res) => {
 
       const sampleLaunches = launchList.slice(0, Math.min(count, 80));
       const pools = await mapWithConcurrency(sampleLaunches, MAX_LAUNCH_READ_CONCURRENCY, (launch) =>
-        readPoolSnapshot(ctx.provider, launch)
+        readPoolSnapshot(ctx.provider, launch, { chainId: ctx.chainId })
       );
 
       for (const pool of pools) {
@@ -13550,6 +13674,7 @@ async function handleTokenRequest(req, res, tokenCandidate) {
         imageURI: sanitizeLaunchImageUri(launch.imageURI)
       };
       const poolBase = await readPoolSnapshot(ctx.provider, safeLaunch, {
+        chainId: ctx.chainId,
         fresh: forceFresh,
         quoteMode: ctx.quoteMode,
         quoteAsset: ctx.quoteAsset
@@ -13600,7 +13725,7 @@ async function handleTokenRequest(req, res, tokenCandidate) {
           : null;
         let liteTrades = [];
         let liteChart = [];
-        if (!poolLite.graduated) {
+        if (!poolLite.graduated && !poolLite.liveDexCurve) {
           try {
             const localPayload = await withTimeout(
               readRecentTrades(ctx.provider, safeLaunch.pool, 60),
@@ -13694,7 +13819,7 @@ async function handleTokenRequest(req, res, tokenCandidate) {
 
       let localTradesPayload = { trades: [], chart: [] };
       let pairTradesPayload = { trades: [], chart: [] };
-      const shouldReadPoolTrades = useOnchainPoolTrades && !pool.graduated && (!Array.isArray(geckoTrades) || !geckoTrades.length);
+      const shouldReadPoolTrades = useOnchainPoolTrades && !pool.graduated && !pool.liveDexCurve && (!Array.isArray(geckoTrades) || !geckoTrades.length);
       // Always sample recent pair swaps and merge with indexer data.
       // This keeps trade history visible even when indexer APIs lag.
       const shouldReadPairTrades = useOnchainPairTrades && !isZeroAddress(effectivePair);
@@ -13910,7 +14035,7 @@ app.get("/api/profile/:address", async (req, res) => {
         const key = `${chainCtx.chainId}:${launch.pool.toLowerCase()}`;
         if (!poolCache.has(key)) {
           try {
-            poolCache.set(key, await readPoolSnapshot(chainCtx.provider, launch));
+            poolCache.set(key, await readPoolSnapshot(chainCtx.provider, launch, { chainId: chainCtx.chainId }));
           } catch {
             poolCache.set(key, buildPoolFallbackFromLaunch(launch));
           }

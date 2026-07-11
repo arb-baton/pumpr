@@ -11,6 +11,7 @@ contract MemeLaunchFactory {
     uint256 public constant DEFAULT_TOKEN_TRADE_FEE_BPS = 50;
     uint256 public constant MAX_TOKEN_TRADE_FEE_BPS = 1_000;
     uint256 public constant ROBINHOOD_CHAIN_ID = 4663;
+    uint256 public constant FIXED_TOTAL_SUPPLY = 1_000_000_000 ether;
     address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
 
     struct LaunchInfo {
@@ -38,6 +39,8 @@ contract MemeLaunchFactory {
     uint256 public defaultGraduationTargetEth;
     address public defaultDexRouter;
     address public defaultLpRecipient;
+    address public defaultV3PositionManager;
+    uint24 public defaultV3Fee;
 
     LaunchInfo[] private launches;
     mapping(address token => address pool) public poolByToken;
@@ -52,7 +55,9 @@ contract MemeLaunchFactory {
         uint256 feeBps,
         uint256 graduationTargetEth,
         address dexRouter,
-        address lpRecipient
+        address lpRecipient,
+        address v3PositionManager,
+        uint24 v3Fee
     );
 
     event DefaultsUpdated(
@@ -64,11 +69,14 @@ contract MemeLaunchFactory {
         uint256 virtualTokenReserve,
         uint256 graduationTargetEth,
         address dexRouter,
-        address lpRecipient
+        address lpRecipient,
+        address v3PositionManager,
+        uint24 v3Fee
     );
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event InstantLaunchRequested(address indexed creator, uint256 ethLiquidity);
+    event LiveDexCurveRequested(address indexed creator, uint256 ethLiquidity);
     event LaunchFeePaid(address indexed payer, address indexed recipient, uint256 amountWei);
     event TokenTaxConfigured(
         uint256 indexed launchId,
@@ -92,7 +100,9 @@ contract MemeLaunchFactory {
         uint256 _defaultVirtualTokenReserve,
         uint256 _defaultGraduationTargetEth,
         address _defaultDexRouter,
-        address _defaultLpRecipient
+        address _defaultLpRecipient,
+        address _defaultV3PositionManager,
+        uint24 _defaultV3Fee
     ) {
         require(_feeRecipient != address(0), "fee recipient required");
         require(_defaultFeeBps <= 300, "fee too high");
@@ -115,6 +125,8 @@ contract MemeLaunchFactory {
         defaultGraduationTargetEth = _defaultGraduationTargetEth;
         defaultDexRouter = _defaultDexRouter;
         defaultLpRecipient = _defaultLpRecipient;
+        defaultV3PositionManager = _defaultV3PositionManager;
+        defaultV3Fee = _defaultV3Fee == 0 ? 10_000 : _defaultV3Fee;
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
@@ -133,7 +145,9 @@ contract MemeLaunchFactory {
         uint256 newVirtualTokenReserve,
         uint256 newGraduationTargetEth,
         address newDexRouter,
-        address newLpRecipient
+        address newLpRecipient,
+        address newV3PositionManager,
+        uint24 newV3Fee
     ) external onlyOwner {
         require(newFeeRecipient != address(0), "fee recipient required");
         require(newPlatformFeeRecipient != address(0), "platform recipient required");
@@ -155,6 +169,8 @@ contract MemeLaunchFactory {
         defaultGraduationTargetEth = newGraduationTargetEth;
         defaultDexRouter = newDexRouter;
         defaultLpRecipient = newLpRecipient;
+        defaultV3PositionManager = newV3PositionManager;
+        defaultV3Fee = newV3Fee == 0 ? 10_000 : newV3Fee;
 
         emit DefaultsUpdated(
             newFeeRecipient,
@@ -165,7 +181,9 @@ contract MemeLaunchFactory {
             newVirtualTokenReserve,
             newGraduationTargetEth,
             newDexRouter,
-            newLpRecipient
+            newLpRecipient,
+            newV3PositionManager,
+            defaultV3Fee
         );
     }
 
@@ -188,6 +206,8 @@ contract MemeLaunchFactory {
             creatorAllocationBps,
             DEFAULT_TOKEN_TRADE_FEE_BPS,
             0,
+            false,
+            false,
             false
         );
     }
@@ -212,7 +232,83 @@ contract MemeLaunchFactory {
             creatorAllocationBps,
             tokenTradeFeeBps,
             0,
+            false,
+            false,
             false
+        );
+    }
+
+    /// @notice Launch live on Uniswap immediately while keeping a graduation target on the live pair.
+    function createLaunchLiveDexCurve(
+        string calldata name,
+        string calldata symbol,
+        string calldata imageURI,
+        string calldata description,
+        uint256 totalSupply,
+        uint256 creatorAllocationBps
+    ) external payable returns (uint256 launchId, address tokenAddress, address poolAddress) {
+        require(msg.value >= launchFeeWei, "insufficient launch fee");
+
+        uint256 initialLiquidity = msg.value - launchFeeWei;
+        bool useV3 = initialLiquidity == 0 && defaultV3PositionManager != address(0);
+        if (!useV3) {
+            require(defaultDexRouter != address(0), "dex router not set");
+            require(defaultLpRecipient != address(0), "lp recipient not set");
+            require(initialLiquidity > 0, "insufficient eth for fee+liquidity");
+        }
+        _collectLaunchFee();
+
+        emit LiveDexCurveRequested(msg.sender, initialLiquidity);
+
+        (launchId, tokenAddress, poolAddress) = _createLaunch(
+            name,
+            symbol,
+            imageURI,
+            description,
+            totalSupply,
+            creatorAllocationBps,
+            DEFAULT_TOKEN_TRADE_FEE_BPS,
+            initialLiquidity,
+            false,
+            !useV3,
+            useV3
+        );
+    }
+
+    function createLaunchLiveDexCurveWithTax(
+        string calldata name,
+        string calldata symbol,
+        string calldata imageURI,
+        string calldata description,
+        uint256 totalSupply,
+        uint256 creatorAllocationBps,
+        uint256 tokenTradeFeeBps
+    ) external payable returns (uint256 launchId, address tokenAddress, address poolAddress) {
+        require(msg.value >= launchFeeWei, "insufficient launch fee");
+
+        uint256 initialLiquidity = msg.value - launchFeeWei;
+        bool useV3 = initialLiquidity == 0 && defaultV3PositionManager != address(0);
+        if (!useV3) {
+            require(defaultDexRouter != address(0), "dex router not set");
+            require(defaultLpRecipient != address(0), "lp recipient not set");
+            require(initialLiquidity > 0, "insufficient eth for fee+liquidity");
+        }
+        _collectLaunchFee();
+
+        emit LiveDexCurveRequested(msg.sender, initialLiquidity);
+
+        (launchId, tokenAddress, poolAddress) = _createLaunch(
+            name,
+            symbol,
+            imageURI,
+            description,
+            totalSupply,
+            creatorAllocationBps,
+            tokenTradeFeeBps,
+            initialLiquidity,
+            false,
+            !useV3,
+            useV3
         );
     }
 
@@ -243,7 +339,9 @@ contract MemeLaunchFactory {
             creatorAllocationBps,
             DEFAULT_TOKEN_TRADE_FEE_BPS,
             initialLiquidity,
-            true
+            true,
+            false,
+            false
         );
     }
 
@@ -274,7 +372,9 @@ contract MemeLaunchFactory {
             creatorAllocationBps,
             tokenTradeFeeBps,
             initialLiquidity,
-            true
+            true,
+            false,
+            false
         );
     }
 
@@ -287,11 +387,13 @@ contract MemeLaunchFactory {
         uint256 creatorAllocationBps,
         uint256 tokenTradeFeeBps,
         uint256 initialEthLiquidity,
-        bool graduateNow
+        bool graduateNow,
+        bool openLiveDexCurve,
+        bool openLiveDexCurveV3
     ) internal returns (uint256 launchId, address tokenAddress, address poolAddress) {
         require(bytes(name).length > 0, "name required");
         require(bytes(symbol).length > 0, "symbol required");
-        require(totalSupply > 0, "supply required");
+        totalSupply = FIXED_TOTAL_SUPPLY;
         require(creatorAllocationBps <= 2_000, "allocation too high");
         require(tokenTradeFeeBps <= MAX_TOKEN_TRADE_FEE_BPS, "trade fee too high");
 
@@ -308,7 +410,9 @@ contract MemeLaunchFactory {
             defaultVirtualTokenReserve,
             defaultGraduationTargetEth,
             defaultDexRouter,
-            launchLpRecipient
+            launchLpRecipient,
+            defaultV3PositionManager,
+            defaultV3Fee
         );
 
         uint256 creatorAllocation = (totalSupply * creatorAllocationBps) / BPS_DENOMINATOR;
@@ -323,6 +427,24 @@ contract MemeLaunchFactory {
         pool.seed(poolAllocation);
         if (graduateNow) {
             pool.graduateNow();
+            address pair = pool.migratedPair();
+            if (pair != address(0)) {
+                token.setDexPair(pair);
+            }
+            if (!isPlatformCreator || block.chainid == ROBINHOOD_CHAIN_ID) {
+                token.renounceFactoryControl();
+            }
+        } else if (openLiveDexCurve) {
+            pool.launchLiveDexCurve();
+            address pair = pool.migratedPair();
+            if (pair != address(0)) {
+                token.setDexPair(pair);
+            }
+            if (!isPlatformCreator || block.chainid == ROBINHOOD_CHAIN_ID) {
+                token.renounceFactoryControl();
+            }
+        } else if (openLiveDexCurveV3) {
+            pool.launchLiveDexCurveV3();
             address pair = pool.migratedPair();
             if (pair != address(0)) {
                 token.setDexPair(pair);
@@ -362,7 +484,9 @@ contract MemeLaunchFactory {
             defaultFeeBps,
             defaultGraduationTargetEth,
             defaultDexRouter,
-            launchLpRecipient
+            launchLpRecipient,
+            defaultV3PositionManager,
+            defaultV3Fee
         );
         emit TokenTaxConfigured(
             launchId,

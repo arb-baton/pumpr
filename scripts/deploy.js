@@ -2,6 +2,23 @@ const fs = require("fs");
 const path = require("path");
 const hre = require("hardhat");
 
+function readGraduationTargetEth() {
+  if (process.env.GRADUATION_TARGET_ETH) {
+    return hre.ethers.parseEther(process.env.GRADUATION_TARGET_ETH);
+  }
+
+  const targetUsd = Number(process.env.GRADUATION_TARGET_USD || 40_000);
+  const quoteUsd = Number(process.env.GRADUATION_TARGET_QUOTE_USD || process.env.ETH_USD_PRICE || 3_000);
+  if (!Number.isFinite(targetUsd) || targetUsd <= 0) {
+    throw new Error("GRADUATION_TARGET_USD must be a positive number.");
+  }
+  if (!Number.isFinite(quoteUsd) || quoteUsd <= 0) {
+    throw new Error("GRADUATION_TARGET_QUOTE_USD must be a positive number.");
+  }
+
+  return hre.ethers.parseEther((targetUsd / quoteUsd).toFixed(18));
+}
+
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
   const chainId = Number((await hre.ethers.provider.getNetwork()).chainId);
@@ -10,6 +27,12 @@ async function main() {
     8453: "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
     4663: hre.ethers.ZeroAddress,
     11155111: "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3"
+  };
+  const DEFAULT_V3_POSITION_MANAGER_BY_CHAIN = {
+    4663: "0x73991a25c818bf1f1128deaab1492d45638de0d3"
+  };
+  const DEFAULT_V3_SWAP_ROUTER_BY_CHAIN = {
+    4663: "0xcaf681a66d020601342297493863e78c959e5cb2"
   };
 
   console.log("Deploying with account:", deployer.address);
@@ -33,9 +56,7 @@ async function main() {
     ? hre.ethers.parseUnits(process.env.VIRTUAL_TOKEN_RESERVE, 18)
     : hre.ethers.parseUnits("1000000", 18);
 
-  const graduationTargetEth = process.env.GRADUATION_TARGET_ETH
-    ? hre.ethers.parseEther(process.env.GRADUATION_TARGET_ETH)
-    : hre.ethers.parseEther("12");
+  const graduationTargetEth = readGraduationTargetEth();
 
   const chainDexRouter = process.env[`DEX_ROUTER_${chainId}`] || "";
   const legacyDexRouter = chainId === 1 ? process.env.DEX_ROUTER || "" : "";
@@ -54,6 +75,17 @@ async function main() {
     dexRouter === hre.ethers.ZeroAddress
       ? hre.ethers.ZeroAddress
       : process.env.LP_RECIPIENT || feeRecipient;
+  const v3PositionManager =
+    process.env[`V3_POSITION_MANAGER_${chainId}`] ||
+    process.env.V3_POSITION_MANAGER ||
+    DEFAULT_V3_POSITION_MANAGER_BY_CHAIN[chainId] ||
+    hre.ethers.ZeroAddress;
+  const v3SwapRouter =
+    process.env[`V3_SWAP_ROUTER_${chainId}`] ||
+    process.env.V3_SWAP_ROUTER ||
+    DEFAULT_V3_SWAP_ROUTER_BY_CHAIN[chainId] ||
+    hre.ethers.ZeroAddress;
+  const v3Fee = process.env.V3_FEE ? Number(process.env.V3_FEE) : 10000;
 
   const Factory = await hre.ethers.getContractFactory("MemeLaunchFactory");
   const factory = await Factory.deploy(
@@ -65,7 +97,9 @@ async function main() {
     virtualTokenReserve,
     graduationTargetEth,
     dexRouter,
-    lpRecipient
+    lpRecipient,
+    v3PositionManager,
+    v3Fee
   );
 
   await factory.waitForDeployment();
@@ -79,6 +113,9 @@ async function main() {
   console.log("graduationTargetEth:", hre.ethers.formatEther(graduationTargetEth));
   console.log("dexRouter:", dexRouter);
   console.log("lpRecipient:", lpRecipient);
+  console.log("v3PositionManager:", v3PositionManager);
+  console.log("v3SwapRouter:", v3SwapRouter);
+  console.log("v3Fee:", v3Fee);
 
   const output = {
     chainId,
@@ -92,7 +129,10 @@ async function main() {
     virtualTokenReserve: virtualTokenReserve.toString(),
     graduationTargetEth: graduationTargetEth.toString(),
     dexRouter,
-    lpRecipient
+    lpRecipient,
+    v3PositionManager,
+    v3SwapRouter,
+    v3Fee
   };
 
   const outPath = path.join(__dirname, "..", "frontend", "deployment.json");

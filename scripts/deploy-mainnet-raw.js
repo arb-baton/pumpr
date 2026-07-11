@@ -50,6 +50,9 @@ async function main() {
     : ethers.parseEther("12");
   const dexRouter = process.env.DEX_ROUTER || "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
   const lpRecipient = process.env.LP_RECIPIENT || feeRecipient;
+  const v3PositionManager = process.env.V3_POSITION_MANAGER || ethers.ZeroAddress;
+  const v3SwapRouter = process.env.V3_SWAP_ROUTER || ethers.ZeroAddress;
+  const v3Fee = process.env.V3_FEE ? Number(process.env.V3_FEE) : 10000;
   const feeData = await provider.getFeeData();
   const latestBlock = await provider.getBlock("latest");
   const baseFeePerGas = latestBlock?.baseFeePerGas ?? feeData.gasPrice ?? ethers.parseUnits("1", "gwei");
@@ -71,6 +74,9 @@ async function main() {
   console.log("feeRecipient:", feeRecipient);
   console.log("platformFeeRecipient:", platformFeeRecipient);
   console.log("lpRecipient:", lpRecipient);
+  console.log("v3PositionManager:", v3PositionManager);
+  console.log("v3SwapRouter:", v3SwapRouter);
+  console.log("v3Fee:", v3Fee);
   console.log("baseFeePerGas:", baseFeePerGas.toString());
   console.log("maxPriorityFeePerGas:", maxPriorityFeePerGas.toString());
   console.log("maxFeePerGas:", maxFeePerGas.toString());
@@ -86,6 +92,8 @@ async function main() {
     graduationTargetEth,
     dexRouter,
     lpRecipient,
+    v3PositionManager,
+    v3Fee,
     txOverrides
   );
 
@@ -106,7 +114,10 @@ async function main() {
     virtualTokenReserve: virtualTokenReserve.toString(),
     graduationTargetEth: graduationTargetEth.toString(),
     dexRouter,
-    lpRecipient
+    lpRecipient,
+    v3PositionManager,
+    v3SwapRouter,
+    v3Fee
   };
 
   const outPath = path.join(ROOT, "frontend", "deployment.json");

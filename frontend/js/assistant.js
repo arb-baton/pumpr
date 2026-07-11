@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260709evmsolrail1";
+import { api } from "./api.js?v=20260710solbroadcast";
 import { KOL_LEADERBOARD } from "./kolData.js?v=20260703ansem";
 import {
   connectSolanaWallet,
@@ -1784,24 +1784,39 @@ async function launchEvmFromAssistant(draft = {}) {
   const hasDexRouter = dexRouter && dexRouter.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
   const useTaxLaunch = chainId === 4663;
   const directLiquidityMode = details.launchStyle === "direct";
+  const liveDexCurveMode = chainId === 4663 && details.launchStyle !== "direct";
   const starterBuyEth = ethers.parseUnits(String(details.starterBuyValue || 0), 18);
   if (directLiquidityMode && starterBuyEth > 0n && !hasDexRouter) {
     throw new Error(`${chainLabelForDraft(details)} direct launch mode needs a DEX router configured first.`);
   }
+  if (liveDexCurveMode && !hasDexRouter) {
+    throw new Error(`${chainLabelForDraft(details)} Uniswap bonding mode needs a DEX router configured first.`);
+  }
+  if (liveDexCurveMode && starterBuyEth <= 0n) {
+    throw new Error(`${chainLabelForDraft(details)} Uniswap bonding mode needs launch liquidity entered first so the pair can open live on launch.`);
+  }
   const useInstantLiquidity = directLiquidityMode && hasDexRouter && starterBuyEth > 0n;
-  const totalValue = launchFeeWei + (useInstantLiquidity ? starterBuyEth : 0n);
+  const useLiveDexCurve = liveDexCurveMode && hasDexRouter && starterBuyEth > 0n;
+  const totalValue = launchFeeWei + (useInstantLiquidity || useLiveDexCurve ? starterBuyEth : 0n);
   const totalSupply = ethers.parseUnits(String(details.totalSupplyValue || DEFAULT_ASSISTANT_TOKEN_SUPPLY), 18);
   const creatorBps = BigInt(Math.round(details.creatorAllocationPct * 100));
   const tokenTradeFeeBps = BigInt(Math.round(DEFAULT_ASSISTANT_TOKEN_TAX_PCT * 100));
   const launchMethodName = useInstantLiquidity
     ? useTaxLaunch ? "createLaunchInstantWithTax" : "createLaunchInstant"
+    : useLiveDexCurve
+    ? useTaxLaunch ? "createLaunchLiveDexCurveWithTax" : "createLaunchLiveDexCurve"
     : useTaxLaunch ? "createLaunchWithTax" : "createLaunch";
   const launchArgs = useTaxLaunch
     ? [details.name, details.symbol, details.image, details.description, totalSupply, creatorBps, tokenTradeFeeBps]
     : [details.name, details.symbol, details.image, details.description, totalSupply, creatorBps];
   const launchMethod = factory[launchMethodName];
 
-  setStatus(`Open your wallet to launch on ${chainLabelForDraft(details)}...`, "excited");
+  setStatus(
+    useLiveDexCurve
+      ? `Open your wallet to launch a live Uniswap bonding curve on ${chainLabelForDraft(details)}...`
+      : `Open your wallet to launch on ${chainLabelForDraft(details)}...`,
+    "excited"
+  );
   const simulated = await launchMethod.staticCall(...launchArgs, { value: totalValue });
   const tx = await sendTxWithFallback({
     label: `Assistant ${chainLabelForDraft(details)} launch`,
@@ -1815,7 +1830,7 @@ async function launchEvmFromAssistant(draft = {}) {
     pool: simulated?.[2]
   };
 
-  if (!useInstantLiquidity && starterBuyEth > 0n && launchInfo?.pool) {
+  if (!useInstantLiquidity && !useLiveDexCurve && starterBuyEth > 0n && launchInfo?.pool) {
     setStatus("Launch created. Running the starter buy...", "thinking");
     const pool = makePoolContract(launchInfo.pool);
     const quoted = await pool.quoteBuy(starterBuyEth);

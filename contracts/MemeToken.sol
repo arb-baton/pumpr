@@ -35,6 +35,7 @@ contract MemeToken {
     event TradeFeeAccrued(address indexed from, address indexed to, uint256 creatorFee, uint256 platformFee);
     event CreatorFeesClaimed(address indexed creator, uint256 amount);
     event PlatformFeesClaimed(address indexed recipient, uint256 amount);
+    event Burn(address indexed from, uint256 amount);
 
     modifier onlyFactory() {
         require(msg.sender == factory, "only factory");
@@ -80,6 +81,19 @@ contract MemeToken {
     function approve(address spender, uint256 amount) external returns (bool) {
         allowance[msg.sender][spender] = amount;
         emit Approval(msg.sender, spender, amount);
+        return true;
+    }
+
+    function burn(uint256 amount) external returns (bool) {
+        require(amount > 0, "amount required");
+        uint256 fromBalance = balanceOf[msg.sender];
+        require(fromBalance >= amount, "balance too low");
+
+        balanceOf[msg.sender] = fromBalance - amount;
+        totalSupply -= amount;
+
+        emit Transfer(msg.sender, address(0), amount);
+        emit Burn(msg.sender, amount);
         return true;
     }
 

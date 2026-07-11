@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260709evmsolrail1";
+import { api } from "./api.js?v=20260710solbroadcast";
 import {
   FACTORY_ABI,
   POOL_ABI,
@@ -22,7 +22,7 @@ import {
   shortAddress,
   solanaWalletState,
   walletState
-} from "./core.js?v=20260709previewtheme";
+} from "./core.js?v=20260710fundingcheck";
 import { initTopbarWalletProfile, setAlert, showCopyToast } from "./ui.js?v=20260706mobileauth";
 import { initCoinSearchOverlay } from "./searchModal.js?v=20260703sharedauth";
 import { initSupportWidget } from "./support.js?v=20260703adminwallet";
@@ -31,12 +31,19 @@ import { KOL_LEADERBOARD } from "./kolData.js?v=20260703ansem";
 const MIN_INITIAL_LIQUIDITY_ETH = 0;
 const DEFAULT_TOKEN_TRADE_TAX_PCT = 0.5;
 const MAX_TOKEN_TRADE_TAX_PCT = 10;
+const FIXED_TOKEN_SUPPLY = 1_000_000_000;
+const FIXED_MIGRATION_MARKET_CAP_USD = 40_000;
+const FIXED_V3_START_MARKET_CAP_USD = 2_000;
 const HOME_LAUNCH_CACHE_KEY = "etherpump.launches.cache.v3";
 const HOME_LAUNCH_CACHE_MAX_ITEMS = 120;
-const DEFAULT_PUMPFUN_SUPPLY = 1_000_000_000;
+const DEFAULT_PUMPFUN_SUPPLY = FIXED_TOKEN_SUPPLY;
 const PUMPFUN_ESTIMATE_VIRTUAL_SOL = 30;
 const RH_WALLET_STORE_KEY = "pumpr.robinhood.wallets.v1";
 const SOL_FUNDED_EVM_LAUNCH_CHAIN_IDS = new Set([1, 8453, 143, 4663]);
+const V3_POSITION_MANAGER_READ_ABI = ["function WETH9() view returns (address)"];
+const V3_SWAP_ROUTER_ABI = [
+  "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 deadline,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)"
+];
 
 const ui = {
   walletSelect: document.getElementById("walletChoice"),
@@ -673,8 +680,38 @@ function selectedLaunchStyle(chainId = state.selectedChainId) {
   return style === "direct" ? "direct" : "bonding";
 }
 
-function isRobinhoodDirectLiquidityMode() {
-  return directLaunchStyleSupported() && selectedLaunchStyle() === "direct";
+function isRobinhoodDirectLiquidityMode(chainId = state.selectedChainId) {
+  return Number(chainId || 0) !== 4663 && directLaunchStyleSupported(chainId) && selectedLaunchStyle(chainId) === "direct";
+}
+
+function isRobinhoodLiveDexCurveMode(chainId = state.selectedChainId) {
+  return Number(chainId || 0) === 4663 && directLaunchStyleSupported(chainId);
+}
+
+function isV3LiveCurveUiMode(chainId = state.selectedChainId) {
+  return Number(chainId || 0) === 4663 && isRobinhoodLiveDexCurveMode(chainId);
+}
+
+function configuredV3SwapRouter() {
+  return String(
+    state.config?.deployment?.v3SwapRouter ||
+      state.config?.deployment?.swapRouterV3 ||
+      state.config?.deployment?.uniswapV3SwapRouter ||
+      ethers.ZeroAddress
+  );
+}
+
+function hasConfiguredAddress(value) {
+  const text = String(value || "").trim().toLowerCase();
+  return Boolean(text && text !== ethers.ZeroAddress.toLowerCase());
+}
+
+function enforceFixedSupplyInput() {
+  if (!ui.supply) return;
+  ui.supply.value = String(FIXED_TOKEN_SUPPLY);
+  ui.supply.readOnly = true;
+  ui.supply.min = String(FIXED_TOKEN_SUPPLY);
+  ui.supply.max = String(FIXED_TOKEN_SUPPLY);
 }
 
 function setLaunchStyle(style = "bonding", chainId = state.selectedChainId) {
@@ -691,8 +728,26 @@ function renderLaunchStyleToggle() {
   const supported = directLaunchStyleSupported();
   ui.launchStyleCard.hidden = !supported;
   if (!supported) return;
+  if (isRobinhoodLiveDexCurveMode()) {
+    setLaunchStyle("bonding", state.selectedChainId);
+    ui.launchStyleCard.hidden = true;
+    return;
+  }
   const chainName = chainNameForId(state.selectedChainId);
   const direct = isRobinhoodDirectLiquidityMode();
+  const rhLiveDexCurve = isRobinhoodLiveDexCurveMode();
+  const bondingTitle = ui.launchStyleBondingBtn?.querySelector("strong");
+  const bondingMeta = ui.launchStyleBondingBtn?.querySelector("span");
+  const directTitle = ui.launchStyleDirectBtn?.querySelector("strong");
+  const directMeta = ui.launchStyleDirectBtn?.querySelector("span");
+  if (bondingTitle) bondingTitle.textContent = rhLiveDexCurve ? "Uniswap bonding curve" : "Bonding curve";
+  if (bondingMeta) {
+    bondingMeta.textContent = rhLiveDexCurve
+      ? "Open live on Uniswap, burn LP on launch, track graduation on-pair"
+      : "Launch first, optional starter buy after";
+  }
+  if (directTitle) directTitle.textContent = "Direct Uniswap";
+  if (directMeta) directMeta.textContent = "Seed LP on launch and burn LP automatically";
   ui.launchStyleBondingBtn?.classList.toggle("active", !direct);
   ui.launchStyleBondingBtn?.setAttribute("aria-selected", direct ? "false" : "true");
   ui.launchStyleDirectBtn?.classList.toggle("active", direct);
@@ -700,6 +755,8 @@ function renderLaunchStyleToggle() {
   if (ui.launchStyleHint) {
     ui.launchStyleHint.textContent = direct
       ? `Direct launch on ${chainName} uses your entered native gas token as launch liquidity and burns LP automatically.`
+      : isRobinhoodLiveDexCurveMode()
+      ? `Robinhood Chain opens live on Uniswap immediately, burns LP on launch, and keeps trading live while the pair works toward its graduation target.`
       : `Bonding curve launches start normally on ${chainName}, then any native gas token entered below is used as an optional starter buy after launch.`;
   }
 }
@@ -785,14 +842,25 @@ function renderChainSelector() {
   ui.createForm?.classList.toggle("create-mode-solana", isPumpFunMode());
   ui.createForm?.classList.toggle("create-mode-evm", !isPumpFunMode());
   syncRhBridgeRecipient();
+  enforceFixedSupplyInput();
+  const v3LiveCurveUi = isV3LiveCurveUiMode();
+  if (ui.launchMcapUsd) {
+    ui.launchMcapUsd.value = String(FIXED_MIGRATION_MARKET_CAP_USD);
+    ui.launchMcapUsd.readOnly = true;
+    ui.launchMcapUsd.closest?.("label")?.toggleAttribute("hidden", true);
+  }
   if (ui.starterBuyLabel) {
     ui.starterBuyLabel.textContent = isRobinhoodDirectLiquidityMode()
       ? `Direct launch liquidity (${chainNativeSymbolForId(state.selectedChainId)})`
+      : isRobinhoodLiveDexCurveMode()
+      ? `Dev buy (${chainNativeSymbolForId(state.selectedChainId)})`
       : `Optional starter buy (${chainNativeSymbolForId(state.selectedChainId)})`;
   }
   if (ui.starterMcapLabel) {
     ui.starterMcapLabel.textContent = isRobinhoodDirectLiquidityMode()
       ? "Direct launch market cap estimate (USD)"
+      : isRobinhoodLiveDexCurveMode()
+      ? "Fixed migration market cap (USD)"
       : "Starter buy market cap estimate (USD)";
   }
   updateKolEstimate();
@@ -818,8 +886,10 @@ function renderChainSelector() {
       ? "USDC launches use a USDC-paired bonding curve on Ethereum. Buyers can still route from ETH through Uniswap after graduation; the SOL funding rail only applies to native-gas EVM launch modes."
       : Number(current?.chainId || state.selectedChainId) === 4663
       ? isRobinhoodDirectLiquidityMode()
-        ? "Robinhood Chain uses ETH for gas. Direct Uniswap mode seeds liquidity on launch and burns LP automatically."
-        : "Robinhood Chain uses ETH for gas. Bonding curve mode launches first, then optional starter buy can be sent after launch."
+        ? "Robinhood Chain uses ETH for gas. Direct Uniswap mode skips the curve, seeds Uniswap liquidity on launch, and burns LP automatically."
+        : v3LiveCurveUi
+        ? "Robinhood Chain uses ETH for gas. Uniswap V3 bonding mode opens live without creator seed liquidity; the dev buy stays separate from the launch liquidity."
+        : "Robinhood Chain uses ETH for gas. Uniswap bonding mode opens live on Uniswap immediately, burns LP on launch, and tracks graduation on the live pair instead of waiting for a later migration."
       : directLaunchStyleSupported()
       ? isRobinhoodDirectLiquidityMode()
         ? `${current?.name || chainNameForId(state.selectedChainId)} direct launch seeds liquidity on launch and burns LP automatically.`
@@ -1230,7 +1300,7 @@ function getLaunchEconomics(
   liquidityEthInput = parseNumberInput(ui.devBuyEth?.value, 0),
   creatorBuyEthInput = parseNumberInput(ui.creatorBuyEth?.value, 0)
 ) {
-  const totalSupply = parseNumberInput(ui.supply?.value, 0);
+  const totalSupply = FIXED_TOKEN_SUPPLY;
   const liquidityEth = Math.max(0, liquidityEthInput);
   const creatorBuyEth = Math.max(0, creatorBuyEthInput);
   const creatorPct = creatorBuyEth;
@@ -1246,6 +1316,9 @@ function getLaunchEconomics(
 
   const marketCapEth = liquidityEth > 0 ? liquidityEth * mcapMultiplier : 0;
   const marketCapUsd = marketCapEth * quoteUsd;
+  const devBuyUsd = liquidityEth * quoteUsd;
+  const devBuyMigrationCapPct = FIXED_MIGRATION_MARKET_CAP_USD > 0 ? (devBuyUsd / FIXED_MIGRATION_MARKET_CAP_USD) * 100 : 0;
+  const migrationPriceUsd = FIXED_MIGRATION_MARKET_CAP_USD / Math.max(totalSupply, 1);
   const oneEthMcapUsd = mcapMultiplier * quoteUsd;
   const minLiquidityEth = requiredMinLiquidityEth(walletState().address);
   const minTargetMcapUsd = minLiquidityEth * mcapMultiplier * ethUsd;
@@ -1259,6 +1332,9 @@ function getLaunchEconomics(
     liquidityEth,
     marketCapEth,
     marketCapUsd,
+    devBuyUsd,
+    devBuyMigrationCapPct,
+    migrationPriceUsd,
     oneEthMcapUsd,
     quoteSymbol,
     minLiquidityEth,
@@ -1268,14 +1344,18 @@ function getLaunchEconomics(
 
 function updateLaunchMath({ source = "liquidity" } = {}) {
   if (!ui.launchMathCard) return;
-  const economicsFromLiquidity = getLaunchEconomics(parseNumberInput(ui.devBuyEth?.value, 0));
+  enforceFixedSupplyInput();
+  const v3LiveCurve = isV3LiveCurveUiMode();
+  const visibleLiquidityValue = parseNumberInput(ui.devBuyEth?.value, 0);
+  const economicsFromLiquidity = getLaunchEconomics(visibleLiquidityValue);
   const targetMcapUsdInput = parseNumberInput(ui.launchMcapUsd?.value, 0);
   const directLaunch = isRobinhoodDirectLiquidityMode();
+  const rhLiveDexCurve = isRobinhoodLiveDexCurveMode();
   const nativeChainLaunch = directLaunchStyleSupported();
   const nativeSymbol = chainNativeSymbolForId(state.selectedChainId);
   const chainName = chainNameForId(state.selectedChainId);
 
-  if (source === "target" && targetMcapUsdInput > 0 && economicsFromLiquidity.mcapMultiplier > 0) {
+  if (!v3LiveCurve && source === "target" && targetMcapUsdInput > 0 && economicsFromLiquidity.mcapMultiplier > 0) {
     const requiredLiquidityEthRaw = (targetMcapUsdInput / Math.max(state.ethUsd, 1)) / economicsFromLiquidity.mcapMultiplier;
     const requiredLiquidityEth = Math.max(requiredMinLiquidityEth(walletState().address), requiredLiquidityEthRaw);
     if (Number.isFinite(requiredLiquidityEth) && requiredLiquidityEth >= 0) {
@@ -1283,8 +1363,10 @@ function updateLaunchMath({ source = "liquidity" } = {}) {
     }
   }
 
-  const economics = getLaunchEconomics(parseNumberInput(ui.devBuyEth?.value, 0));
-  if (source === "liquidity" && ui.launchMcapUsd) {
+  const economics = getLaunchEconomics(visibleLiquidityValue);
+  if (v3LiveCurve && ui.launchMcapUsd) {
+    ui.launchMcapUsd.value = String(FIXED_MIGRATION_MARKET_CAP_USD);
+  } else if (source === "liquidity" && ui.launchMcapUsd) {
     const nextTarget = economics.marketCapUsd > 0 ? economics.marketCapUsd : 0;
     ui.launchMcapUsd.value = nextTarget.toFixed(2);
   }
@@ -1294,35 +1376,65 @@ function updateLaunchMath({ source = "liquidity" } = {}) {
   ui.launchMathCard.classList.toggle("invalid", !meetsMin || !creatorWithinCap);
 
   if (ui.launchMathPrimary) {
-    ui.launchMathPrimary.textContent =
+    ui.launchMathPrimary.textContent = v3LiveCurve
+      ? economics.liquidityEth > 0
+        ? `Launch starts around ${formatUsd(FIXED_V3_START_MARKET_CAP_USD)} and migrates at ${formatUsd(FIXED_MIGRATION_MARKET_CAP_USD)}; ${economics.liquidityEth.toFixed(4)} ${economics.quoteSymbol} dev buy is about ${formatUsd(economics.devBuyUsd)} (${economics.devBuyMigrationCapPct.toFixed(2)}% of target).`
+        : `Launch starts around ${formatUsd(FIXED_V3_START_MARKET_CAP_USD)} market cap and migrates at ${formatUsd(FIXED_MIGRATION_MARKET_CAP_USD)}; no dev buy selected.`
+      :
       economics.liquidityEth > 0
         ? directLaunch
           ? `Direct launch estimate: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ${economics.quoteSymbol} paired as launch liquidity)`
+          : rhLiveDexCurve
+          ? `Opening Uniswap curve estimate: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ${economics.quoteSymbol} paired on launch)`
           : `Optional starter buy market cap: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ${economics.quoteSymbol})`
         : directLaunch
         ? `0 ${nativeSymbol} means this will open as a bonding curve first.`
+        : rhLiveDexCurve
+        ? v3LiveCurve
+          ? "Launch opens with a single-sided Uniswap V3 position; no creator ETH seed is required."
+          : `The current V2 live-pair flow needs a small ${nativeSymbol} seed so Uniswap can trade from block one.`
         : "Bonding curve starts at the configured virtual reserve price.";
   }
   if (ui.launchMathSecondary) {
-    ui.launchMathSecondary.textContent = directLaunch
+    ui.launchMathSecondary.textContent = v3LiveCurve
+      ? `Total supply is fixed at ${formatTokenAmount(FIXED_TOKEN_SUPPLY)} tokens; V3 opens at the launch tick, then the curve graduates at ${formatUsd(economics.migrationPriceUsd)} per token.`
+      : directLaunch
       ? `Enter ${nativeSymbol} here to skip the bonding curve and launch directly on ${chainName} with burned LP.`
+      : rhLiveDexCurve
+      ? v3LiveCurve
+        ? "This is still a bonding curve, but the live curve is represented by a Uniswap V3 position from launch."
+        : `This is still a bonding curve, but the curve is the Uniswap pair. A zero quote reserve cannot be traded on a V2 pair.`
       : nativeChainLaunch
-      ? `Launch starts on the bonding curve; any ${nativeSymbol} entered below is used as a starter buy after the launch is created.`
+      ? Number(state.selectedChainId) === 4663
+        ? `Launch starts on the Pump-r curve, then graduates into Uniswap automatically once the Robinhood Chain target is filled. Any ${nativeSymbol} entered below is used as a starter buy after launch.`
+        : `Launch starts on the bonding curve; any ${nativeSymbol} entered below is used as a starter buy after the launch is created.`
       : "Launches stay on the bonding curve until the graduation target is reached.";
   }
   if (ui.launchMathTertiary) {
-    ui.launchMathTertiary.textContent =
+    ui.launchMathTertiary.textContent = v3LiveCurve
+      ? "Dev buy is separate from Uniswap V3 launch liquidity; the creator does not seed LP."
+      :
       economics.liquidityEth > 0
         ? directLaunch
           ? "Starter liquidity is added to Uniswap and LP tokens are burned automatically."
+          : rhLiveDexCurve
+          ? "The seed opens the live Uniswap pair immediately; LP is locked by the launch contract until the bonding target is reached."
           : "Starter buy is sent as the first pool buy after launch."
         : directLaunch
         ? "No direct Uniswap liquidity selected."
+        : rhLiveDexCurve
+        ? v3LiveCurve
+          ? "No seed input needed."
+          : "No Uniswap seed selected."
         : "No starter buy selected.";
   }
   if (ui.launchMathQuaternary) {
-    ui.launchMathQuaternary.textContent = directLaunch
+    ui.launchMathQuaternary.textContent = v3LiveCurve
+      ? `The curve graduates when the live Uniswap position reaches the configured ${formatUsd(FIXED_MIGRATION_MARKET_CAP_USD)} market-cap target.`
+      : directLaunch
       ? `At your settings, 1 ${economics.quoteSymbol} direct launch liquidity estimates ${formatUsd(economics.oneEthMcapUsd)} market cap`
+      : rhLiveDexCurve
+      ? `At your settings, 1 ${economics.quoteSymbol} of initial Uniswap seed estimates ${formatUsd(economics.oneEthMcapUsd)} market cap`
       : `At your settings, 1 ${economics.quoteSymbol} starter buy estimates ${formatUsd(economics.oneEthMcapUsd)} market cap`;
   }
   if (ui.creatorAllocationPreview) {
@@ -1352,6 +1464,9 @@ function formatUsd(value) {
       compactDisplay: "short",
       maximumFractionDigits: 2
     }).format(n);
+  }
+  if (n < 0.01) {
+    return `$${n.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
   }
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -1471,10 +1586,83 @@ async function assertLaunchBalance({ launchFeeWei, starterBuyEth }) {
   const balance = await ws.provider.getBalance(ws.address);
   const required = launchFeeWei + starterBuyEth;
   if (balance < required) {
-    const extraLabel = isRobinhoodDirectLiquidityMode() ? " and direct Uniswap liquidity" : " and starter buy";
+    const extraLabel = isRobinhoodDirectLiquidityMode()
+      ? " and direct Uniswap liquidity"
+      : isRobinhoodLiveDexCurveMode()
+      ? " and dev buy"
+      : " and starter buy";
     throw new Error(
       `Not enough ${state.config?.chainName || "network"} ETH. Need about ${formatEthAmount(required)} for launch fee${starterBuyEth > 0n ? extraLabel : ""}; wallet has ${formatEthAmount(balance)}.`
     );
+  }
+}
+
+async function executeV3DevBuyWithWallet({ token, amountIn, chainName }) {
+  if (!token || amountIn <= 0n) return null;
+  const ws = walletState();
+  if (!ws.signer || !ws.address) throw new Error("Connect wallet before sending the V3 dev buy.");
+  return executeV3DevBuy({
+    token,
+    amountIn,
+    signer: ws.signer,
+    recipient: ws.address,
+    chainName,
+    useFallbackSender: true
+  });
+}
+
+async function executeV3DevBuy({ token, amountIn, signer, recipient, chainName, useFallbackSender = false }) {
+  if (!token || amountIn <= 0n) return null;
+  const managerAddress = String(state.config?.deployment?.v3PositionManager || ethers.ZeroAddress);
+  const routerAddress = configuredV3SwapRouter();
+  if (!hasConfiguredAddress(managerAddress)) {
+    throw new Error(`${chainName} V3 dev buy needs a Uniswap V3 position manager configured.`);
+  }
+  if (!hasConfiguredAddress(routerAddress)) {
+    throw new Error(`${chainName} V3 dev buy needs v3SwapRouter configured in the deployment JSON.`);
+  }
+  const manager = new ethers.Contract(managerAddress, V3_POSITION_MANAGER_READ_ABI, signer);
+  const router = new ethers.Contract(routerAddress, V3_SWAP_ROUTER_ABI, signer);
+  const weth = await manager.WETH9();
+  const deadline = Math.floor(Date.now() / 1000) + 20 * 60;
+  const params = {
+    tokenIn: weth,
+    tokenOut: token,
+    fee: Number(state.config?.deployment?.v3Fee || 10000),
+    recipient,
+    deadline,
+    amountIn,
+    amountOutMinimum: 0n,
+    sqrtPriceLimitX96: 0n
+  };
+
+  setAlert(ui.alert, `Sending ${chainName} dev buy on Uniswap V3...`);
+  if (useFallbackSender) {
+    const tx = await sendTxWithFallback({
+      label: `${chainName} V3 Dev Buy`,
+      populatedTx: router.exactInputSingle.populateTransaction(params, { value: amountIn }),
+      walletNativeSend: () => router.exactInputSingle(params, { value: amountIn })
+    });
+    return tx.wait();
+  }
+  const tx = await router.exactInputSingle(params, { value: amountIn });
+  return tx.wait();
+}
+
+async function ensureFactoryV3LiveCurveReady(factory, expectedManager, chainName) {
+  const expected = String(expectedManager || "").trim().toLowerCase();
+  try {
+    const onchainManager = String(await factory.defaultV3PositionManager()).trim().toLowerCase();
+    if (!onchainManager || onchainManager === ethers.ZeroAddress.toLowerCase()) {
+      throw new Error(`${chainName} factory has no Uniswap V3 position manager configured. Redeploy the Robinhood factory with V3_POSITION_MANAGER set.`);
+    }
+    if (expected && onchainManager !== expected) {
+      throw new Error(`${chainName} factory V3 manager does not match deployment JSON. Redeploy or update the deployment config before launching.`);
+    }
+    return onchainManager;
+  } catch (error) {
+    if (String(error?.message || "").includes("Redeploy")) throw error;
+    throw new Error(`${chainName} factory was deployed before the Uniswap V3 live-curve upgrade. Redeploy the Robinhood factory and update frontend/deployments/4663.json with the new factory address.`);
   }
 }
 
@@ -1651,15 +1839,24 @@ function renderLaunchResults(results = []) {
 
 function confirmRobinhoodLiquidityChoice(details = {}) {
   if (!directLaunchStyleSupported()) return true;
-  if (!isRobinhoodDirectLiquidityMode()) return true;
-  if (BigInt(details.starterBuyEth || 0n) > 0n) return true;
+  const starter = BigInt(details.starterBuyEth || 0n);
+  const direct = isRobinhoodDirectLiquidityMode();
+  const rhLiveDexCurve = isRobinhoodLiveDexCurveMode();
+  if (!direct && !rhLiveDexCurve) return true;
+  if (starter > 0n) return true;
   const chainName = chainNameForId(state.selectedChainId);
   if (ui.advancedDetails) {
     ui.advancedDetails.hidden = false;
     ui.advancedDetails.open = true;
   }
   ui.devBuyEth?.focus?.();
-  setAlert(ui.alert, `${chainName} direct launch needs liquidity entered first. Add liquidity or switch the launch style back to Bonding curve.`, true);
+  setAlert(
+    ui.alert,
+    direct
+      ? `${chainName} direct launch needs liquidity entered first. Add liquidity or switch the launch style back to Bonding curve.`
+      : `${chainName} Uniswap bonding mode needs an initial seed for the current V2 pair flow. To remove this field entirely, switch the contracts to V3 single-sided liquidity.`,
+    true
+  );
   return false;
 }
 
@@ -1700,7 +1897,7 @@ function setupCreatedModal() {
 async function prepareLaunchDetails() {
   const name = ui.name.value.trim();
   const symbol = ui.symbol.value.trim().toUpperCase();
-  const totalSupplyInput = ui.supply.value.trim();
+  enforceFixedSupplyInput();
   const creatorAllocationPct = parseNumberInput(ui.creatorBuyEth?.value, 0);
   let imageUri = ui.image.value.trim();
   const description = composeDescription();
@@ -1766,7 +1963,7 @@ async function prepareLaunchDetails() {
     symbol,
     imageUri,
     description,
-    totalSupply: ethers.parseUnits(totalSupplyInput, 18),
+    totalSupply: ethers.parseUnits(String(FIXED_TOKEN_SUPPLY), 18),
     creatorBps: BigInt(Math.round(creatorAllocationPct * 100)),
     tokenTradeFeeBps: BigInt(Math.round(tokenTradeTaxPct * 100)),
     starterBuyEth: ethers.parseUnits(initialLiquidityEthInput || "0", selectedQuoteAsset().decimals || 18),
@@ -1778,10 +1975,22 @@ async function prepareLaunchDetails() {
 }
 
 async function ensureLaunchIdentityAvailable(details = {}) {
-  const result = await api.launchAvailability({
-    name: details.name,
-    symbol: details.symbol
-  });
+  let result;
+  try {
+    result = await api.launchAvailability({
+      name: details.name,
+      symbol: details.symbol,
+      timeoutMs: 5000
+    });
+  } catch (error) {
+    console.warn("[launch] availability check skipped", error);
+    setAlert(ui.alert, "Token name check is slow, continuing to wallet confirmation...");
+    return { available: true, skipped: true };
+  }
+  if (result?.skipped) {
+    setAlert(ui.alert, "Token name check is slow, continuing to wallet confirmation...");
+    return result;
+  }
   if (result?.available !== false && !result?.duplicate) return result;
   const existing = result?.existing || {};
   const field = result?.field === "name" ? "name" : "ticker";
@@ -1800,17 +2009,36 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
   const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
   const dexRouter = String(state.config?.deployment?.dexRouter || ethers.ZeroAddress);
   const hasDexRouter = dexRouter && dexRouter.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
+  const v3PositionManager = String(state.config?.deployment?.v3PositionManager || ethers.ZeroAddress);
+  const hasV3PositionManager = v3PositionManager && v3PositionManager.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
+  const hasV3SwapRouter = hasConfiguredAddress(configuredV3SwapRouter());
   const useTaxLaunch = Number(state.selectedChainId || 0) === 4663 && selectedQuoteMode() === "native";
   const directLiquidityMode = directLaunchStyleSupported(state.selectedChainId) && isRobinhoodDirectLiquidityMode();
+  const liveDexCurveMode = Number(state.selectedChainId || 0) === 4663 && isRobinhoodLiveDexCurveMode(state.selectedChainId);
   if (directLiquidityMode && details.starterBuyEth > 0n && !hasDexRouter) {
     throw new Error(`${chainNameForId(state.selectedChainId)} direct launch mode needs a DEX router configured first. Switch to Bonding curve or set direct liquidity to 0.`);
   }
+  if (liveDexCurveMode && !hasV3PositionManager) {
+    throw new Error("Robinhood Uniswap bonding mode needs a Uniswap V3 position manager configured first.");
+  }
+  if (liveDexCurveMode && details.starterBuyEth > 0n && !hasV3SwapRouter) {
+    throw new Error("Robinhood Uniswap bonding mode needs v3SwapRouter configured before it can send an automatic dev buy.");
+  }
   const useInstantLiquidity = directLiquidityMode && hasDexRouter && details.starterBuyEth > 0n;
-  const totalValue = launchFeeWei + (useInstantLiquidity ? details.starterBuyEth : 0n);
+  const useLiveDexCurve = liveDexCurveMode && hasV3PositionManager;
+  if (useLiveDexCurve) {
+    await ensureFactoryV3LiveCurveReady(factory, v3PositionManager, state.config.chainName || chainLabel(state.selectedChainId));
+  }
+  const liveDexSeed = 0n;
+  const totalValue = launchFeeWei + (useInstantLiquidity ? details.starterBuyEth : liveDexSeed);
   const launchMethodName = useInstantLiquidity
     ? useTaxLaunch
       ? "createLaunchInstantWithTax"
       : "createLaunchInstant"
+    : useLiveDexCurve
+    ? useTaxLaunch
+      ? "createLaunchLiveDexCurveWithTax"
+      : "createLaunchLiveDexCurve"
     : useTaxLaunch
     ? "createLaunchWithTax"
     : "createLaunch";
@@ -1833,7 +2061,10 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
         details.totalSupply,
         details.creatorBps
       ];
-  await assertLaunchBalance({ launchFeeWei, starterBuyEth: selectedQuoteMode() === "usdc" ? 0n : details.starterBuyEth });
+  await assertLaunchBalance({
+    launchFeeWei,
+    starterBuyEth: selectedQuoteMode() === "usdc" ? 0n : details.starterBuyEth
+  });
 
   const simulated = await launchMethod.staticCall(...launchArgs, { value: totalValue });
 
@@ -1844,14 +2075,27 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
       ui.alert,
       useInstantLiquidity
         ? `Creating ${chainName} launch with burned starter LP (launch fee ${launchFeeEth} ETH)...`
+        : useLiveDexCurve
+        ? `Creating ${chainName} live Uniswap bonding launch (launch fee ${launchFeeEth} ETH)...`
         : `Creating bonding-curve launch on ${chainName} (launch fee ${launchFeeEth} ETH)...`
     );
   } else {
-    setAlert(ui.alert, useInstantLiquidity ? `Creating ${chainName} launch with burned starter LP...` : `Creating bonding-curve launch on ${chainName}...`);
+    setAlert(
+      ui.alert,
+      useInstantLiquidity
+        ? `Creating ${chainName} launch with burned starter LP...`
+        : useLiveDexCurve
+        ? `Creating ${chainName} live Uniswap bonding launch...`
+        : `Creating bonding-curve launch on ${chainName}...`
+    );
   }
 
   const tx = await sendTxWithFallback({
-    label: useInstantLiquidity ? `Create ${chainName} Burned LP Launch` : `Create ${chainName} Bonding Launch`,
+    label: useInstantLiquidity
+      ? `Create ${chainName} Burned LP Launch`
+      : useLiveDexCurve
+      ? `Create ${chainName} Live Uniswap Bonding Launch`
+      : `Create ${chainName} Bonding Launch`,
     populatedTx: launchMethod.populateTransaction(...launchArgs, { value: totalValue }),
     walletNativeSend: () => launchMethod(...launchArgs, { value: totalValue })
   });
@@ -1863,7 +2107,7 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
     pool: simulated?.[2]
   };
 
-  if (!useInstantLiquidity && details.starterBuyEth > 0n && launchInfo?.pool) {
+  if (!useInstantLiquidity && !useLiveDexCurve && details.starterBuyEth > 0n && launchInfo?.pool) {
     setAlert(ui.alert, `${chainName} launch created. Sending starter buy on bonding curve...`);
     const pool = makePoolContract(launchInfo.pool);
     const quoted = await pool.quoteBuy(details.starterBuyEth);
@@ -1897,6 +2141,13 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
       });
     }
     await buyTx.wait();
+  }
+  if (useLiveDexCurve && details.starterBuyEth > 0n && launchInfo?.token) {
+    await executeV3DevBuyWithWallet({
+      token: launchInfo.token,
+      amountIn: details.starterBuyEth,
+      chainName
+    });
   }
 
   if (launchInfo?.token) {
@@ -1932,63 +2183,70 @@ async function launchOnRobinhoodAttachedWallet(details, { showModal = true } = {
   const provider = new ethers.JsonRpcProvider(rpcUrl, targetChainId);
   const signer = new ethers.Wallet(attached.privateKey, provider);
   const factory = new ethers.Contract(state.config.factoryAddress, FACTORY_ABI, signer);
+  const readFactory = new ethers.Contract(state.config.factoryAddress, FACTORY_ABI, provider);
   const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
   const dexRouter = String(state.config?.deployment?.dexRouter || ethers.ZeroAddress);
   const hasDexRouter = dexRouter && dexRouter.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
-  const useTaxLaunch = targetChainId === 4663 && selectedQuoteMode() === "native";
-  const directLiquidityMode = directLaunchStyleSupported(targetChainId) && isRobinhoodDirectLiquidityMode();
+  const v3PositionManager = String(state.config?.deployment?.v3PositionManager || ethers.ZeroAddress);
+  const hasV3PositionManager = v3PositionManager && v3PositionManager.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
+  const hasV3SwapRouter = hasConfiguredAddress(configuredV3SwapRouter());
+  const directLiquidityMode = directLaunchStyleSupported(targetChainId) && isRobinhoodDirectLiquidityMode(targetChainId);
+  const liveDexCurveMode = targetChainId === 4663 && isRobinhoodLiveDexCurveMode(targetChainId);
   if (directLiquidityMode && details.starterBuyEth > 0n && !hasDexRouter) {
     throw new Error(`${target.chainName} direct launch mode needs a DEX router configured first. Switch to Bonding curve or set direct liquidity to 0.`);
   }
+  if (liveDexCurveMode && !hasV3PositionManager) {
+    throw new Error(`${target.chainName} Uniswap bonding mode needs a Uniswap V3 position manager configured first.`);
+  }
+  if (liveDexCurveMode && details.starterBuyEth > 0n && !hasV3SwapRouter) {
+    throw new Error(`${target.chainName} Uniswap bonding mode needs v3SwapRouter configured before it can send an automatic dev buy.`);
+  }
   const useInstantLiquidity = directLiquidityMode && hasDexRouter && details.starterBuyEth > 0n;
-  const totalValue = launchFeeWei + (useInstantLiquidity ? details.starterBuyEth : 0n);
-  const requiredFlowValue = totalValue + (useInstantLiquidity ? 0n : BigInt(details.starterBuyEth || 0n));
+  const useLiveDexCurve = liveDexCurveMode && hasV3PositionManager;
+  if (useLiveDexCurve) {
+    await ensureFactoryV3LiveCurveReady(factory, v3PositionManager, target.chainName);
+  }
+  const plan = buildNativeLaunchPlan({
+    targetChainId,
+    details,
+    launchFeeWei,
+    hasDexRouter,
+    hasV3PositionManager
+  });
+  const gasReserveWei = await estimateAttachedLaunchGasReserveWei({
+    provider,
+    factory: readFactory,
+    launchMethodName: plan.launchMethodName,
+    launchArgs: plan.launchArgs,
+    from: attached.address,
+    value: plan.totalValue,
+    chainId: targetChainId
+  });
+  const requiredFlowValue = plan.totalValue + plan.devBuyValue + gasReserveWei;
   const balance = await provider.getBalance(attached.address);
   if (balance < requiredFlowValue) {
     const needed = Number(ethers.formatEther(requiredFlowValue || 0n));
     const have = Number(ethers.formatEther(balance || 0n));
-    throw new Error(`Attached ${target.shortName} wallet needs more ${target.nativeSymbol} before launch. Have ${have.toFixed(6)} ${target.nativeSymbol}, need about ${needed.toFixed(6)} ${target.nativeSymbol} plus gas. Bridge SOL into ${shortAddress(attached.address)} first.`);
+    const devBuyText = plan.devBuyValue > 0n ? " + dev buy" : "";
+    throw new Error(`Attached ${target.shortName} wallet needs more ${target.nativeSymbol} before launch. Have ${have.toFixed(6)} ${target.nativeSymbol}; need about ${needed.toFixed(6)} ${target.nativeSymbol} for launch fee${devBuyText} + estimated gas. Bridge SOL into ${shortAddress(attached.address)} first.`);
   }
-  const launchMethodName = useInstantLiquidity
-    ? useTaxLaunch
-      ? "createLaunchInstantWithTax"
-      : "createLaunchInstant"
-    : useTaxLaunch
-    ? "createLaunchWithTax"
-    : "createLaunch";
-  const launchArgs = useTaxLaunch
-    ? [
-        details.name,
-        details.symbol,
-        details.imageUri,
-        details.description,
-        details.totalSupply,
-        details.creatorBps,
-        details.tokenTradeFeeBps
-      ]
-    : [
-        details.name,
-        details.symbol,
-        details.imageUri,
-        details.description,
-        details.totalSupply,
-        details.creatorBps
-      ];
-  const simulated = await factory[launchMethodName].staticCall(...launchArgs, { value: totalValue });
+  const simulated = await factory[plan.launchMethodName].staticCall(...plan.launchArgs, { value: plan.totalValue });
   setAlert(
     ui.alert,
     useInstantLiquidity
       ? `Launching on ${target.chainName} from attached wallet ${shortAddress(attached.address)} with burned LP...`
+      : useLiveDexCurve
+      ? `Launching on ${target.chainName} from attached wallet ${shortAddress(attached.address)} with a live Uniswap bonding curve...`
       : `Launching on ${target.chainName} from attached wallet ${shortAddress(attached.address)}...`
   );
-  const tx = await factory[launchMethodName](...launchArgs, { value: totalValue });
+  const tx = await factory[plan.launchMethodName](...plan.launchArgs, { value: plan.totalValue });
   const receipt = await tx.wait();
   const launchInfo = extractLaunchCreated(receipt) || {
     launchId: simulated?.[0],
     token: simulated?.[1],
     pool: simulated?.[2]
   };
-  if (!useInstantLiquidity && details.starterBuyEth > 0n && launchInfo?.pool) {
+  if (!useInstantLiquidity && !useLiveDexCurve && details.starterBuyEth > 0n && launchInfo?.pool) {
     setAlert(ui.alert, `${target.chainName} launch created. Sending starter buy from attached ${target.shortName} wallet...`);
     const pool = new ethers.Contract(launchInfo.pool, POOL_ABI, signer);
     const quoted = await pool.quoteBuy(details.starterBuyEth);
@@ -1996,6 +2254,15 @@ async function launchOnRobinhoodAttachedWallet(details, { showModal = true } = {
     const minTokensOut = quotedTokens > 0n ? (quotedTokens * 97n) / 100n : 0n;
     const buyTx = await pool.buy(minTokensOut, { value: details.starterBuyEth });
     await buyTx.wait();
+  }
+  if (useLiveDexCurve && details.starterBuyEth > 0n && launchInfo?.token) {
+    await executeV3DevBuy({
+      token: launchInfo.token,
+      amountIn: details.starterBuyEth,
+      signer,
+      recipient: attached.address,
+      chainName: target.chainName
+    });
   }
   if (launchInfo?.token) {
     ui.resultLink.href = `/token?token=${launchInfo.token}&chainId=${targetChainId}`;
@@ -2293,6 +2560,91 @@ function attachedLaunchGasBufferWei(chainId = selectedSolFundingLaunchChainId())
   return ethers.parseEther("0.001");
 }
 
+function gasUnitPriceWei(feeData = {}) {
+  const price = feeData?.maxFeePerGas || feeData?.gasPrice || 0n;
+  try {
+    return BigInt(price || 0n);
+  } catch {
+    return 0n;
+  }
+}
+
+function buildNativeLaunchPlan({
+  targetChainId,
+  details,
+  launchFeeWei,
+  hasDexRouter,
+  hasV3PositionManager
+} = {}) {
+  const chainId = Number(targetChainId || 0);
+  const useTaxLaunch = chainId === 4663 && selectedQuoteMode() === "native";
+  const directLiquidityMode = directLaunchStyleSupported(chainId) && isRobinhoodDirectLiquidityMode(chainId);
+  const liveDexCurveMode = chainId === 4663 && isRobinhoodLiveDexCurveMode(chainId);
+  const useInstantLiquidity = directLiquidityMode && hasDexRouter && details.starterBuyEth > 0n;
+  const useLiveDexCurve = liveDexCurveMode && hasV3PositionManager;
+  const totalValue = BigInt(launchFeeWei || 0n) + (useInstantLiquidity ? BigInt(details.starterBuyEth || 0n) : 0n);
+  const launchMethodName = useInstantLiquidity
+    ? useTaxLaunch
+      ? "createLaunchInstantWithTax"
+      : "createLaunchInstant"
+    : useLiveDexCurve
+    ? useTaxLaunch
+      ? "createLaunchLiveDexCurveWithTax"
+      : "createLaunchLiveDexCurve"
+    : useTaxLaunch
+    ? "createLaunchWithTax"
+    : "createLaunch";
+  const launchArgs = useTaxLaunch
+    ? [
+        details.name,
+        details.symbol,
+        details.imageUri,
+        details.description,
+        details.totalSupply,
+        details.creatorBps,
+        details.tokenTradeFeeBps
+      ]
+    : [
+        details.name,
+        details.symbol,
+        details.imageUri,
+        details.description,
+        details.totalSupply,
+        details.creatorBps
+      ];
+  return {
+    useTaxLaunch,
+    directLiquidityMode,
+    liveDexCurveMode,
+    useInstantLiquidity,
+    useLiveDexCurve,
+    totalValue,
+    devBuyValue: useInstantLiquidity ? 0n : BigInt(details.starterBuyEth || 0n),
+    launchMethodName,
+    launchArgs
+  };
+}
+
+async function estimateAttachedLaunchGasReserveWei({ provider, factory, launchMethodName, launchArgs, from, value, chainId } = {}) {
+  const fallback = attachedLaunchGasBufferWei(chainId);
+  try {
+    const launchMethod = factory?.[launchMethodName];
+    if (!launchMethod?.estimateGas) return fallback;
+    const [gasLimit, feeData] = await Promise.all([
+      launchMethod.estimateGas(...launchArgs, { from, value }),
+      provider.getFeeData()
+    ]);
+    const unitPrice = gasUnitPriceWei(feeData);
+    if (gasLimit <= 0n || unitPrice <= 0n) return fallback;
+    const estimatedGasCost = gasLimit * unitPrice;
+    const reserveWithHeadroom = (estimatedGasCost * 125n) / 100n;
+    return reserveWithHeadroom > fallback ? reserveWithHeadroom : fallback;
+  } catch (error) {
+    console.warn("[launch] attached wallet gas estimate skipped", error);
+    return fallback;
+  }
+}
+
 function browserSafeRpcUrl(config = state.config) {
   return String(
     config?.browserRpcUrl ||
@@ -2325,27 +2677,57 @@ async function getAttachedRhLaunchFunding(details, chainId = selectedSolFundingL
   const rpcUrl = browserSafeRpcUrl();
   if (!rpcUrl) throw new Error(`${target.chainName} RPC is not configured.`);
   const provider = new ethers.JsonRpcProvider(rpcUrl, targetChainId);
+  const factory = new ethers.Contract(state.config.factoryAddress, FACTORY_ABI, provider);
   const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
   const dexRouter = String(state.config?.deployment?.dexRouter || ethers.ZeroAddress);
   const hasDexRouter = dexRouter && dexRouter.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
-  const useTaxLaunch = targetChainId === 4663 && selectedQuoteMode() === "native";
-  const directLiquidityMode = directLaunchStyleSupported(targetChainId) && isRobinhoodDirectLiquidityMode();
+  const v3PositionManager = String(state.config?.deployment?.v3PositionManager || ethers.ZeroAddress);
+  const hasV3PositionManager = v3PositionManager && v3PositionManager.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
+  const hasV3SwapRouter = hasConfiguredAddress(configuredV3SwapRouter());
+  const directLiquidityMode = directLaunchStyleSupported(targetChainId) && isRobinhoodDirectLiquidityMode(targetChainId);
+  const liveDexCurveMode = targetChainId === 4663 && isRobinhoodLiveDexCurveMode(targetChainId);
   if (directLiquidityMode && details.starterBuyEth > 0n && !hasDexRouter) {
     throw new Error(`${target.chainName} direct launch mode needs a DEX router configured first. Switch to Bonding curve or set direct liquidity to 0.`);
   }
-  const useInstantLiquidity = directLiquidityMode && hasDexRouter && details.starterBuyEth > 0n;
-  const totalValue = launchFeeWei + (useInstantLiquidity ? details.starterBuyEth : 0n);
-  const requiredWithGas = totalValue + (useInstantLiquidity ? 0n : BigInt(details.starterBuyEth || 0n)) + attachedLaunchGasBufferWei(targetChainId);
-  const balance = await provider.getBalance(attached.address);
+  if (liveDexCurveMode && !hasV3PositionManager) {
+    throw new Error(`${target.chainName} Uniswap bonding mode needs a Uniswap V3 position manager configured first.`);
+  }
+  if (liveDexCurveMode && details.starterBuyEth > 0n && !hasV3SwapRouter) {
+    throw new Error(`${target.chainName} Uniswap bonding mode needs v3SwapRouter configured before it can send an automatic dev buy.`);
+  }
+  const plan = buildNativeLaunchPlan({
+    targetChainId,
+    details,
+    launchFeeWei,
+    hasDexRouter,
+    hasV3PositionManager
+  });
+  const [balance, gasReserveWei] = await Promise.all([
+    provider.getBalance(attached.address),
+    estimateAttachedLaunchGasReserveWei({
+      provider,
+      factory,
+      launchMethodName: plan.launchMethodName,
+      launchArgs: plan.launchArgs,
+      from: attached.address,
+      value: plan.totalValue,
+      chainId: targetChainId
+    })
+  ]);
+  const requiredWithGas = plan.totalValue + plan.devBuyValue + gasReserveWei;
   return {
     target,
     attached,
     provider,
     launchFeeWei,
-    useTaxLaunch,
+    useTaxLaunch: plan.useTaxLaunch,
     hasDexRouter,
-    useInstantLiquidity,
-    totalValue,
+    hasV3PositionManager,
+    useInstantLiquidity: plan.useInstantLiquidity,
+    useLiveDexCurve: plan.useLiveDexCurve,
+    totalValue: plan.totalValue,
+    devBuyValue: plan.devBuyValue,
+    gasReserveWei,
     requiredWithGas,
     balance,
     shortfall: balance >= requiredWithGas ? 0n : requiredWithGas - balance
@@ -2920,12 +3302,15 @@ async function onCreate(event) {
         : await launchOnChain(state.selectedChainId, details, { showModal: true });
       renderLaunchResults([result]);
       const directLaunch = directLaunchStyleSupported(state.selectedChainId) && isRobinhoodDirectLiquidityMode();
+      const liveDexCurveLaunch = Number(state.selectedChainId || 0) === 4663 && isRobinhoodLiveDexCurveMode(state.selectedChainId);
       setAlert(
         ui.alert,
         useAttachedRhWallet
           ? `${chainNameForId(result.chainId)} launch created from attached wallet ${shortAddress(result.attachedWallet || "")}`
           : directLaunch && details.starterBuyEth > 0n
           ? `${chainNameForId(result.chainId)} direct launch created with burned LP`
+          : liveDexCurveLaunch
+          ? `${chainNameForId(result.chainId)} Uniswap V3 bonding launch created`
           : details.starterBuyEth > 0n
           ? "Bonding-curve launch created with starter buy"
           : "Bonding-curve launch created"

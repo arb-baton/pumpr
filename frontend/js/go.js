@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260703sharedauth";
+import { api } from "./api.js?v=20260710solbroadcast";
 import {
   connectSocialWallet,
   defaultUsername,

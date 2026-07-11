@@ -244,6 +244,11 @@ const V2_PAIR_SWAP_EVENT_ABI = [
   "event Swap(address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"
 ];
 const V2_PAIR_META_ABI = ["function token0() view returns (address)", "function token1() view returns (address)"];
+const V3_SWAP_ROUTER_ABI = [
+  "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 deadline,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) payable returns (uint256 amountOut)",
+  "function unwrapWETH9(uint256 amountMinimum,address recipient) payable",
+  "function multicall(bytes[] data) payable returns (bytes[] results)"
+];
 const CLAIM_MIN_USD = 8;
 
 async function ensurePumpRHolderPaymentAccess(address) {
@@ -608,10 +613,41 @@ function queueTradeSync(timerKey, task, delayMs = 260) {
 
 function hasDexMarket(launch) {
   const pool = launch?.pool || {};
-  const graduated = Boolean(pool.graduated) || Boolean(state.dex?.pairAddress);
+  const graduated = Boolean(pool.graduated) || Boolean(pool.liveDexCurve) || Boolean(state.dex?.pairAddress);
   const pair = String(pool.migratedPair || state.dex?.pairAddress || "").toLowerCase();
+  return graduated && pair && pair !== ZERO_ADDRESS;
+}
+
+function hasDexTradeRouter(launch = state.launch) {
+  const pool = launch?.pool || {};
+  if (pool.liveDexCurveV3 && normalizeAddress(pool.v3SwapRouter || "")) return true;
   const router = String(pool.dexRouter || "").toLowerCase();
-  return graduated && pair && pair !== ZERO_ADDRESS && router && router !== ZERO_ADDRESS;
+  return Boolean(router && router !== ZERO_ADDRESS);
+}
+
+function isV3LiveCurveMarket(launch = state.launch) {
+  const pool = launch?.pool || {};
+  return Boolean(pool.liveDexCurveV3 && normalizeAddress(pool.v3SwapRouter || "") && normalizeAddress(pool.dexWethAddress || ""));
+}
+
+function makeV3SwapRouterContract() {
+  const router = normalizeAddress(state.launch?.pool?.v3SwapRouter || "");
+  if (!router) throw new Error("Uniswap V3 router is not configured for this live curve.");
+  return new ethers.Contract(router, V3_SWAP_ROUTER_ABI, walletState().signer);
+}
+
+function v3ExactInputParams({ tokenIn, tokenOut, amountIn, recipient }) {
+  const fee = Math.max(1, Math.min(1_000_000, Number(state.launch?.pool?.v3Fee || 10000) || 10000));
+  return {
+    tokenIn,
+    tokenOut,
+    fee,
+    recipient,
+    deadline: Math.floor(Date.now() / 1000) + 20 * 60,
+    amountIn,
+    amountOutMinimum: 0n,
+    sqrtPriceLimitX96: 0n
+  };
 }
 
 function poolAddressFromLaunch(launch = state.launch) {
@@ -624,7 +660,11 @@ function hasBondingMarket(launch = state.launch) {
 }
 
 function hasTradeMarket(launch = state.launch) {
-  return hasDexMarket(launch) || hasBondingMarket(launch);
+  return (hasDexMarket(launch) && hasDexTradeRouter(launch)) || hasBondingMarket(launch);
+}
+
+function graduationDexLabel() {
+  return Number(state.chainId) === 4663 ? "Robinhood Chain Uniswap" : "Uniswap";
 }
 
 function geckoPoolUrl(launch) {
@@ -640,7 +680,42 @@ function geckoPoolUrl(launch) {
 function dexscreenerPairUrl(launch) {
   const pair = String(launch?.pool?.migratedPair || state.dex?.pairAddress || "");
   if (!pair || pair.toLowerCase() === ZERO_ADDRESS) return "";
+  if (state.dex?.pairUrl) return String(state.dex.pairUrl);
   return `https://dexscreener.com/${dexScreenerNetworkSlug()}/${pair}`;
+}
+
+function dexscreenerEmbedUrl(launch) {
+  const pairUrl = dexscreenerPairUrl(launch);
+  if (!pairUrl) return "";
+  try {
+    const url = new URL(pairUrl);
+    url.searchParams.set("embed", "1");
+    url.searchParams.set("theme", "dark");
+    url.searchParams.set("trades", "0");
+    url.searchParams.set("info", "0");
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function hasIndexedDexSnapshot() {
+  return (
+    Number(state.dex?.marketCapUsd || 0) > 0 ||
+    Number(state.dex?.priceUsd || 0) > 0 ||
+    Number(state.dex?.priceNative || 0) > 0 ||
+    Number(state.dex?.liquidityUsd || 0) > 0 ||
+    Number(state.dex?.volume24hUsd || 0) > 0 ||
+    Number(state.gecko?.snapshot?.marketCapUsd || 0) > 0 ||
+    Number(state.gecko?.snapshot?.priceNative || 0) > 0
+  );
+}
+
+function shouldPreferDexScreenerChart(launch = state.launch) {
+  if (!hasDexMarket(launch)) return false;
+  if (Number(state.chainId) === 101) return false;
+  if (!hasIndexedDexSnapshot()) return false;
+  return Boolean(dexscreenerEmbedUrl(launch));
 }
 
 function dexScreenerNetworkSlug() {
@@ -1540,20 +1615,30 @@ function setTokenHeader(launch) {
   recordViewedLaunch(launch);
 }
 function setSideMetrics(launch) {
+  const liveDexCurve = Boolean(launch?.pool?.liveDexCurve) && !Boolean(launch?.pool?.graduated);
   const dexReady = hasDexMarket(launch);
   const bondingReady = hasBondingMarket(launch);
-  const progressPct = dexReady ? 100 : Math.max(0, Math.min(100, Number(launch?.pool?.bondingProgressPct || 0)));
+  const progressPct =
+    dexReady && !liveDexCurve ? 100 : Math.max(0, Math.min(100, Number(launch?.pool?.bondingProgressPct || 0)));
   if (ui.bondingProgressLabel) {
-    ui.bondingProgressLabel.textContent = dexReady ? "DEX live" : bondingReady ? `${progressPct.toFixed(1)}%` : "Pending";
+    ui.bondingProgressLabel.textContent =
+      dexReady && !liveDexCurve ? "Graduated" : liveDexCurve || bondingReady ? `${progressPct.toFixed(1)}%` : "Pending";
   }
-  if (ui.bondingProgressFill) ui.bondingProgressFill.style.width = `${dexReady ? 100 : Math.max(4, progressPct)}%`;
+  if (ui.bondingProgressFill) ui.bondingProgressFill.style.width = `${dexReady && !liveDexCurve ? 100 : Math.max(4, progressPct)}%`;
   if (ui.bondingStatusText) {
     const target = Number(launch?.pool?.graduationTargetEth || 0);
-    const reserve = Number(launch?.pool?.ethReserveEth || 0);
+    const reserve = liveDexCurve ? Number(launch?.pool?.dexWethReserveEth || 0) : Number(launch?.pool?.ethReserveEth || 0);
+    const chainName = Number(state.chainId) === 4663 ? "Robinhood Chain" : "Uniswap";
+    const graduationLabel = graduationDexLabel();
+    const liqUsd = Number(state.dex?.liquidityUsd || 0);
     ui.bondingStatusText.textContent = dexReady
-      ? "Graduated to Uniswap. Trading now routes through the DEX pair."
+      ? liveDexCurve
+        ? `${formatTradeNumber(reserve, 4)} / ${formatTradeNumber(target, 4)} ${quoteSymbol()} is live on ${chainName}. LP was burned on launch and the pair stays tradable while it works toward graduation.`
+        : liqUsd > 0
+        ? `Graduated and trading on ${chainName}. DexScreener is tracking about ${formatCompactUsd(liqUsd)} liquidity.`
+        : `Graduated and trading on ${chainName}.`
       : bondingReady
-        ? `${formatTradeNumber(reserve, 4)} / ${formatTradeNumber(target, 4)} ${quoteSymbol()} raised before automatic Uniswap graduation.`
+        ? `${formatTradeNumber(reserve, 4)} / ${formatTradeNumber(target, 4)} ${quoteSymbol()} raised before automatic ${graduationLabel} graduation.`
         : "Bonding pool is syncing.";
   }
 
@@ -1568,7 +1653,7 @@ function setSideMetrics(launch) {
 
 function appendLivePoint(launch) {
   const price = Number(launch?.pool?.spotPriceEth || 0);
-  if (!Number.isFinite(price) || price < 0) return;
+  if (!Number.isFinite(price) || price <= 0) return;
   const now = Date.now();
   const marketCapSupply = marketCapSupplyFloat(launch);
   if (!Number.isFinite(marketCapSupply) || marketCapSupply <= 0) return;
@@ -1758,6 +1843,28 @@ function renderGeckoChart(launch) {
   return true;
 }
 
+function renderDexScreenerChart(launch) {
+  const url = dexscreenerEmbedUrl(launch);
+  const pairLabel = `${launch.symbol || "TOKEN"}/${state.dex?.quoteSymbol || quoteSymbol()} - DexScreener`;
+  if (!url || !ui.priceChart) return false;
+
+  if (state.activeChartEmbedUrl === url && ui.priceChart.querySelector("iframe")) {
+    ui.chartPairLabel.textContent = pairLabel;
+    return true;
+  }
+
+  destroyLocalChart();
+  ui.priceChart.innerHTML = `<iframe src="${url}" title="DexScreener chart" style="border:0;width:100%;height:100%;background:transparent" allowfullscreen></iframe>`;
+  state.activeChartEmbedUrl = url;
+  ui.chartPairLabel.textContent = pairLabel;
+  ui.chartOpen.textContent = "-";
+  ui.chartHigh.textContent = "-";
+  ui.chartLow.textContent = "-";
+  ui.chartClose.textContent = state.dex?.priceUsd ? formatCompactUsd(Number(state.dex.priceUsd || 0)) : "-";
+  ui.chartVolume.textContent = state.dex?.volume24hUsd ? formatCompactUsd(Number(state.dex.volume24hUsd || 0)) : "-";
+  return true;
+}
+
 function ensureChart() {
   if (!ui.priceChart || !window.LightweightCharts) return;
   if (state.chartApi) return;
@@ -1841,6 +1948,11 @@ function ensureChart() {
 function renderChart() {
   const hasLocalSeries = Array.isArray(state.allSeries) && state.allSeries.length > 1;
   const hasLocalTrades = Array.isArray(state.trades) && state.trades.length > 0;
+  const keepLocalChart = Date.now() < Number(state.forceLocalChartUntil || 0);
+  if (!keepLocalChart && shouldPreferDexScreenerChart(state.launch)) {
+    const rendered = renderDexScreenerChart(state.launch);
+    if (rendered) return;
+  }
   // Prefer local live chart first for speed/freshness; fall back to Gecko embed only when local data is unavailable.
   if (!hasLocalSeries && !hasLocalTrades && geckoPoolUrl(state.launch)) {
     const rendered = renderGeckoChart(state.launch);
@@ -1874,7 +1986,10 @@ function renderChart() {
   const latest = candles[candles.length - 1];
   const latestVol = volumes[volumes.length - 1];
   const rangeLabel = String(state.range || "").toUpperCase();
-  ui.chartPairLabel.textContent = `${state.launch?.symbol || "TOKEN"}/${quoteSymbol()} ${state.mode === "price" ? `Price (${quoteSymbol()})` : "Market Cap (USD)"} - ${rangeLabel}`;
+  const awaitingFirstTrade = Boolean(state.launch?.pool?.liveDexCurve) && !latest && !hasIndexedDexSnapshot();
+  ui.chartPairLabel.textContent = awaitingFirstTrade
+    ? `${state.launch?.symbol || "TOKEN"}/${quoteSymbol()} - waiting for first trade`
+    : `${state.launch?.symbol || "TOKEN"}/${quoteSymbol()} ${state.mode === "price" ? `Price (${quoteSymbol()})` : "Market Cap (USD)"} - ${rangeLabel}`;
   ui.chartOpen.textContent = latest ? priceFormat(latest.open) : "-";
   ui.chartHigh.textContent = latest ? priceFormat(latest.high) : "-";
   ui.chartLow.textContent = latest ? priceFormat(latest.low) : "-";
@@ -1936,6 +2051,7 @@ function renderOverview() {
     const poolMcapEth = Number(state.launch?.pool?.marketCapEth || 0);
     const poolEthReserve = Number(state.launch?.pool?.ethReserveEth || 0);
     const graduated = Boolean(state.launch?.pool?.graduated);
+    const liveDexCurve = Boolean(state.launch?.pool?.liveDexCurve);
     const poolMcapUsd = poolMcapEth > 0 ? ethToUsd(poolMcapEth, state.ethUsd) : 0;
     const dexLooksInflated =
       dexMcapRaw > 0 &&
@@ -1944,12 +2060,23 @@ function renderOverview() {
     const dexMcapUsd = dexLooksInflated ? 0 : dexMcapRaw;
     const geckoPriceEth = Number(state.gecko?.snapshot?.priceNative || 0);
     const dexPriceEth = Number(state.dex?.priceNative || geckoPriceEth || state.launch?.pool?.spotPriceEth || 0);
-    const hasLiveSignal = dexMcapUsd > 0 || poolMcapUsd > 0 || poolEthReserve > 0 || graduated;
-    ui.marketCapHeadline.textContent = !hasLiveSignal ? "Syncing MC" : dexMcapUsd > 0 ? formatCompactUsd(dexMcapUsd) : poolMcapUsd > 0 ? formatCompactUsd(poolMcapUsd) : "-";
+    const hasLiveSignal = dexMcapUsd > 0 || poolMcapUsd > 0 || poolEthReserve > 0 || graduated || liveDexCurve;
+    const awaitingFirstTrade = liveDexCurve && dexMcapUsd <= 0 && poolMcapUsd <= 0 && dexPriceEth <= 0;
+    ui.marketCapHeadline.textContent = awaitingFirstTrade
+      ? "Live"
+      : !hasLiveSignal
+      ? "Syncing MC"
+      : dexMcapUsd > 0
+      ? formatCompactUsd(dexMcapUsd)
+      : poolMcapUsd > 0
+      ? formatCompactUsd(poolMcapUsd)
+      : "-";
     ui.lastPrice.textContent = dexPriceEth > 0 ? formatEthDisplay(dexPriceEth) : "-";
     const raw24hChange = state.dex?.priceChange24hPct ?? state.gecko?.snapshot?.priceChange24hPct;
     const pct24hChange = Number(raw24hChange ?? 0);
-    ui.marketCapDelta24h.textContent = Number.isFinite(Number(raw24hChange))
+    ui.marketCapDelta24h.textContent = awaitingFirstTrade
+      ? "Waiting for first trade"
+      : Number.isFinite(Number(raw24hChange))
       ? `${pct24hChange > 0 ? "+" : ""}${pct24hChange.toFixed(2)}% 24h`
       : "24h change unavailable yet";
     applyDeltaClass(ui.marketCapDelta24h, pct24hChange);
@@ -2886,6 +3013,26 @@ async function onBuy() {
       return;
     }
 
+    if (isV3LiveCurveMarket(state.launch)) {
+      const router = makeV3SwapRouterContract();
+      const params = v3ExactInputParams({
+        tokenIn: normalizeAddress(state.launch?.pool?.dexWethAddress || ""),
+        tokenOut: normalizeAddress(state.launch?.token || ""),
+        amountIn: ethIn,
+        recipient: ws.address
+      });
+      setAlert(ui.alert, "Buying on Uniswap V3...");
+      const tx = await sendTxWithFallback({
+        label: "Uniswap V3 Buy",
+        populatedTx: router.exactInputSingle.populateTransaction(params, { value: ethIn }),
+        walletNativeSend: () => router.exactInputSingle(params, { value: ethIn })
+      });
+      const receipt = await tx.wait();
+      setAlert(ui.alert, "Buy sent on Uniswap V3");
+      await loadTokenPage(true, false);
+      return;
+    }
+
     const { router, path } = await resolveDexPathBuy();
     const quoted = await router.getAmountsOut(ethIn, path);
     const amountOutMin = quoted?.[1] ? (quoted[1] * 97n) / 100n : 0n;
@@ -2985,6 +3132,40 @@ async function onSell() {
         renderOverview();
       }
       setAlert(ui.alert, "Sell complete on bonding curve");
+      await loadTokenPage(true, false);
+      return;
+    }
+
+    if (isV3LiveCurveMarket(state.launch)) {
+      const routerAddress = normalizeAddress(state.launch?.pool?.v3SwapRouter || "");
+      const router = makeV3SwapRouterContract();
+      const allowance = await token.allowance(ws.address, routerAddress);
+      if (allowance < tokenIn) {
+        setAlert(ui.alert, "Approving Uniswap V3 router...");
+        const approval = await sendTxWithFallback({
+          label: "Approve V3 Router",
+          populatedTx: token.approve.populateTransaction(routerAddress, ethers.MaxUint256),
+          walletNativeSend: () => token.approve(routerAddress, ethers.MaxUint256)
+        });
+        await approval.wait();
+      }
+
+      const params = v3ExactInputParams({
+        tokenIn: normalizeAddress(state.launch?.token || ""),
+        tokenOut: normalizeAddress(state.launch?.pool?.dexWethAddress || ""),
+        amountIn: tokenIn,
+        recipient: routerAddress
+      });
+      const swapData = await router.exactInputSingle.populateTransaction(params);
+      const unwrapData = await router.unwrapWETH9.populateTransaction(0n, ws.address);
+      setAlert(ui.alert, "Selling on Uniswap V3...");
+      const tx = await sendTxWithFallback({
+        label: "Uniswap V3 Sell",
+        populatedTx: router.multicall.populateTransaction([swapData.data, unwrapData.data]),
+        walletNativeSend: () => router.multicall([swapData.data, unwrapData.data])
+      });
+      await tx.wait();
+      setAlert(ui.alert, "Sell sent on Uniswap V3");
       await loadTokenPage(true, false);
       return;
     }
