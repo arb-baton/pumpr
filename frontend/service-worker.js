@@ -1,4 +1,4 @@
-const CACHE_NAME = "pumpr-shell-v20260711-airi-live";
+const CACHE_NAME = "pumpr-shell-v20260711-airi-coder";
 const APP_SHELL = [
   "/",
   "/create",
@@ -6,8 +6,8 @@ const APP_SHELL = [
   "/airdrop",
   "/referrals",
   "/social",
-  "/assets/site.css?v=20260711airilive",
-  "/js/airi-live.js?v=20260711airilive",
+  "/assets/site.css?v=20260711airicoder",
+  "/js/airi-live.js?v=20260711airicoder",
   "/assets/assistant/rose-thumb.png",
   "/assets/pump-r-logo.png?v=20260609brand",
   "/assets/favicon.png?v=20260609brand",

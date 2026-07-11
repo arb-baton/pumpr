@@ -1,0 +1,110 @@
+name: Airi autonomous coder
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch Airi should write to"
+        required: false
+        default: "airi/self-improvements"
+      auto_merge:
+        description: "Merge into main after guard and checks pass"
+        required: false
+        default: "true"
+  schedule:
+    - cron: "41 */6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: airi-autonomous-coder
+  cancel-in-progress: false
+
+jobs:
+  code:
+    runs-on: ubuntu-latest
+    env:
+      AIRI_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || 'airi/self-improvements' }}
+      AIRI_AUTO_MERGE: ${{ github.event_name == 'workflow_dispatch' && inputs.auto_merge || 'true' }}
+      AIRI_BASE_REF: origin/main
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_AIRI_CODER_MODEL: ${{ vars.OPENAI_AIRI_CODER_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Prepare Airi branch
+        shell: bash
+        run: |
+          git config user.name "Airi"
+          git config user.email "airi@pump-r.fun"
+          git fetch origin main
+          git checkout -B "$AIRI_BRANCH" origin/main
+
+      - name: Let Airi write one safe patch
+        id: write
+        shell: bash
+        run: |
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "OPENAI_API_KEY is not configured. Airi cannot write code yet."
+            exit 0
+          fi
+          node scripts/airi-autonomous-coder.js
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Airi found no useful safe patch this cycle."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --name-only
+          fi
+
+      - name: Stage and guard Airi diff
+        if: steps.write.outputs.changed == 'true'
+        shell: bash
+        run: |
+          git diff --name-only -z | xargs -0 git add --
+          AIRI_COMPARE_INDEX=1 AIRI_BRANCH="$AIRI_BRANCH" node scripts/airi-merge-guard.js
+
+      - name: Syntax checks
+        if: steps.write.outputs.changed == 'true'
+        shell: bash
+        run: |
+          node --check backend/server.js
+          node --check scripts/airi-autonomous-coder.js
+          node --check scripts/airi-merge-guard.js
+          node --check frontend/js/sidebar.js
+          if [ -f frontend/js/assistant.js ]; then
+            node --input-type=module --check < frontend/js/assistant.js
+          fi
+          if [ -f frontend/js/airi-live.js ]; then
+            node --input-type=module --check < frontend/js/airi-live.js
+          fi
+
+      - name: Commit Airi branch
+        if: steps.write.outputs.changed == 'true'
+        shell: bash
+        run: |
+          git commit -m "Airi: autonomous self-improvement"
+          git push --force-with-lease origin "HEAD:$AIRI_BRANCH"
+
+      - name: Merge guarded branch into main
+        if: steps.write.outputs.changed == 'true' && env.AIRI_AUTO_MERGE == 'true'
+        shell: bash
+        run: |
+          git fetch origin main
+          git checkout "$AIRI_BRANCH"
+          AIRI_BASE_REF=origin/main AIRI_BRANCH="$AIRI_BRANCH" node scripts/airi-merge-guard.js
+          git checkout main
+          git pull --ff-only origin main
+          git merge --no-ff "$AIRI_BRANCH" -m "Merge Airi autonomous self-improvement"
+          git push origin main

@@ -70,6 +70,7 @@ const fallbackMemories = [
 ];
 
 const fallbackQueue = [
+  "Wake on GitHub schedule, write one safe code patch, and push airi/self-improvements.",
   "Watch Pump-r pages for broken flows and stalled launch states.",
   "Draft Airi's public X voice without leaking implementation details.",
   "Map repeated user asks into durable preferences.",
