@@ -356,6 +356,9 @@ function boot() {
   appendStreamLine("self-upgrade loop waiting for real repo state", "signal");
   fetchBackroomState();
 
+  // Immediately update clock display on load for accurate time
+  tickClock();
+
   window.setInterval(tickClock, 1000);
   window.setInterval(advance, 1850);
   window.setInterval(fetchBackroomState, 8_000);
