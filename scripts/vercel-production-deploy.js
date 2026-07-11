@@ -8,6 +8,10 @@ function run(command, args, options = {}) {
   return execSync(cmd, {
     cwd: process.cwd(),
     encoding: "utf8",
+    env: {
+      ...process.env,
+      NPM_CONFIG_PACKAGE_LOCK: "false"
+    },
     stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit"
   });
 }
