@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Airi LIVE | Pump-r</title>
+    <link rel="icon" type="image/png" href="/assets/favicon.png?v=20260609brand" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#05070c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Airi LIVE" />
+    <link rel="apple-touch-icon" href="/assets/pump-r-logo.png?v=20260609brand" />
+    <script defer src="/js/pwa.js?v=20260706android"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260711airilive" />
+  </head>
+  <body class="airi-live-page">
+    <main class="airi-live-shell" aria-label="Airi live operating room">
+      <section class="airi-live-hero" aria-label="Airi status">
+        <div class="airi-live-signal-field" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <header class="airi-live-topbar">
+          <a class="airi-live-brand" href="/">
+            <img src="/assets/pump-r-logo.png?v=20260609brand" alt="" />
+            <span>Pump-r</span>
+          </a>
+          <div class="airi-live-clock">
+            <span id="airiLiveDate">--</span>
+            <strong id="airiLiveClock">--:--:--</strong>
+          </div>
+        </header>
+
+        <div class="airi-live-core">
+          <div class="airi-live-portrait-wrap">
+            <div class="airi-live-portrait-ring" aria-hidden="true"></div>
+            <img class="airi-live-portrait" src="/assets/assistant/rose-thumb.png" alt="Airi" />
+            <div class="airi-live-state-strip" aria-label="Airi mode">
+              <span class="is-hot"></span>
+              <b>LIVE AUTONOMY</b>
+            </div>
+          </div>
+          <div class="airi-live-title-block">
+            <small>Airi operating room</small>
+            <h1>Airi is reading her own worktree.</h1>
+            <p id="airiLiveStatement">
+              I am reading commits, changed files, memories, and safe coding queues, then turning real project state into the next improvement.
+            </p>
+            <div class="airi-live-modes" aria-label="Airi active modes">
+              <span>repo-backed</span>
+              <span>read-only coding loop</span>
+              <span>approval locked</span>
+              <span>self-upgrade queue</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="airi-live-dashboard" aria-label="Airi live dashboard">
+        <article class="airi-live-panel airi-live-now">
+          <div class="airi-live-panel-head">
+            <small>Current process</small>
+            <span id="airiLiveProcessPulse">running</span>
+          </div>
+          <h2 id="airiLiveTaskTitle">Synchronizing memory lattice</h2>
+          <p id="airiLiveTaskBody">Reading the newest user intent and binding it to the visible page state.</p>
+          <div class="airi-live-progress" aria-hidden="true"><span id="airiLiveProgressBar"></span></div>
+          <div class="airi-live-metric-row">
+            <span><b id="airiLiveCycles">0</b> cycles</span>
+            <span><b id="airiLiveSignals">0</b> signals</span>
+            <span><b id="airiLiveChanges">0</b> changes</span>
+          </div>
+        </article>
+
+        <article class="airi-live-panel airi-live-brain">
+          <div class="airi-live-panel-head">
+            <small>Cognitive map</small>
+            <span>nonstop</span>
+          </div>
+          <div class="airi-live-neural" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <ul id="airiLiveMindList" class="airi-live-mind-list"></ul>
+        </article>
+
+        <article class="airi-live-panel airi-live-changes">
+          <div class="airi-live-panel-head">
+            <small>Changes Airi made</small>
+            <span>latest</span>
+          </div>
+          <div id="airiLiveChangeStack" class="airi-live-change-stack"></div>
+        </article>
+
+        <article class="airi-live-panel airi-live-terminal">
+          <div class="airi-live-panel-head">
+            <small>Real inner stream</small>
+            <span id="airiLiveStreamState">writing</span>
+          </div>
+          <div id="airiLiveTerminal" class="airi-live-terminal-lines" aria-live="polite"></div>
+        </article>
+
+        <article class="airi-live-panel airi-live-memory">
+          <div class="airi-live-panel-head">
+            <small>Memory shards</small>
+            <span id="airiLiveMemoryCount">0 saved</span>
+          </div>
+          <div id="airiLiveMemoryGrid" class="airi-live-memory-grid"></div>
+        </article>
+
+        <article class="airi-live-panel airi-live-roadmap">
+          <div class="airi-live-panel-head">
+            <small>Next self-directed moves</small>
+            <span>queued</span>
+          </div>
+          <ol id="airiLiveQueue" class="airi-live-queue"></ol>
+        </article>
+      </section>
+    </main>
+    <script type="module" src="/js/airi-live.js?v=20260711airilive"></script>
+  </body>
+</html>

@@ -1,11 +1,14 @@
-const CACHE_NAME = "pumpr-shell-v20260706-android";
+const CACHE_NAME = "pumpr-shell-v20260711-airi-live";
 const APP_SHELL = [
   "/",
   "/create",
+  "/airi",
   "/airdrop",
   "/referrals",
   "/social",
-  "/assets/site.css?v=20260711airisymbols",
+  "/assets/site.css?v=20260711airilive",
+  "/js/airi-live.js?v=20260711airilive",
+  "/assets/assistant/rose-thumb.png",
   "/assets/pump-r-logo.png?v=20260609brand",
   "/assets/favicon.png?v=20260609brand",
   "/js/pwa.js?v=20260706android"

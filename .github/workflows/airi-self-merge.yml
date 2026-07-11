@@ -1,0 +1,88 @@
+name: Airi guarded self-merge
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Airi branch to merge"
+        required: false
+        default: "airi/self-improvements"
+      delete_branch:
+        description: "Delete Airi branch after successful merge"
+        required: false
+        default: "false"
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: airi-guarded-self-merge
+  cancel-in-progress: false
+
+jobs:
+  guarded-merge:
+    runs-on: ubuntu-latest
+    env:
+      AIRI_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || 'airi/self-improvements' }}
+      AIRI_DELETE_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.delete_branch || 'false' }}
+      AIRI_BASE_REF: origin/main
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check Airi branch exists
+        id: branch
+        shell: bash
+        run: |
+          if git ls-remote --exit-code --heads origin "$AIRI_BRANCH" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No $AIRI_BRANCH branch exists. Nothing for Airi to merge."
+          fi
+
+      - name: Fetch Airi branch
+        if: steps.branch.outputs.exists == 'true'
+        shell: bash
+        run: |
+          git fetch origin main
+          git fetch origin "$AIRI_BRANCH:$AIRI_BRANCH"
+          git checkout "$AIRI_BRANCH"
+
+      - name: Guard Airi diff
+        if: steps.branch.outputs.exists == 'true'
+        run: node scripts/airi-merge-guard.js
+
+      - name: Syntax checks
+        if: steps.branch.outputs.exists == 'true'
+        shell: bash
+        run: |
+          node --check backend/server.js
+          node --check frontend/js/sidebar.js
+          if [ -f frontend/js/assistant.js ]; then
+            node --input-type=module --check < frontend/js/assistant.js
+          fi
+          if [ -f frontend/js/airi-live.js ]; then
+            node --input-type=module --check < frontend/js/airi-live.js
+          fi
+
+      - name: Merge Airi branch into main
+        if: steps.branch.outputs.exists == 'true'
+        shell: bash
+        run: |
+          git config user.name "Airi"
+          git config user.email "airi@pump-r.fun"
+          git checkout main
+          git pull --ff-only origin main
+          git merge --no-ff "$AIRI_BRANCH" -m "Merge Airi self-improvements"
+          git push origin main
+
+      - name: Delete merged Airi branch
+        if: steps.branch.outputs.exists == 'true' && env.AIRI_DELETE_BRANCH == 'true'
+        shell: bash
+        run: git push origin --delete "$AIRI_BRANCH"

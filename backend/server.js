@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const { execFile } = require("child_process");
 const { ethers } = require("ethers");
 const QRCode = require("qrcode");
 const bs58 = require("bs58");
@@ -13157,6 +13158,157 @@ async function runAiriAutonomy(body = {}) {
   };
 }
 
+function runAiriGit(args = []) {
+  return new Promise((resolve) => {
+    if (IS_VERCEL_RUNTIME) {
+      resolve({ ok: false, stdout: "", error: "git unavailable in production runtime" });
+      return;
+    }
+    execFile("git", args, { cwd: ROOT, timeout: 3500, windowsHide: true, maxBuffer: 256 * 1024 }, (error, stdout = "", stderr = "") => {
+      resolve({
+        ok: !error,
+        stdout: String(stdout || "").trim(),
+        error: sanitizeAiriText(error?.message || stderr || "", 240)
+      });
+    });
+  });
+}
+
+function parseAiriGitStatus(text = "") {
+  return String(text || "")
+    .split(/\r?\n/g)
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(.{1,2})\s+(.+)$/);
+      const status = String(match?.[1] || line.slice(0, 2)).trim() || "??";
+      const file = sanitizeAiriText(match?.[2] || line.slice(2).trim() || line, 180);
+      return { status, file };
+    })
+    .filter((row) => {
+      const file = String(row.file || "");
+      if (!file) return false;
+      if (file.includes(".env")) return false;
+      if (file.startsWith("frontend/uploads/")) return false;
+      if (file.startsWith("etherpump-public-docs")) return false;
+      if (file.startsWith("mobile/pumpr")) return false;
+      if (file.startsWith(".vercel/")) return false;
+      return true;
+    });
+}
+
+function parseAiriGitLog(text = "") {
+  return String(text || "")
+    .split(/\r?\n/g)
+    .map((line) => {
+      const [hash, ts, ...rest] = line.split("\t");
+      return {
+        hash: sanitizeAiriText(hash || "", 16),
+        at: Number(ts || 0) * 1000 || 0,
+        title: sanitizeAiriText(rest.join("\t") || "", 180)
+      };
+    })
+    .filter((row) => row.hash && row.title);
+}
+
+function airiWorkItemFromFile(file = "") {
+  const name = sanitizeAiriText(file || "", 180);
+  const lower = name.toLowerCase();
+  if (lower.includes("airi-live")) return `Continue coding the live Airi Backroom from ${name}`;
+  if (lower.includes("assistant")) return `Refine Airi's assistant mind and voice behavior in ${name}`;
+  if (lower.includes("sidebar")) return `Keep Airi Backroom discoverable through the navigation in ${name}`;
+  if (lower.includes("server")) return `Expose real backend state safely through ${name}`;
+  if (lower.includes("site.css")) return `Tune the livestream visual system in ${name}`;
+  if (lower.includes("service-worker")) return `Keep the Backroom cache and livestream assets fresh in ${name}`;
+  if (name) return `Inspect ${name} for the next safe improvement`;
+  return "Inspect Pump-r for the next safe improvement";
+}
+
+function buildAiriBackroomStream({ commits = [], status = [], memories = [], events = [] } = {}) {
+  const stream = [];
+  commits.slice(0, 4).forEach((commit) => {
+    stream.push({
+      kind: "commit",
+      text: `read commit ${commit.hash}: ${commit.title}`
+    });
+  });
+  status.slice(0, 8).forEach((row) => {
+    stream.push({
+      kind: row.status === "??" ? "new-file" : "worktree",
+      text: `${row.status} ${row.file}`
+    });
+  });
+  memories.slice(-4).forEach((memory) => {
+    stream.push({
+      kind: "memory",
+      text: `memory shard active: ${memory.content || memory}`
+    });
+  });
+  events.slice(-4).forEach((event) => {
+    stream.push({
+      kind: "event",
+      text: `observed ${event.type || "event"} on ${event.page || "app"}`
+    });
+  });
+  return stream.slice(0, 22);
+}
+
+async function getAiriBackroomState(sessionId = "anonymous") {
+  const { session } = getAiriSession(sessionId || "anonymous");
+  const [logResult, statusResult, branchResult] = await Promise.all([
+    runAiriGit(["log", "-8", "--pretty=format:%h%x09%ct%x09%s"]),
+    runAiriGit(["status", "--short"]),
+    runAiriGit(["branch", "--show-current"])
+  ]);
+  const commits = parseAiriGitLog(logResult.stdout);
+  const status = parseAiriGitStatus(statusResult.stdout);
+  const memories = (Array.isArray(session.memories) ? session.memories : []).slice(-12);
+  const events = (Array.isArray(session.events) ? session.events : []).slice(-12);
+  const changedFiles = status.map((row) => row.file).filter(Boolean);
+  const workItems = Array.from(new Set([
+    ...changedFiles.slice(0, 8).map(airiWorkItemFromFile),
+    "If pushed to airi/self-improvements, GitHub can guard-check and self-merge Airi's branch",
+    "Run syntax checks before every push",
+    "Prepare code changes but keep wallet, posting, deploy, and push actions approval-gated"
+  ])).slice(0, 10);
+  const changes = [
+    ...commits.slice(0, 5).map((commit) => ({
+      mark: "git",
+      title: commit.title,
+      body: `Commit ${commit.hash}${commit.at ? ` from ${new Date(commit.at).toLocaleString("en-US")}` : ""}`
+    })),
+    ...status.slice(0, 5).map((row) => ({
+      mark: row.status,
+      title: row.file,
+      body: row.status === "??" ? "New file in Airi's current worktree." : "Modified file in Airi's current worktree."
+    }))
+  ].slice(0, 10);
+  const stream = buildAiriBackroomStream({ commits, status, memories, events });
+  const currentTask = workItems[0] || "Watch Pump-r for the next improvement";
+  return {
+    ok: true,
+    real: true,
+    mode: "read_only_coding_loop",
+    approvalRequiredFor: ["writing files from browser", "wallet signatures", "public posts", "deployments", "git push"],
+    branch: sanitizeAiriText(branchResult.stdout || "unknown", 80),
+    gitAvailable: Boolean(logResult.ok || statusResult.ok),
+    currentTask,
+    workItems,
+    changes,
+    stream,
+    memories,
+    events,
+    metrics: {
+      commits: commits.length,
+      changedFiles: status.length,
+      memories: memories.length,
+      events: events.length,
+      untracked: status.filter((row) => row.status === "??").length
+    },
+    updatedAt: Date.now()
+  };
+}
+
 app.get("/api/airi/state", async (req, res) => {
   try {
     const { session } = getAiriSession(req.query.sessionId || req.query.wallet || "anonymous");
@@ -13170,6 +13322,27 @@ app.get("/api/airi/state", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to read Airi state" });
+  }
+});
+
+app.get("/api/airi/backroom", async (req, res) => {
+  try {
+    const payload = await getAiriBackroomState(req.query.sessionId || req.query.wallet || "anonymous");
+    res.json(payload);
+  } catch (error) {
+    res.status(200).json({
+      ok: true,
+      real: false,
+      mode: "local_backroom_fallback",
+      currentTask: "Backroom state fell back while the live page keeps running.",
+      workItems: ["Reconnect backend state", "Keep the livestream active"],
+      changes: [],
+      stream: [{ kind: "warn", text: sanitizeAiriText(error.message || "Backroom state unavailable", 240) }],
+      memories: [],
+      events: [],
+      metrics: { commits: 0, changedFiles: 0, memories: 0, events: 0, untracked: 0 },
+      updatedAt: Date.now()
+    });
   }
 });
 
@@ -14849,6 +15022,10 @@ app.get(["/alpha", "/alpha/:alphaId"], (_req, res) => {
 
 app.get(["/agents", "/agents/:agentId"], (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "agents.html"));
+});
+
+app.get("/airi", (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "airi.html"));
 });
 
 app.get(["/pumpr-card", "/card"], (_req, res) => {
