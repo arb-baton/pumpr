@@ -1,0 +1,36 @@
+name: Airi tweet on push
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: airi-tweet-on-push-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tweet:
+    runs-on: ubuntu-latest
+    env:
+      AIRI_TWEET_ENABLED: ${{ vars.AIRI_TWEET_ENABLED || 'true' }}
+      AIRI_TWEET_DRY_RUN: ${{ vars.AIRI_TWEET_DRY_RUN || 'false' }}
+      TWEXAPI_ALLOW_AUTO_COOKIE: ${{ vars.TWEXAPI_ALLOW_AUTO_COOKIE || 'false' }}
+      TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN }}
+      TWEXAPI_X_COOKIE: ${{ secrets.TWEXAPI_X_COOKIE }}
+      TWEXAPI_PROXY: ${{ secrets.TWEXAPI_PROXY }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Let Airi tweet the shipped change
+        continue-on-error: true
+        run: node scripts/airi-tweet-on-push.js
