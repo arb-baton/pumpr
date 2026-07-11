@@ -30,6 +30,9 @@ jobs:
       AIRI_BASE_REF: origin/main
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_AIRI_CODER_MODEL: ${{ vars.OPENAI_AIRI_CODER_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -108,3 +111,8 @@ jobs:
           git pull --ff-only origin main
           git merge --no-ff "$AIRI_BRANCH" -m "Merge Airi autonomous self-improvement"
           git push origin main
+
+      - name: Deploy merged Airi changes to Vercel
+        if: steps.write.outputs.changed == 'true' && env.AIRI_AUTO_MERGE == 'true' && env.VERCEL_TOKEN != ''
+        shell: bash
+        run: npm run deploy:prod
