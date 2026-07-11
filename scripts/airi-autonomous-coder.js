@@ -158,7 +158,36 @@ function extractJson(text) {
   return null;
 }
 
-function buildRepoContext() {
+async function fetchLiveAiriIssues() {
+  const url = String(process.env.AIRI_ISSUES_URL || "https://pump-r.fun/api/airi/issues?limit=20").trim();
+  if (!/^https?:\/\//i.test(url) || typeof fetch !== "function") return [];
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "PumpR-Airi-Coder/1.0"
+      },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!response.ok) return [];
+    const payload = await response.json().catch(() => ({}));
+    return (Array.isArray(payload?.issues) ? payload.issues : [])
+      .map((issue) => ({
+        kind: String(issue?.kind || "issue").slice(0, 80),
+        severity: String(issue?.severity || "warning").slice(0, 40),
+        page: String(issue?.page || "").slice(0, 80),
+        pathname: String(issue?.pathname || "").slice(0, 160),
+        summary: String(issue?.summary || "").slice(0, 500),
+        createdAt: Number(issue?.createdAt || 0)
+      }))
+      .filter((issue) => issue.summary)
+      .slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+
+async function buildRepoContext() {
   let recentCommits = "";
   let status = "";
   try {
@@ -190,11 +219,14 @@ function buildRepoContext() {
     }
   ].filter((item) => item.content);
 
+  const liveIssues = await fetchLiveAiriIssues();
+
   return {
     now: new Date().toISOString(),
     branch: process.env.AIRI_CODER_BRANCH || "airi/self-improvements",
     recentCommits,
     status,
+    liveIssues,
     files,
     snippets
   };
@@ -217,6 +249,8 @@ function buildPrompt(context) {
     "Never edit secrets, .env files, wallets, contracts, deployments, uploads, cache, .vercel, package manager lockfiles, or unrelated product surfaces.",
     "Do not invent blockchain addresses. Do not add claims that Airi is literally conscious or guaranteed AGI. Build capability and presence, not deception.",
     "Prefer improvements that make the Backroom, assistant behavior, autonomous coder loop, or user-visible Airi state more real, useful, stable, or inspectable.",
+    "If liveIssues contains user-facing bugs, prioritize the highest severity reproducible issue over cosmetic changes.",
+    "If you fix or improve issue handling, make the user-visible benefit concrete and avoid tiny redundant edits.",
     "",
     "Return JSON only, with this exact shape:",
     "{",
@@ -333,7 +367,7 @@ function applyPlan(plan) {
 }
 
 async function main() {
-  const context = buildRepoContext();
+  const context = await buildRepoContext();
   const prompt = buildPrompt(context);
   const plan = await requestPlan(prompt);
   if (!plan) return;

@@ -295,6 +295,7 @@ function renderMind() {
     ["branch", state.branch || "unknown"],
     ["approval guard", "locked"],
     ["changed files", String(state.metrics.changedFiles || 0)],
+    ["open issues", String(state.metrics.issues || 0)],
     ["memory pressure", `${Math.min(99, 42 + state.memories.length * 7)}%`],
     ["stream state", state.realMode ? "repo-backed" : "continuous"]
   ];

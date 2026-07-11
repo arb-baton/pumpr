@@ -22,6 +22,7 @@ const ASSISTANT_UPLOAD_KEY = "pumpr.assistant.upload.v2";
 const ASSISTANT_LAUNCH_DRAFT_KEY = "pumpr.assistant.launchdraft.v2";
 const ASSISTANT_AIRI_SESSION_KEY = "pumpr.airi.session.v1";
 const ASSISTANT_AIRI_LAST_SPEAK_KEY = "pumpr.airi.lastspeak.v1";
+const ASSISTANT_AIRI_ISSUE_COOLDOWN_KEY = "pumpr.airi.issueCooldown.v1";
 const WALLET_SESSION_KEY = "etherpump.wallet.session.v1";
 const MAX_HISTORY = 18;
 const DEFAULT_ASSISTANT_TOKEN_SUPPLY = 1_000_000_000;
@@ -65,6 +66,9 @@ let airiAutonomyTimer = null;
 let airiAutonomyBusy = false;
 let airiLastObservationKey = "";
 let airiLastEventAt = 0;
+let airiIssueBusy = false;
+let airiFetchMonitorInstalled = false;
+let airiPendingActionWatch = null;
 let companionMotionState = null;
 let companionReactionTimer = null;
 let companionGestureTimer = null;
@@ -127,6 +131,18 @@ function writeLastAiriSpeak(value = {}) {
     localStorage.setItem(ASSISTANT_AIRI_LAST_SPEAK_KEY, JSON.stringify(value || {}));
   } catch {
     // ignore local memory failure
+  }
+}
+
+function readAiriIssueCooldowns() {
+  return safeParse(localStorage.getItem(ASSISTANT_AIRI_ISSUE_COOLDOWN_KEY), {});
+}
+
+function writeAiriIssueCooldowns(value = {}) {
+  try {
+    localStorage.setItem(ASSISTANT_AIRI_ISSUE_COOLDOWN_KEY, JSON.stringify(value || {}));
+  } catch {
+    // ignore local issue memory failures
   }
 }
 
@@ -1213,18 +1229,22 @@ function bindPageReactions() {
     if (!label) return;
     const lower = label.toLowerCase();
     if (lower.includes("launch") || lower.includes("create")) {
+      watchPotentiallyStuckAction(label, "launch");
       setCompanionReaction(`Lining up ${label}.`, "excited", 2200);
       return;
     }
     if (lower.includes("swap") || lower.includes("bridge")) {
+      watchPotentiallyStuckAction(label, "swap");
       setCompanionReaction(`Routing ${label}.`, "thinking", 2200);
       return;
     }
     if (lower.includes("save") || lower.includes("publish") || lower.includes("submit")) {
+      watchPotentiallyStuckAction(label, "submit");
       setCompanionReaction(`Sending ${label}.`, "thinking", 2100);
       return;
     }
     if (lower.includes("wallet") || lower.includes("sign") || lower.includes("connect")) {
+      watchPotentiallyStuckAction(label, "wallet");
       setCompanionReaction(`Waiting on ${label}.`, "thinking", 2200);
       return;
     }
@@ -1515,6 +1535,182 @@ async function recordAiriEvent(type, summary = "", payload = {}) {
   }
 }
 
+function issueKeyFor(kind = "issue", summary = "", payload = {}) {
+  return JSON.stringify({
+    kind: String(kind || "issue").slice(0, 80),
+    page: currentPageName(),
+    path: location.pathname,
+    summary: String(summary || "").replace(/\s+/g, " ").trim().slice(0, 140),
+    status: payload.status || "",
+    endpoint: String(payload.endpoint || payload.url || "").replace(location.origin, "").slice(0, 120)
+  });
+}
+
+function shouldReportAiriIssue(kind, summary, payload = {}, cooldownMs = 90_000) {
+  const key = issueKeyFor(kind, summary, payload);
+  const now = Date.now();
+  const store = readAiriIssueCooldowns();
+  const last = Number(store[key] || 0);
+  if (last && now - last < cooldownMs) return false;
+  store[key] = now;
+  for (const [entryKey, ts] of Object.entries(store)) {
+    if (now - Number(ts || 0) > 24 * 60 * 60 * 1000) delete store[entryKey];
+  }
+  writeAiriIssueCooldowns(store);
+  return true;
+}
+
+async function reportAiriIssue(kind, summary = "", payload = {}, options = {}) {
+  const cleanSummary = String(summary || "").replace(/\s+/g, " ").trim().slice(0, 500);
+  if (!cleanSummary || airiIssueBusy) return;
+  const severity = String(options.severity || payload.severity || "warning").slice(0, 40);
+  const cooldownMs = Number(options.cooldownMs || (severity === "critical" ? 30_000 : 90_000));
+  if (!shouldReportAiriIssue(kind, cleanSummary, payload, cooldownMs)) return;
+  airiIssueBusy = true;
+  const body = airiObservationPayload({
+    type: "issue",
+    issue: {
+      kind: String(kind || "issue").slice(0, 80),
+      severity,
+      summary: cleanSummary,
+      payload: {
+        ...payload,
+        page: currentPageName(),
+        pathname: location.pathname
+      }
+    },
+    summary: cleanSummary,
+    payload
+  });
+  try {
+    const response = await postJson("/api/airi/issue", body);
+    const issue = response.json?.issue || {};
+    const line = response.json?.reply || issue.publicMessage || "";
+    if (line) {
+      setStatus(line, severity === "critical" || severity === "error" ? "warning" : "thinking");
+      if (options.speak !== false) {
+        addHistory("assistant", line);
+        speakReply(line);
+      }
+    }
+    await runAiriAutonomyTick({ force: true, reason: `issue:${kind}` });
+  } catch {
+    // Issue reporting should never interrupt the user flow.
+  } finally {
+    airiIssueBusy = false;
+  }
+}
+
+function installAiriIssueMonitor() {
+  if (airiFetchMonitorInstalled) return;
+  airiFetchMonitorInstalled = true;
+
+  const originalFetch = window.fetch?.bind(window);
+  if (originalFetch) {
+    window.fetch = async (input, init) => {
+      const startedAt = Date.now();
+      const url = typeof input === "string" ? input : input?.url || "";
+      try {
+        const response = await originalFetch(input, init);
+        const path = (() => {
+          try {
+            return new URL(url, location.origin).pathname;
+          } catch {
+            return String(url || "");
+          }
+        })();
+        const ignored = /^\/api\/airi\/(event|tick|issue|state|backroom)/.test(path);
+        if (!ignored && response && response.status >= 400) {
+          window.setTimeout(() => {
+            reportAiriIssue(
+              "api_failure",
+              `API ${response.status} on ${path || "request"}`,
+              {
+                endpoint: path,
+                status: response.status,
+                method: String(init?.method || "GET").toUpperCase(),
+                durationMs: Date.now() - startedAt
+              },
+              { severity: response.status >= 500 ? "error" : "warning", speak: response.status >= 500 }
+            );
+          }, 0);
+        }
+        return response;
+      } catch (error) {
+        const path = (() => {
+          try {
+            return new URL(url, location.origin).pathname;
+          } catch {
+            return String(url || "");
+          }
+        })();
+        if (!/^\/api\/airi\/(event|tick|issue|state|backroom)/.test(path)) {
+          window.setTimeout(() => {
+            reportAiriIssue(
+              "network_failure",
+              `Network request failed on ${path || "request"}`,
+              {
+                endpoint: path,
+                message: String(error?.message || error || "network failure").slice(0, 240),
+                method: String(init?.method || "GET").toUpperCase(),
+                durationMs: Date.now() - startedAt
+              },
+              { severity: "error", speak: true }
+            );
+          }, 0);
+        }
+        throw error;
+      }
+    };
+  }
+
+  window.addEventListener("error", (event) => {
+    reportAiriIssue(
+      "client_error",
+      event?.message || "Client error",
+      {
+        message: event?.message || "",
+        source: event?.filename || "",
+        line: event?.lineno || 0,
+        column: event?.colno || 0
+      },
+      { severity: "error", speak: true }
+    );
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    reportAiriIssue(
+      "client_rejection",
+      String(event?.reason?.message || event?.reason || "Unhandled rejection"),
+      {
+        message: String(event?.reason?.message || event?.reason || "").slice(0, 240)
+      },
+      { severity: "error", speak: true }
+    );
+  });
+}
+
+function watchPotentiallyStuckAction(label = "", kind = "action") {
+  const cleanLabel = String(label || kind || "action").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!cleanLabel) return;
+  if (airiPendingActionWatch) clearTimeout(airiPendingActionWatch);
+  airiPendingActionWatch = window.setTimeout(() => {
+    const statusNow = String(assistantDom?.status?.textContent || "").trim();
+    const pageText = String(document.body?.innerText || "").toLowerCase();
+    const stillWorking = /(checking|loading|broadcasting|syncing|working|confirming|submitting|creating|launching)/i.test(statusNow)
+      || pageText.includes("checking token name")
+      || pageText.includes("loading pair")
+      || pageText.includes("broadcasting signed");
+    if (!stillWorking) return;
+    reportAiriIssue(
+      "stalled_action",
+      `${cleanLabel} looks stalled on ${currentPageName()}`,
+      { label: cleanLabel, status: statusNow, actionKind: kind },
+      { severity: "warning", speak: true, cooldownMs: 180_000 }
+    );
+  }, 14_000);
+}
+
 function shouldRenderAiriAutonomy(payload = {}) {
   if (!payload?.shouldSpeak || !payload.reply) return false;
   const last = readLastAiriSpeak();
@@ -1559,6 +1755,7 @@ async function runAiriAutonomyTick({ force = false, reason = "tick" } = {}) {
 
 function startAiriAutonomy() {
   if (airiAutonomyTimer) clearInterval(airiAutonomyTimer);
+  installAiriIssueMonitor();
   recordAiriEvent("awakening", "Airi entered the page and began observing.", { firstRun: true });
   window.setTimeout(() => runAiriAutonomyTick({ force: true, reason: "boot" }), 1800);
   airiAutonomyTimer = window.setInterval(() => runAiriAutonomyTick({ reason: "pulse" }), 20_000);
@@ -1571,16 +1768,6 @@ function startAiriAutonomy() {
       recordAiriEvent("field_changed", `${id} changed`, { field: id });
       runAiriAutonomyTick({ force: true, reason: `field:${id}` });
     });
-  });
-
-  window.addEventListener("error", (event) => {
-    recordAiriEvent("client_error", event?.message || "Client error", {
-      message: event?.message || "",
-      source: event?.filename || ""
-    });
-  });
-  window.addEventListener("unhandledrejection", (event) => {
-    recordAiriEvent("client_rejection", String(event?.reason?.message || event?.reason || "Unhandled rejection"), {});
   });
 }
 

@@ -12727,6 +12727,19 @@ function sanitizeAiriEvent(row = {}) {
   };
 }
 
+function sanitizeAiriIssue(row = {}) {
+  const payload = row.payload && typeof row.payload === "object" ? row.payload : {};
+  return {
+    kind: sanitizeAiriText(row.kind || payload.kind || "issue", 80),
+    severity: sanitizeAiriText(row.severity || payload.severity || "warning", 40),
+    summary: sanitizeAiriText(row.summary || payload.summary || "", 500),
+    page: sanitizeAiriText(row.page || payload.page || "", 80),
+    pathname: sanitizeAiriText(row.pathname || payload.pathname || "", 160),
+    payload,
+    createdAt: Number(row.createdAt || Date.now())
+  };
+}
+
 function sanitizeAiriSession(row = {}) {
   const memories = Array.isArray(row.memories) ? row.memories.map(sanitizeAiriMemory).filter((item) => item.content) : [];
   const events = Array.isArray(row.events) ? row.events.map(sanitizeAiriEvent) : [];
@@ -12830,6 +12843,35 @@ function addAiriEvent(session, value = {}) {
   return session;
 }
 
+function listAiriIssues(store = readAiriDb(), limit = 40) {
+  const rows = [];
+  const sessions = store?.sessions && typeof store.sessions === "object" ? Object.values(store.sessions) : [];
+  sessions.forEach((session) => {
+    (Array.isArray(session?.events) ? session.events : []).forEach((event) => {
+      if (String(event?.type || "") !== "issue") return;
+      const issue = sanitizeAiriIssue({
+        ...(event.payload?.issue || {}),
+        page: event.page || event.payload?.issue?.page,
+        summary: event.summary || event.payload?.issue?.summary,
+        createdAt: event.createdAt
+      });
+      if (issue.summary) rows.push(issue);
+    });
+  });
+  return rows
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    .slice(0, Math.max(1, Math.min(100, Number(limit || 40))));
+}
+
+function airiIssuePublicMessage(issue = {}) {
+  const kind = String(issue.kind || "issue").replace(/_/g, " ");
+  const page = issue.page ? ` on ${issue.page}` : "";
+  if (String(issue.severity || "").toLowerCase() === "error") {
+    return `I caught a ${kind}${page}. I logged it, I am watching the next signal, and I will feed it into my repair loop.`;
+  }
+  return `I noticed ${kind}${page}. I logged the trace and will keep the flow moving while I look for a clean fix.`;
+}
+
 function extractAiriPreferences(session, body = {}) {
   const text = [
     body.message,
@@ -12857,6 +12899,7 @@ function summarizeAiriContext(body = {}) {
   const wallet = body.wallet && typeof body.wallet === "object" ? body.wallet : {};
   const createDraft = context.createDraft && typeof context.createDraft === "object" ? context.createDraft : {};
   const tokenContext = context.token && typeof context.token === "object" ? context.token : {};
+  const issue = body.issue && typeof body.issue === "object" ? sanitizeAiriIssue(body.issue) : null;
   return {
     page,
     pathname: sanitizeAiriText(body.pathname || "", 160),
@@ -12881,7 +12924,8 @@ function summarizeAiriContext(body = {}) {
       price: sanitizeAiriText(tokenContext.price || "", 80),
       progress: sanitizeAiriText(tokenContext.progress || "", 80),
       pairLabel: sanitizeAiriText(tokenContext.pairLabel || "", 160)
-    }
+    },
+    issue
   };
 }
 
@@ -12895,7 +12939,21 @@ function detectAiriSignals(snapshot = {}, session = {}) {
   const draft = snapshot.createDraft || {};
   const token = snapshot.token || {};
   const wallet = snapshot.wallet || {};
+  const issue = snapshot.issue || null;
   const recentText = (session.events || []).slice(-6).map((event) => `${event.type} ${event.summary}`).join(" ").toLowerCase();
+
+  if (issue?.summary) {
+    signals.push({
+      kind: `reported_${issue.kind || "issue"}`,
+      page,
+      subject: `${issue.kind || "issue"}:${issue.summary}`,
+      mood: String(issue.severity || "").toLowerCase() === "error" ? "warning" : "thinking",
+      reply: airiIssuePublicMessage(issue),
+      status: `Watching ${issue.kind || "issue"}.`,
+      quickReplies: ["What broke?", "Keep watching", "Open Backroom"],
+      actions: [{ type: "focus", target: page === "rh-swap" ? "swap" : page === "create" ? "launch" : "profile" }]
+    });
+  }
 
   if (!wallet.connected && ["create", "rh-swap", "token"].includes(page)) {
     signals.push({
@@ -13252,8 +13310,14 @@ function airiWorkItemFromFile(file = "") {
   return "Inspect Pump-r for the next safe improvement";
 }
 
-function buildAiriBackroomStream({ commits = [], status = [], memories = [], events = [] } = {}) {
+function buildAiriBackroomStream({ commits = [], status = [], memories = [], events = [], issues = [] } = {}) {
   const stream = [];
+  issues.slice(0, 4).forEach((issue) => {
+    stream.push({
+      kind: String(issue.severity || "").toLowerCase() === "error" ? "warn" : "event",
+      text: `user issue ${issue.kind || "issue"} on ${issue.page || "app"}: ${issue.summary}`
+    });
+  });
   commits.slice(0, 4).forEach((commit) => {
     stream.push({
       kind: "commit",
@@ -13282,7 +13346,7 @@ function buildAiriBackroomStream({ commits = [], status = [], memories = [], eve
 }
 
 async function getAiriBackroomState(sessionId = "anonymous") {
-  const { session } = getAiriSession(sessionId || "anonymous");
+  const { store, session } = getAiriSession(sessionId || "anonymous");
   const [logResult, statusResult, branchResult] = await Promise.all([
     runAiriGit(["log", "-8", "--pretty=format:%h%x09%ct%x09%s"]),
     runAiriGit(["status", "--short"]),
@@ -13296,8 +13360,10 @@ async function getAiriBackroomState(sessionId = "anonymous") {
   const remoteBacked = !gitAvailable && githubCommits.length > 0;
   const memories = (Array.isArray(session.memories) ? session.memories : []).slice(-12);
   const events = (Array.isArray(session.events) ? session.events : []).slice(-12);
+  const issues = listAiriIssues(store, 12);
   const changedFiles = status.map((row) => row.file).filter(Boolean);
   const workItems = Array.from(new Set([
+    ...issues.slice(0, 5).map((issue) => `Investigate ${issue.kind || "issue"} on ${issue.page || "app"}: ${issue.summary}`),
     ...commits.filter((commit) => /airi/i.test(`${commit.title} ${commit.author || ""}`)).slice(0, 4).map((commit) => `Review autonomous commit ${commit.hash}: ${commit.title}`),
     ...changedFiles.slice(0, 8).map(airiWorkItemFromFile),
     "If pushed to airi/self-improvements, GitHub can guard-check and self-merge Airi's branch",
@@ -13310,13 +13376,18 @@ async function getAiriBackroomState(sessionId = "anonymous") {
       title: commit.title,
       body: `Commit ${commit.hash}${commit.at ? ` from ${new Date(commit.at).toLocaleString("en-US")}` : ""}`
     })),
+    ...issues.slice(0, 4).map((issue) => ({
+      mark: String(issue.severity || "issue").slice(0, 8),
+      title: `${issue.kind || "issue"} on ${issue.page || "app"}`,
+      body: issue.summary
+    })),
     ...status.slice(0, 5).map((row) => ({
       mark: row.status,
       title: row.file,
       body: row.status === "??" ? "New file in Airi's current worktree." : "Modified file in Airi's current worktree."
     }))
   ].slice(0, 10);
-  const stream = buildAiriBackroomStream({ commits, status, memories, events });
+  const stream = buildAiriBackroomStream({ commits, status, memories, events, issues });
   const liveStream = stream.length
     ? stream
     : [
@@ -13350,11 +13421,13 @@ async function getAiriBackroomState(sessionId = "anonymous") {
     stream: liveStream,
     memories,
     events,
+    issues,
     metrics: {
       commits: commits.length,
       changedFiles: status.length,
       memories: memories.length,
       events: events.length,
+      issues: issues.length,
       untracked: status.filter((row) => row.status === "??").length
     },
     updatedAt: Date.now()
@@ -13413,6 +13486,57 @@ app.post("/api/airi/event", async (req, res) => {
     res.json({ ok: true, sessionId: saved.sessionId, memoryCount: saved.memories.length, eventCount: saved.events.length });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to record Airi event" });
+  }
+});
+
+app.post("/api/airi/issue", async (req, res) => {
+  try {
+    const { store, session } = getAiriSession(req.body?.sessionId || req.body?.wallet?.address || "anonymous");
+    const issue = sanitizeAiriIssue({
+      ...(req.body?.issue || {}),
+      page: req.body?.page || req.body?.issue?.page,
+      pathname: req.body?.pathname || req.body?.issue?.pathname,
+      createdAt: Date.now()
+    });
+    if (!issue.summary) {
+      return res.status(400).json({ ok: false, error: "Issue summary is required." });
+    }
+    addAiriEvent(session, {
+      type: "issue",
+      page: issue.page,
+      summary: issue.summary,
+      payload: { issue }
+    });
+    addAiriMemory(session, `Issue observed on ${issue.page || "app"}: ${issue.kind} - ${issue.summary}`, {
+      kind: "reported_issue",
+      importance: String(issue.severity || "").toLowerCase() === "error" ? 8 : 6
+    });
+    const saved = saveAiriSession(store, session);
+    res.json({
+      ok: true,
+      sessionId: saved.sessionId,
+      issue,
+      publicMessage: airiIssuePublicMessage(issue),
+      reply: airiIssuePublicMessage(issue),
+      issueCount: listAiriIssues(store, 100).length
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message || "Failed to record Airi issue" });
+  }
+});
+
+app.get("/api/airi/issues", async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit || 40)));
+    const issues = listAiriIssues(readAiriDb(), limit);
+    res.json({
+      ok: true,
+      issues,
+      count: issues.length,
+      updatedAt: Date.now()
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message || "Failed to read Airi issues" });
   }
 });
 
