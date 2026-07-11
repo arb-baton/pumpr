@@ -13283,19 +13283,38 @@ async function getAiriBackroomState(sessionId = "anonymous") {
       body: row.status === "??" ? "New file in Airi's current worktree." : "Modified file in Airi's current worktree."
     }))
   ].slice(0, 10);
+  const gitAvailable = Boolean(logResult.ok || statusResult.ok);
   const stream = buildAiriBackroomStream({ commits, status, memories, events });
+  const liveStream = stream.length
+    ? stream
+    : [
+        {
+          kind: gitAvailable ? "event" : "warn",
+          text: gitAvailable
+            ? "repo state is quiet; continuing guarded coding loop"
+            : "production runtime is live; git worktree state is handled by guarded GitHub flow"
+        },
+        {
+          kind: "event",
+          text: "wallet, posting, deployment, and push actions stay approval-gated"
+        },
+        {
+          kind: "signal",
+          text: "Airi Backroom keeps the livestream active while waiting for the next improvement"
+        }
+      ];
   const currentTask = workItems[0] || "Watch Pump-r for the next improvement";
   return {
     ok: true,
-    real: true,
+    real: gitAvailable,
     mode: "read_only_coding_loop",
     approvalRequiredFor: ["writing files from browser", "wallet signatures", "public posts", "deployments", "git push"],
     branch: sanitizeAiriText(branchResult.stdout || "unknown", 80),
-    gitAvailable: Boolean(logResult.ok || statusResult.ok),
+    gitAvailable,
     currentTask,
     workItems,
     changes,
-    stream,
+    stream: liveStream,
     memories,
     events,
     metrics: {
