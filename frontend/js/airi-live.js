@@ -251,7 +251,9 @@ function formatTime(date = new Date()) {
 function tickClock() {
   const now = new Date();
   dom.date.textContent = now.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
-  dom.clock.textContent = formatTime(now);
+  const timeStr = formatTime(now);
+  dom.clock.textContent = timeStr;
+  dom.clock.setAttribute("aria-label", `Current time is ${timeStr}`);
 }
 
 function restoreTerminal() {
