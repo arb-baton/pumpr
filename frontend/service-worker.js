@@ -5,7 +5,7 @@ const APP_SHELL = [
   "/airdrop",
   "/referrals",
   "/social",
-  "/assets/site.css?v=20260706mobilepolish",
+  "/assets/site.css?v=20260711airisymbols",
   "/assets/pump-r-logo.png?v=20260609brand",
   "/assets/favicon.png?v=20260609brand",
   "/js/pwa.js?v=20260706android"

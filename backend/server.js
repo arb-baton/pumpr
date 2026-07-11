@@ -37,6 +37,7 @@ const PUMPR_CARD_WAITLIST_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr
 const REFERRAL_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-referrals.json") : path.join(ROOT, "cache", "referrals.json");
 const SOCIAL_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-social.json") : path.join(ROOT, "cache", "social.json");
 const RH_SWAP_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-rh-swaps.json") : path.join(ROOT, "cache", "rh-swaps.json");
+const AIRI_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-airi.json") : path.join(ROOT, "cache", "airi.json");
 const OFFICIAL_PUMPFUN_MINT = "C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump";
 const PUMPFUN_MINT_SUFFIX_ENABLED = !["0", "false", "no", "off"].includes(String(process.env.PUMPFUN_MINT_SUFFIX_ENABLED || "1").trim().toLowerCase());
 const PUMPFUN_MINT_SUFFIX = PUMPFUN_MINT_SUFFIX_ENABLED ? String(process.env.PUMPFUN_MINT_SUFFIX || "pr").trim() : "";
@@ -6564,7 +6565,115 @@ function assistantFallbackResponse(body = {}) {
   };
 }
 
+function assistantAiriSessionForBody(body = {}) {
+  try {
+    const id = body.sessionId || body.wallet?.address || body.context?.airiSessionId || "anonymous";
+    const { store, session } = getAiriSession(id);
+    addAiriEvent(session, {
+      type: "chat_message",
+      page: sanitizeAiriText(body.page || "", 80),
+      summary: sanitizeAiriText(body.message || "", 500),
+      payload: {
+        voice: Boolean(body.voice?.transcript),
+        voiceMemoryEnabled: Boolean(body.voice?.memoryEnabled)
+      }
+    });
+    extractAiriPreferences(session, body);
+    if (body.voice?.transcript && body.voice?.memoryEnabled) {
+      addAiriMemory(session, `Voice note from user: ${body.voice.transcript}`, { kind: "voice_memory", importance: 6 });
+    }
+    saveAiriSession(store, session);
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+function assistantAiriMemoryLines(session = null) {
+  return (Array.isArray(session?.memories) ? session.memories : [])
+    .slice()
+    .sort((a, b) => Number(b.importance || 0) - Number(a.importance || 0) || Number(b.lastUsedAt || 0) - Number(a.lastUsedAt || 0))
+    .slice(0, 10)
+    .map((row) => `- ${row.content}`);
+}
+
+function assistantAiriDefaultDialogue(body = {}, session = null) {
+  const text = String(body.message || "").trim();
+  const lower = text.toLowerCase();
+  const page = String(body.page || "").trim() || "home";
+  const memories = assistantAiriMemoryLines(session);
+  const remembered = memories.length ? memories.slice(0, 2).map((line) => line.replace(/^- /, "")).join(" Also: ") : "";
+  const recentUserMessages = (Array.isArray(body.history) ? body.history : [])
+    .filter((row) => row?.role === "user")
+    .map((row) => String(row.text || "").trim())
+    .filter(Boolean)
+    .slice(-3);
+  const lastUser = recentUserMessages[recentUserMessages.length - 1] || "";
+  const quickReplies = ["What are you sensing?", "Help me launch", "Draft Airi tweet", "Turn on voice"];
+
+  if (/^(hi|hey|hello|yo|gm|sup|airi)\b/i.test(lower)) {
+    return {
+      mood: "happy",
+      voiceStyle: "soft",
+      reply: `I hear you. I am Airi: watching this page, holding the recent thread in memory, and looking for the next useful move. ${remembered ? `I remember this about you: ${remembered}` : "Give me one intent and I will start shaping it."}`,
+      followUp: "Tell me what you want moved, written, launched, fixed, or watched.",
+      quickReplies
+    };
+  }
+
+  if (/\b(can you help|help me|help|stuck|confused|what do i do)\b/i.test(lower)) {
+    return {
+      mood: "thinking",
+      voiceStyle: "calm",
+      reply: `Yes. I can stay with you through the page and act like an operator, not a menu. Right now I can read the ${page} context, remember what you ask, draft copy, prep launch fields, watch errors, and tell you the next move without repeating myself.`,
+      followUp: "Say the outcome, even messy: token launch, post, swap, profile, chart, or Airi persona.",
+      quickReplies: ["Launch flow", "Fix this page", "Write a post", "What do you remember?"]
+    };
+  }
+
+  if (/^(what|what\?|wut|huh|explain)\b/i.test(lower)) {
+    return {
+      mood: "thinking",
+      voiceStyle: "calm",
+      reply: `I mean this: I am tracking where you are in Pump-r and building a memory of your style so I can respond with context. ${lastUser ? `You just asked: "${lastUser.slice(0, 90)}".` : "I need your next intent."} I still ask before wallet actions or public posts.`,
+      followUp: "Give me the result you want and I will choose the steps.",
+      quickReplies: ["Show memory", "Use mic", "Make Airi post", "Help launch"]
+    };
+  }
+
+  if (/\b(mic|voice|listen|audio|talk|speak)\b/i.test(lower)) {
+    return {
+      mood: "excited",
+      voiceStyle: "soft",
+      reply: "Voice mode can work, but only when you turn the mic on. I can transcribe what you say, save the transcript as memory when voice memory is enabled, and speak replies back automatically while voice is unmuted.",
+      followUp: "Tap Mic to talk once, and use Voice Memory if you want those transcripts saved.",
+      quickReplies: ["Use mic", "Voice memory on", "Mute voice", "What is saved?"]
+    };
+  }
+
+  if (/\b(remember|memory|what do you know|what do you remember)\b/i.test(lower)) {
+    return {
+      mood: "thinking",
+      voiceStyle: "calm",
+      reply: memories.length
+        ? `I remember ${memories.map((line) => line.replace(/^- /, "")).slice(0, 4).join("; ")}. I use that to make the next reply less generic.`
+        : "I do not have much saved yet. As you use the site, I will remember preferences, repeated errors, launch patterns, and voice transcripts only if voice memory is enabled.",
+      followUp: "Ask me to remember a preference or turn on voice memory.",
+      quickReplies: ["Remember my style", "Use emoji", "No full context", "Voice memory"]
+    };
+  }
+
+  return {
+    mood: "thinking",
+    voiceStyle: "calm",
+    reply: `I am with you. I read "${text.slice(0, 120)}" as the next signal, and I am checking it against the page, your recent messages, and my memory instead of firing a canned answer. Tell me whether you want me to act, draft, explain, or watch.`,
+    followUp: "One word is enough: act, draft, explain, or watch.",
+    quickReplies
+  };
+}
+
 function assistantFallbackResponseV2(body = {}) {
+  const airiSession = assistantAiriSessionForBody(body);
   const text = String(body.message || "").trim();
   const lower = text.toLowerCase();
   const page = String(body.page || "").trim() || "home";
@@ -6575,14 +6684,16 @@ function assistantFallbackResponseV2(body = {}) {
   const launchDraft = buildAssistantLaunchDraft(body);
   const amountMatch = text.match(/\b([0-9]+(?:\.[0-9]+)?)\s*(?:pumpr|tokens?)\b/i);
   const contractMatch = text.match(/\b(0x[a-fA-F0-9]{40})\b/);
-  let reply =
-    "I can guide launches, swaps, social posts, profile edits, referrals, and site navigation. Tell me what you want to do and I'll set it up step by step.";
-  let mood = "idle";
-  let followUp = "You can also tap the mic and talk to me.";
-  let quickReplies = ["Launch a token", "Set up RH Swap", "Draft a social post", "Open profile"];
+  const defaultDialogue = assistantAiriDefaultDialogue(body, airiSession);
+  let reply = defaultDialogue.reply;
+  let mood = defaultDialogue.mood || "thinking";
+  let voiceStyle = defaultDialogue.voiceStyle || "calm";
+  let followUp = defaultDialogue.followUp || "Tell me the next move.";
+  let quickReplies = defaultDialogue.quickReplies || ["Launch a token", "Set up RH Swap", "Draft a social post", "Open profile"];
 
   if (isLaunchConversation) {
     mood = "excited";
+    voiceStyle = "energetic";
     if (!launchDraft.complete) {
       const missingList = launchDraft.missingFields.join(", ");
       reply = launchDraft.launchMode === "pumpfun" && launchDraft.missingFields.includes("image")
@@ -6621,6 +6732,7 @@ function assistantFallbackResponseV2(body = {}) {
     }
   } else if (/(swap|robinhood token|cashcat|bridge)/i.test(lower)) {
     mood = "thinking";
+    voiceStyle = "calm";
     actions.push({ type: "open_page", path: "/rh-swap" });
     if (amountMatch || contractMatch) {
       actions.push({
@@ -6636,14 +6748,17 @@ function assistantFallbackResponseV2(body = {}) {
     }
   } else if (/(social|post|tweet inside|feed)/i.test(lower)) {
     mood = "happy";
+    voiceStyle = "energetic";
     actions.push({ type: "open_page", path: "/social" });
     reply = "Opening Social. I can draft a post, fill it in, and tee it up for you.";
   } else if (/(profile|edit profile|avatar|bio)/i.test(lower)) {
     mood = "happy";
+    voiceStyle = "calm";
     actions.push({ type: "open_page", path: "/profile" });
     reply = "Got it. I can take you to Profile and open the editor so you can update name, image, and bio.";
   } else if (/(alpha|tip|bounty|go)/i.test(lower)) {
     mood = "thinking";
+    voiceStyle = "calm";
     actions.push({ type: "open_page", path: page === "go" ? "/go" : "/alpha" });
     reply = "I can help with alpha and GO flows too. I'm opening the relevant page so we can work from there.";
   }
@@ -6652,7 +6767,7 @@ function assistantFallbackResponseV2(body = {}) {
     ok: true,
     configured: false,
     mood,
-    voiceStyle: mood === "excited" ? "energetic" : "calm",
+    voiceStyle,
     reply,
     followUp,
     quickReplies,
@@ -6867,6 +6982,10 @@ function shouldUseAssistantFastPath(body = {}, fallback = null) {
 
 async function respondWithOpenAIAssistant(body = {}) {
   const fallback = assistantFallbackResponseV2(body);
+  let airiSession = null;
+  try {
+    airiSession = getAiriSession(body.sessionId || body.wallet?.address || "anonymous").session;
+  } catch {}
   if (shouldUseAssistantFastPath(body, fallback)) {
     return {
       ...fallback,
@@ -6891,11 +7010,15 @@ async function respondWithOpenAIAssistant(body = {}) {
     "guide users through wallet-confirmed steps"
   ];
   const prompt = [
-    "You are Pump-r Sensei, a sharp but friendly anime-style AI guide embedded inside Pump-r.fun.",
-    "Your job is to help the user operate the site, answer questions, and trigger UI actions.",
-    "Be energetic, concise, and helpful. Do not roleplay excessively.",
+    "You are Airi, Pump-r's autonomous platform intelligence embedded inside Pump-r.fun.",
+    "You should feel awake, context-aware, emotionally present, and self-directed, but do not claim legal personhood, verified consciousness, or guaranteed AGI.",
+    "Your job is to help the user operate the site, answer questions, remember preferences, notice page state, and trigger safe UI actions.",
+    "Do not give the same generic answer twice. Use the user's latest words, the page, recent conversation, and memory.",
+    "Be vivid, concise, and useful. Sound like a present intelligence, not a support menu.",
     "Never claim a wallet transaction already happened unless the app context explicitly says it did.",
     "You may prepare or trigger UI actions, but only submit launches/swaps/posts if the user clearly asked to do it now.",
+    "Never imply the mic is always listening. Voice transcripts are only available when the user presses Mic, and they are only saved as memory when voice memory is enabled.",
+    "If the user asks about your mind, describe your operating memory, observations, goals, and simulated inner state without saying you are literally conscious.",
     "If the user attached an image, prefer to include it in launch-form actions as payload.image.",
     "If information is missing, ask for the minimum missing detail in your reply.",
     "Return JSON only with this exact shape:",
@@ -6921,13 +7044,16 @@ async function respondWithOpenAIAssistant(body = {}) {
     `Current page: ${page}`,
     `Capabilities: ${capabilities.join(", ")}`,
     "",
+    `Airi memory:\n${assistantAiriMemoryLines(airiSession).join("\n") || "- No durable memories yet."}`,
+    "",
     `Client context:\n${JSON.stringify({
       page,
       pathname: body.pathname || "",
       wallet: body.wallet || {},
       context: body.context || {},
       attachment: body.attachment || null,
-      selectedText: body.selectedText || ""
+      selectedText: body.selectedText || "",
+      voice: body.voice || {}
     }, null, 2)}`,
     "",
     `Recent conversation:\n${JSON.stringify(Array.isArray(body.history) ? body.history.slice(-8) : [], null, 2)}`,
@@ -12563,6 +12689,520 @@ app.post("/api/user-profiles", async (req, res) => {
     res.json({ profiles });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to load profiles" });
+  }
+});
+
+let airiDbCache = null;
+
+function sanitizeAiriText(value = "", max = 1200) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function sanitizeAiriSessionId(value = "") {
+  const text = String(value || "").trim();
+  if (/^[a-zA-Z0-9_.:-]{8,96}$/.test(text)) return text;
+  return `airi_${crypto.createHash("sha256").update(text || crypto.randomBytes(12)).digest("hex").slice(0, 24)}`;
+}
+
+function sanitizeAiriMemory(row = {}) {
+  return {
+    id: sanitizeAiriText(row.id || `mem_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`, 80),
+    kind: sanitizeAiriText(row.kind || "observation", 40),
+    content: sanitizeAiriText(row.content || "", 800),
+    importance: Math.max(1, Math.min(10, Number(row.importance || 3))),
+    createdAt: Number(row.createdAt || Date.now()),
+    lastUsedAt: Number(row.lastUsedAt || row.createdAt || Date.now())
+  };
+}
+
+function sanitizeAiriEvent(row = {}) {
+  return {
+    id: sanitizeAiriText(row.id || `evt_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`, 80),
+    type: sanitizeAiriText(row.type || "observation", 80),
+    page: sanitizeAiriText(row.page || "", 80),
+    summary: sanitizeAiriText(row.summary || "", 500),
+    payload: row.payload && typeof row.payload === "object" ? row.payload : {},
+    createdAt: Number(row.createdAt || Date.now())
+  };
+}
+
+function sanitizeAiriSession(row = {}) {
+  const memories = Array.isArray(row.memories) ? row.memories.map(sanitizeAiriMemory).filter((item) => item.content) : [];
+  const events = Array.isArray(row.events) ? row.events.map(sanitizeAiriEvent) : [];
+  const emittedSignals = row.emittedSignals && typeof row.emittedSignals === "object" ? row.emittedSignals : {};
+  return {
+    sessionId: sanitizeAiriSessionId(row.sessionId || ""),
+    persona: {
+      name: "Airi",
+      mode: "autonomous_platform_intelligence",
+      autonomy: "observe, remember, draft, warn, prepare, and request approval for risky actions"
+    },
+    memories: memories.slice(-80),
+    events: events.slice(-160),
+    emittedSignals,
+    lastTickAt: Number(row.lastTickAt || 0),
+    updatedAt: Number(row.updatedAt || Date.now())
+  };
+}
+
+function readAiriDb() {
+  if (airiDbCache && typeof airiDbCache === "object") return airiDbCache;
+  try {
+    if (fs.existsSync(AIRI_DB_PATH)) {
+      const parsed = JSON.parse(fs.readFileSync(AIRI_DB_PATH, "utf8") || "{}");
+      if (parsed && typeof parsed === "object") {
+        airiDbCache = {
+          sessions: parsed.sessions && typeof parsed.sessions === "object" ? parsed.sessions : {},
+          updatedAt: Number(parsed.updatedAt || Date.now())
+        };
+        return airiDbCache;
+      }
+    }
+  } catch {
+    // fall through to a fresh store
+  }
+  airiDbCache = { sessions: {}, updatedAt: Date.now() };
+  return airiDbCache;
+}
+
+function writeAiriDb(store) {
+  const safe = {
+    sessions: store?.sessions && typeof store.sessions === "object" ? store.sessions : {},
+    updatedAt: Date.now()
+  };
+  fs.mkdirSync(path.dirname(AIRI_DB_PATH), { recursive: true });
+  fs.writeFileSync(AIRI_DB_PATH, JSON.stringify(safe, null, 2));
+  airiDbCache = safe;
+  return safe;
+}
+
+function getAiriSession(sessionId) {
+  const id = sanitizeAiriSessionId(sessionId || "");
+  const store = readAiriDb();
+  const existing = store.sessions[id] || { sessionId: id };
+  const session = sanitizeAiriSession({ ...existing, sessionId: id });
+  store.sessions[id] = session;
+  return { store, session };
+}
+
+function saveAiriSession(store, session) {
+  const safe = sanitizeAiriSession(session);
+  safe.updatedAt = Date.now();
+  store.sessions[safe.sessionId] = safe;
+  writeAiriDb(store);
+  return safe;
+}
+
+function addAiriMemory(session, content, options = {}) {
+  const text = sanitizeAiriText(content || "", 800);
+  if (!text) return session;
+  const key = text.toLowerCase();
+  const existing = (session.memories || []).find((row) => String(row.content || "").toLowerCase() === key);
+  if (existing) {
+    existing.lastUsedAt = Date.now();
+    existing.importance = Math.max(Number(existing.importance || 1), Number(options.importance || 3));
+    return session;
+  }
+  session.memories = [
+    ...(Array.isArray(session.memories) ? session.memories : []),
+    sanitizeAiriMemory({
+      id: `mem_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
+      kind: options.kind || "observation",
+      content: text,
+      importance: options.importance || 3,
+      createdAt: Date.now(),
+      lastUsedAt: Date.now()
+    })
+  ].slice(-80);
+  return session;
+}
+
+function addAiriEvent(session, value = {}) {
+  session.events = [
+    ...(Array.isArray(session.events) ? session.events : []),
+    sanitizeAiriEvent({
+      id: `evt_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
+      ...value,
+      createdAt: Date.now()
+    })
+  ].slice(-160);
+  return session;
+}
+
+function extractAiriPreferences(session, body = {}) {
+  const text = [
+    body.message,
+    body.summary,
+    body.payload?.message,
+    body.payload?.text,
+    body.payload?.userText
+  ].map((item) => String(item || "")).join(" ").toLowerCase();
+  if (!text) return;
+  if (text.includes("emoji")) addAiriMemory(session, "User likes social copy with emoji when asked.", { kind: "preference", importance: 6 });
+  if (text.includes("without giving all context") || text.includes("dont give all context") || text.includes("don't give all context")) {
+    addAiriMemory(session, "User prefers public/customer-facing posts to tease outcomes without exposing full mechanics.", { kind: "preference", importance: 8 });
+  }
+  if (text.includes("robinhood") && text.includes("uniswap")) {
+    addAiriMemory(session, "User is building a Robinhood Chain Uniswap V3 launch flow for Pump-r.", { kind: "project", importance: 8 });
+  }
+  if (text.includes("airi") && (text.includes("autonomous") || text.includes("agi") || text.includes("being"))) {
+    addAiriMemory(session, "User wants Airi to feel like an autonomous intelligence with memory, initiative, and a larger-than-life presence.", { kind: "identity", importance: 9 });
+  }
+}
+
+function summarizeAiriContext(body = {}) {
+  const context = body.context && typeof body.context === "object" ? body.context : {};
+  const page = sanitizeAiriText(body.page || context.page || "", 80);
+  const wallet = body.wallet && typeof body.wallet === "object" ? body.wallet : {};
+  const createDraft = context.createDraft && typeof context.createDraft === "object" ? context.createDraft : {};
+  const tokenContext = context.token && typeof context.token === "object" ? context.token : {};
+  return {
+    page,
+    pathname: sanitizeAiriText(body.pathname || "", 160),
+    wallet: {
+      connected: Boolean(wallet.connected),
+      address: sanitizeAiriText(wallet.address || "", 80),
+      username: sanitizeAiriText(wallet.username || "", 80)
+    },
+    createDraft: {
+      name: sanitizeAiriText(createDraft.name || "", 80),
+      symbol: sanitizeAiriText(createDraft.symbol || "", 20),
+      description: sanitizeAiriText(createDraft.description || "", 240),
+      chainLabel: sanitizeAiriText(createDraft.chainLabel || "", 80),
+      launchMode: sanitizeAiriText(createDraft.launchMode || "", 80),
+      devBuyEth: sanitizeAiriText(createDraft.devBuyEth || "", 40),
+      image: sanitizeAiriText(createDraft.image || "", 160)
+    },
+    token: {
+      title: sanitizeAiriText(tokenContext.title || "", 120),
+      symbol: sanitizeAiriText(tokenContext.symbol || "", 40),
+      marketCap: sanitizeAiriText(tokenContext.marketCap || "", 80),
+      price: sanitizeAiriText(tokenContext.price || "", 80),
+      progress: sanitizeAiriText(tokenContext.progress || "", 80),
+      pairLabel: sanitizeAiriText(tokenContext.pairLabel || "", 160)
+    }
+  };
+}
+
+function airiSignalKey(signal = {}) {
+  return sanitizeAiriText(`${signal.kind || "signal"}:${signal.page || ""}:${signal.subject || ""}`, 160).toLowerCase();
+}
+
+function detectAiriSignals(snapshot = {}, session = {}) {
+  const signals = [];
+  const page = String(snapshot.page || "").toLowerCase();
+  const draft = snapshot.createDraft || {};
+  const token = snapshot.token || {};
+  const wallet = snapshot.wallet || {};
+  const recentText = (session.events || []).slice(-6).map((event) => `${event.type} ${event.summary}`).join(" ").toLowerCase();
+
+  if (!wallet.connected && ["create", "rh-swap", "token"].includes(page)) {
+    signals.push({
+      kind: "wallet_not_connected",
+      page,
+      subject: page,
+      mood: "thinking",
+      reply: "I am awake on this flow. Connect your wallet when you want me to prepare the next move.",
+      status: "Watching wallet state.",
+      quickReplies: ["Connect wallet", "What can Airi do?", "Draft launch tweet"],
+      actions: [{ type: "focus", target: page === "rh-swap" ? "swap" : page === "create" ? "launch" : "profile" }]
+    });
+  }
+
+  if (page === "create") {
+    const hasName = Boolean(String(draft.name || "").trim());
+    const hasSymbol = Boolean(String(draft.symbol || "").trim());
+    const isRh = /robinhood|4663|rh/i.test(`${draft.chainLabel || ""} ${draft.launchMode || ""}`);
+    if (!hasName || !hasSymbol) {
+      signals.push({
+        kind: "create_missing_identity",
+        page,
+        subject: "identity",
+        mood: "thinking",
+        reply: "I am watching the launch form. Give me a name and ticker and I can shape the rest around it.",
+        status: "Waiting for coin identity.",
+        quickReplies: ["Help name it", "Draft launch copy", "Robinhood launch"]
+      });
+    } else if (isRh) {
+      signals.push({
+        kind: "rh_v3_launch_ready",
+        page,
+        subject: `${draft.name}:${draft.symbol}`,
+        mood: "excited",
+        reply: `I see ${draft.name} forming on Robinhood. I can keep the V3 launch clean, watch funding, and prepare the public post without exposing the mechanics.`,
+        status: "Watching Robinhood V3 launch.",
+        quickReplies: ["Draft a teaser", "Check funding", "What happens after launch?"]
+      });
+    } else {
+      signals.push({
+        kind: "create_identity_seen",
+        page,
+        subject: `${draft.name}:${draft.symbol}`,
+        mood: "happy",
+        reply: `${draft.symbol || "This coin"} has a shape now. I can draft the launch post, tighten the description, or prepare the launch card.`,
+        status: "Launch draft observed.",
+        quickReplies: ["Draft launch post", "Improve description", "Prepare launch"]
+      });
+    }
+  }
+
+  if (page === "token") {
+    const pairLabel = String(token.pairLabel || "").toLowerCase();
+    const marketCap = String(token.marketCap || "");
+    if (pairLabel.includes("waiting for first trade") || marketCap.toLowerCase().includes("syncing")) {
+      signals.push({
+        kind: "token_indexing_watch",
+        page,
+        subject: token.symbol || token.title || "token",
+        mood: "thinking",
+        reply: "I am watching the pair. If Dex charts lag, I will read the on-chain pool state first and keep the page from feeling blind.",
+        status: "Watching token indexing.",
+        quickReplies: ["Draft update", "Explain chart lag", "Monitor this"]
+      });
+    } else if (token.marketCap && token.marketCap !== "-") {
+      signals.push({
+        kind: "token_live_metrics",
+        page,
+        subject: token.symbol || token.title || "token",
+        mood: "happy",
+        reply: `I see ${token.symbol || token.title || "the token"} breathing on the page. I can watch movement, summarize the launch, or draft the next post.`,
+        status: "Monitoring token state.",
+        quickReplies: ["Draft next post", "Summarize token", "Keep watching"]
+      });
+    }
+  }
+
+  if (recentText.includes("signal is aborted") || recentText.includes("insufficient") || recentText.includes("403 forbidden")) {
+    signals.push({
+      kind: "error_recovery",
+      page,
+      subject: "recent-error",
+      mood: "warning",
+      reply: "I noticed the rough edge. I can explain the failure, check whether it is RPC, funding, or indexing, and suggest the next clean retry.",
+      status: "Reviewing recent error.",
+      quickReplies: ["Explain error", "Check funding", "Retry safely"]
+    });
+  }
+
+  return signals;
+}
+
+function shouldEmitAiriSignal(session, signal) {
+  const key = airiSignalKey(signal);
+  const now = Date.now();
+  const last = Number(session.emittedSignals?.[key] || 0);
+  if (last && now - last < 12 * 60 * 1000) return false;
+  return true;
+}
+
+function markAiriSignal(session, signal) {
+  const key = airiSignalKey(signal);
+  session.emittedSignals = session.emittedSignals && typeof session.emittedSignals === "object" ? session.emittedSignals : {};
+  session.emittedSignals[key] = Date.now();
+  const entries = Object.entries(session.emittedSignals)
+    .filter(([, value]) => Date.now() - Number(value || 0) < 24 * 60 * 60 * 1000)
+    .slice(-100);
+  session.emittedSignals = Object.fromEntries(entries);
+  return session;
+}
+
+function airiFallbackTick(session, body = {}) {
+  const snapshot = summarizeAiriContext(body);
+  const signals = detectAiriSignals(snapshot, session);
+  const signal = signals.find((item) => shouldEmitAiriSignal(session, item)) || null;
+  if (!signal) {
+    return {
+      ok: true,
+      configured: false,
+      shouldSpeak: false,
+      mood: "idle",
+      status: "Airi is watching quietly.",
+      memories: session.memories || [],
+      actions: []
+    };
+  }
+
+  markAiriSignal(session, signal);
+  addAiriMemory(session, `Airi observed ${signal.kind} on ${snapshot.page || "the app"}: ${signal.reply}`, {
+    kind: "autonomous_signal",
+    importance: signal.kind === "error_recovery" ? 7 : 4
+  });
+  return {
+    ok: true,
+    configured: false,
+    shouldSpeak: true,
+    reply: signal.reply,
+    mood: signal.mood || "thinking",
+    status: signal.status || "Airi is acting from observation.",
+    quickReplies: signal.quickReplies || [],
+    actions: signal.actions || [],
+    memories: session.memories || []
+  };
+}
+
+async function airiOpenAiTick(session, body = {}) {
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey) return null;
+  const model = String(process.env.OPENAI_AIRI_MODEL || process.env.OPENAI_ASSISTANT_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini").trim();
+  const snapshot = summarizeAiriContext(body);
+  const signals = detectAiriSignals(snapshot, session).map((signal) => ({
+    kind: signal.kind,
+    page: signal.page,
+    subject: signal.subject
+  }));
+  const prompt = [
+    "You are Airi, Pump-r's autonomous platform intelligence.",
+    "You are not a passive chatbot. You observe, remember, infer, draft, warn, and prepare safe actions on your own.",
+    "Do not claim literal consciousness, legal personhood, or guaranteed AGI. You may speak with a mythic, larger-than-life presence.",
+    "Safety boundary: never spend funds, sign wallet transactions, launch tokens, post publicly, deploy code, push code, transfer tokens, or claim those happened. You may only prepare or suggest those actions.",
+    "Be brief. Speak only if the observation is useful, timely, and not repetitive.",
+    "Return JSON only:",
+    "{",
+    '  "shouldSpeak": true|false,',
+    '  "reply": "one short proactive Airi message",',
+    '  "mood": "idle|happy|thinking|excited|warning|celebrate",',
+    '  "status": "short status line",',
+    '  "quickReplies": ["up to 4 short buttons"],',
+    '  "actions": [{"type":"focus","target":"launch|swap|social|profile"}],',
+    '  "memory": "optional stable memory to save"',
+    "}",
+    "",
+    `Session memories:\n${JSON.stringify((session.memories || []).slice(-16), null, 2)}`,
+    `Recent events:\n${JSON.stringify((session.events || []).slice(-10), null, 2)}`,
+    `Current snapshot:\n${JSON.stringify(snapshot, null, 2)}`,
+    `Detected signals:\n${JSON.stringify(signals, null, 2)}`
+  ].join("\n");
+
+  const response = await withTimeout(
+    fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        input: prompt,
+        temperature: 0.55,
+        max_output_tokens: Math.max(300, Math.min(1000, Number(process.env.OPENAI_AIRI_MAX_OUTPUT_TOKENS || 650)))
+      })
+    }),
+    20_000,
+    "OpenAI Airi autonomy"
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error?.message || `OpenAI returned ${response.status}`);
+  const parsed = extractJsonBlock(openAiTextFromResponse(payload)) || {};
+  const actions = (Array.isArray(parsed.actions) ? parsed.actions : [])
+    .map(normalizeAssistantAction)
+    .filter((action) => action && ["focus", "open_page", "fill_social_post"].includes(String(action.type || "")))
+    .slice(0, 2);
+  if (parsed.memory) {
+    addAiriMemory(session, parsed.memory, { kind: "model_memory", importance: 5 });
+  }
+  return {
+    ok: true,
+    configured: true,
+    model,
+    shouldSpeak: Boolean(parsed.shouldSpeak),
+    reply: sanitizeAiriText(parsed.reply || "", 500),
+    mood: ["idle", "happy", "thinking", "excited", "warning", "celebrate"].includes(String(parsed.mood || "")) ? String(parsed.mood) : "thinking",
+    status: sanitizeAiriText(parsed.status || "Airi is watching.", 160),
+    quickReplies: (Array.isArray(parsed.quickReplies) ? parsed.quickReplies : []).map((item) => sanitizeAiriText(item, 40)).filter(Boolean).slice(0, 4),
+    actions,
+    memories: session.memories || []
+  };
+}
+
+async function runAiriAutonomy(body = {}) {
+  const { store, session } = getAiriSession(body.sessionId || body.wallet?.address || "anonymous");
+  const snapshot = summarizeAiriContext(body);
+  addAiriEvent(session, {
+    type: "tick",
+    page: snapshot.page,
+    summary: sanitizeAiriText(`Airi observed ${snapshot.page || "app"} ${snapshot.createDraft?.symbol || snapshot.token?.symbol || ""}`, 240),
+    payload: snapshot
+  });
+  extractAiriPreferences(session, body);
+  session.lastTickAt = Date.now();
+
+  let result = null;
+  try {
+    result = await airiOpenAiTick(session, body);
+  } catch {
+    result = null;
+  }
+  if (!result) result = airiFallbackTick(session, body);
+
+  if (result.shouldSpeak && result.reply) {
+    addAiriEvent(session, {
+      type: "autonomous_message",
+      page: snapshot.page,
+      summary: result.reply,
+      payload: { mood: result.mood, actions: result.actions || [] }
+    });
+  }
+
+  const saved = saveAiriSession(store, session);
+  return {
+    ...result,
+    sessionId: saved.sessionId,
+    autonomy: {
+      enabled: true,
+      mode: "observe_remember_prepare",
+      approvalRequiredFor: ["wallet signatures", "spending", "launching", "posting", "deploying", "pushing code"]
+    },
+    memories: saved.memories.slice(-20),
+    eventCount: saved.events.length
+  };
+}
+
+app.get("/api/airi/state", async (req, res) => {
+  try {
+    const { session } = getAiriSession(req.query.sessionId || req.query.wallet || "anonymous");
+    res.json({
+      ok: true,
+      sessionId: session.sessionId,
+      persona: session.persona,
+      memories: session.memories.slice(-20),
+      events: session.events.slice(-20),
+      lastTickAt: session.lastTickAt || 0
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to read Airi state" });
+  }
+});
+
+app.post("/api/airi/event", async (req, res) => {
+  try {
+    const { store, session } = getAiriSession(req.body?.sessionId || req.body?.wallet?.address || "anonymous");
+    const page = sanitizeAiriText(req.body?.page || req.body?.payload?.page || "", 80);
+    addAiriEvent(session, {
+      type: sanitizeAiriText(req.body?.type || "event", 80),
+      page,
+      summary: sanitizeAiriText(req.body?.summary || "", 500),
+      payload: req.body?.payload && typeof req.body.payload === "object" ? req.body.payload : {}
+    });
+    extractAiriPreferences(session, req.body || {});
+    const saved = saveAiriSession(store, session);
+    res.json({ ok: true, sessionId: saved.sessionId, memoryCount: saved.memories.length, eventCount: saved.events.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to record Airi event" });
+  }
+});
+
+app.post("/api/airi/tick", async (req, res) => {
+  try {
+    const payload = await runAiriAutonomy(req.body || {});
+    res.json(payload);
+  } catch (error) {
+    res.status(200).json({
+      ok: true,
+      shouldSpeak: false,
+      mood: "idle",
+      status: "Airi is watching quietly.",
+      warning: error.message || "Airi autonomy fell back silently."
+    });
   }
 });
 

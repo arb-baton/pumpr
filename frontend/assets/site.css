@@ -19081,11 +19081,52 @@ button[disabled] {
 }
 
 .pumpr-assistant-head-btn {
-  min-width: 58px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  min-width: 42px;
   height: 36px;
-  padding: 0 12px;
-  font-size: 12px;
+  padding: 0;
+  overflow: hidden;
+  font-size: 16px;
   font-weight: 700;
+  border-radius: 999px;
+}
+
+.pumpr-assistant-head-btn::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: inherit;
+  border: 1px solid transparent;
+  opacity: 0;
+  transform: scale(0.78);
+  transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease;
+  pointer-events: none;
+}
+
+.pumpr-assistant-head-icon {
+  position: relative;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  line-height: 1;
+  transform-origin: center;
+  transition: transform 180ms ease, color 180ms ease, filter 180ms ease;
+}
+
+.pumpr-assistant-btn-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .pumpr-assistant-head-btn:hover,
@@ -19094,6 +19135,20 @@ button[disabled] {
   border-color: rgba(103, 242, 170, 0.35);
   background: rgba(22, 30, 49, 0.96);
   transform: translateY(-1px);
+}
+
+.pumpr-assistant-head-btn:hover .pumpr-assistant-head-icon {
+  transform: scale(1.12);
+}
+
+.pumpr-assistant-head-btn:hover::after {
+  opacity: 1;
+  transform: scale(1);
+  border-color: rgba(103, 242, 170, 0.26);
+}
+
+.pumpr-assistant-head-btn[data-assistant-action="toggle"]:hover .pumpr-assistant-head-icon {
+  transform: rotate(90deg) scale(1.08);
 }
 
 .pumpr-assistant-stage {
@@ -19504,9 +19559,71 @@ button[disabled] {
   box-shadow: inset 0 0 0 1px rgba(103, 242, 170, 0.18), 0 0 0 1px rgba(103, 242, 170, 0.08);
 }
 
+.pumpr-assistant-shell.is-speaking .pumpr-assistant-head-btn[data-assistant-action="mute"] .pumpr-assistant-head-icon {
+  animation: pumprVoiceWave 860ms ease-in-out infinite;
+  color: #a8ff71;
+}
+
+.pumpr-assistant-shell.is-listening .pumpr-assistant-head-btn[data-assistant-action="mic"] {
+  border-color: rgba(103, 242, 170, 0.5);
+  background: rgba(21, 92, 61, 0.36);
+}
+
+.pumpr-assistant-shell.is-listening .pumpr-assistant-head-btn[data-assistant-action="mic"] .pumpr-assistant-head-icon {
+  animation: pumprMicPulse 920ms ease-in-out infinite;
+  color: #67f2aa;
+}
+
 .pumpr-assistant-shell.is-muted .pumpr-assistant-head-btn[data-assistant-action="mute"] {
   color: #ff8ba4;
   border-color: rgba(255, 139, 164, 0.24);
+}
+
+.pumpr-assistant-shell.is-muted .pumpr-assistant-head-btn[data-assistant-action="mute"] .pumpr-assistant-head-icon {
+  transform: scale(0.96);
+}
+
+.pumpr-assistant-shell.voice-memory-enabled .pumpr-assistant-head-btn[data-assistant-action="voice-memory"] {
+  border-color: rgba(103, 242, 170, 0.46);
+  background: rgba(21, 92, 61, 0.38);
+  color: #c9ffe0;
+}
+
+.pumpr-assistant-shell.voice-memory-enabled .pumpr-assistant-head-btn[data-assistant-action="voice-memory"] .pumpr-assistant-head-icon {
+  animation: pumprMemoryGlint 1.8s ease-in-out infinite;
+}
+
+@keyframes pumprVoiceWave {
+  0%, 100% {
+    transform: translateY(0) rotate(-4deg) scale(1);
+    filter: drop-shadow(0 0 0 rgba(168, 255, 113, 0));
+  }
+  50% {
+    transform: translateY(-1px) rotate(6deg) scale(1.16);
+    filter: drop-shadow(0 0 8px rgba(168, 255, 113, 0.46));
+  }
+}
+
+@keyframes pumprMicPulse {
+  0%, 100% {
+    transform: scale(0.82);
+    filter: drop-shadow(0 0 0 rgba(103, 242, 170, 0));
+  }
+  50% {
+    transform: scale(1.22);
+    filter: drop-shadow(0 0 10px rgba(103, 242, 170, 0.62));
+  }
+}
+
+@keyframes pumprMemoryGlint {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+    filter: drop-shadow(0 0 0 rgba(103, 242, 170, 0));
+  }
+  45% {
+    transform: rotate(45deg) scale(1.12);
+    filter: drop-shadow(0 0 9px rgba(103, 242, 170, 0.42));
+  }
 }
 
 @media (max-width: 860px) {
@@ -19564,11 +19681,12 @@ button[disabled] {
 
   .pumpr-assistant-head-actions {
     width: 100%;
+    justify-content: flex-start;
   }
 
   .pumpr-assistant-head-btn {
-    flex: 1 1 0;
-    min-width: 0;
+    flex: 0 0 42px;
+    min-width: 42px;
   }
 
   .pumpr-assistant-log {

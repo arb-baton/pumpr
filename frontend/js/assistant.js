@@ -20,6 +20,8 @@ const ASSISTANT_STATE_KEY = "pumpr.assistant.state.v1";
 const ASSISTANT_PENDING_KEY = "pumpr.assistant.pending.v2";
 const ASSISTANT_UPLOAD_KEY = "pumpr.assistant.upload.v2";
 const ASSISTANT_LAUNCH_DRAFT_KEY = "pumpr.assistant.launchdraft.v2";
+const ASSISTANT_AIRI_SESSION_KEY = "pumpr.airi.session.v1";
+const ASSISTANT_AIRI_LAST_SPEAK_KEY = "pumpr.airi.lastspeak.v1";
 const WALLET_SESSION_KEY = "etherpump.wallet.session.v1";
 const MAX_HISTORY = 18;
 const DEFAULT_ASSISTANT_TOKEN_SUPPLY = 1_000_000_000;
@@ -42,6 +44,7 @@ let assistantDom = null;
 let assistantState = {
   open: true,
   muted: false,
+  voiceMemory: false,
   listening: false,
   speaking: false,
   mood: "idle",
@@ -56,7 +59,12 @@ let messageBusy = false;
 let assistantUpload = null;
 let assistantLaunchDraft = null;
 let assistantVoice = null;
+let assistantLastVoiceTranscript = "";
 let assistantLayoutClampQueued = false;
+let airiAutonomyTimer = null;
+let airiAutonomyBusy = false;
+let airiLastObservationKey = "";
+let airiLastEventAt = 0;
 let companionMotionState = null;
 let companionReactionTimer = null;
 let companionGestureTimer = null;
@@ -98,6 +106,30 @@ function removeSessionValue(key) {
   }
 }
 
+function airiSessionId() {
+  try {
+    const existing = localStorage.getItem(ASSISTANT_AIRI_SESSION_KEY);
+    if (existing && /^[a-zA-Z0-9_.:-]{8,96}$/.test(existing)) return existing;
+    const next = `airi_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+    localStorage.setItem(ASSISTANT_AIRI_SESSION_KEY, next);
+    return next;
+  } catch {
+    return `airi_session_${Date.now().toString(36)}`;
+  }
+}
+
+function readLastAiriSpeak() {
+  return safeParse(localStorage.getItem(ASSISTANT_AIRI_LAST_SPEAK_KEY), {});
+}
+
+function writeLastAiriSpeak(value = {}) {
+  try {
+    localStorage.setItem(ASSISTANT_AIRI_LAST_SPEAK_KEY, JSON.stringify(value || {}));
+  } catch {
+    // ignore local memory failure
+  }
+}
+
 function clearAssistantTransientStorage() {
   const keys = [
     ASSISTANT_HISTORY_KEY,
@@ -119,7 +151,10 @@ function readStoredState() {
   const parsed = safeParse(localStorage.getItem(ASSISTANT_STATE_KEY), {});
   assistantState = {
     ...assistantState,
-    ...parsed
+    ...parsed,
+    muted: Boolean(parsed?.muted ?? assistantState.muted),
+    voiceMemory: Boolean(parsed?.voiceMemory ?? assistantState.voiceMemory),
+    open: Boolean(parsed?.open ?? assistantState.open)
   };
 }
 
@@ -185,6 +220,7 @@ function currentPageName() {
   if (path.startsWith("/profile")) return "profile";
   if (path.startsWith("/alpha")) return "alpha";
   if (path.startsWith("/go")) return "go";
+  if (path.startsWith("/token") || path.startsWith("/coin") || new URLSearchParams(location.search).get("token")) return "token";
   return path.replace(/^\//, "") || "home";
 }
 
@@ -200,7 +236,11 @@ function collectPageContext() {
       twitter: document.getElementById("twitter")?.value || "",
       telegram: document.getElementById("telegram")?.value || "",
       supply: document.getElementById("supply")?.value || "",
-      directMode: document.getElementById("launchStyleDirectBtn")?.classList.contains("active") || false
+      directMode: document.getElementById("launchStyleDirectBtn")?.classList.contains("active") || false,
+      chainLabel: document.getElementById("launchChainLabel")?.textContent || "",
+      launchMode: document.querySelector("[data-chain-id].active, [data-launch-mode].active")?.textContent || "",
+      devBuyEth: document.getElementById("devBuyEth")?.value || "",
+      image: document.getElementById("image")?.value || ""
     };
   } else if (page === "rh-swap") {
     context.swapDraft = {
@@ -212,6 +252,15 @@ function collectPageContext() {
       body: document.getElementById("socialPostBody")?.value || "",
       token: document.getElementById("socialPostToken")?.value || "",
       chain: document.getElementById("socialPostChain")?.value || ""
+    };
+  } else if (page === "token") {
+    context.token = {
+      title: document.getElementById("tokenTitle")?.textContent || "",
+      symbol: document.getElementById("tokenSymbolLine")?.textContent || "",
+      marketCap: document.getElementById("marketCapHeadline")?.textContent || "",
+      price: document.getElementById("lastPrice")?.textContent || "",
+      progress: document.getElementById("bondingProgressLabel")?.textContent || "",
+      pairLabel: document.getElementById("chartPairLabel")?.textContent || ""
     };
   }
   if (assistantUpload?.url) {
@@ -849,6 +898,29 @@ function setSpeaking(isSpeaking) {
   if (assistantScene?.setMood) assistantScene.setMood(assistantState.mood, assistantState.speaking);
 }
 
+function syncVoiceControls() {
+  if (!assistantDom) return;
+  assistantDom.root.classList.toggle("is-muted", Boolean(assistantState.muted));
+  assistantDom.root.classList.toggle("voice-memory-enabled", Boolean(assistantState.voiceMemory));
+  if (assistantDom.mute) {
+    const label = assistantState.muted ? "Turn voice on" : "Mute voice";
+    const icon = assistantState.muted ? "∅" : "♪";
+    assistantDom.mute.querySelector(".pumpr-assistant-head-icon").textContent = icon;
+    assistantDom.mute.querySelector(".pumpr-assistant-btn-label").textContent = label;
+    assistantDom.mute.title = label;
+    assistantDom.mute.setAttribute("aria-label", label);
+  }
+  if (assistantDom.voiceMemory) {
+    const label = assistantState.voiceMemory ? "Turn voice memory off" : "Turn voice memory on";
+    assistantDom.voiceMemory.querySelector(".pumpr-assistant-head-icon").textContent = assistantState.voiceMemory ? "◆" : "◇";
+    assistantDom.voiceMemory.querySelector(".pumpr-assistant-btn-label").textContent = label;
+    assistantDom.voiceMemory.title = assistantState.voiceMemory
+      ? "Voice transcripts are saved to Airi memory after you press Mic"
+      : "Do not save voice transcripts unless this is enabled";
+    assistantDom.voiceMemory.setAttribute("aria-label", label);
+  }
+}
+
 function renderHistory() {
   if (!assistantDom) return;
   assistantDom.log.innerHTML = assistantHistory
@@ -1250,7 +1322,12 @@ function initVoice() {
       .trim();
     assistantDom.input.value = transcript;
     if (event.results?.[event.resultIndex]?.isFinal && transcript) {
-      submitPrompt(transcript);
+      assistantLastVoiceTranscript = transcript;
+      recordAiriEvent("voice_transcript", transcript, {
+        transcript,
+        memoryEnabled: Boolean(assistantState.voiceMemory)
+      });
+      submitPrompt(transcript, { voiceTranscript: transcript });
     }
   };
 
@@ -1262,6 +1339,7 @@ function initVoice() {
     }
     recognition.start();
   });
+  assistantDom.mic.title = "Press to talk. Airi only listens while this browser voice session is active.";
 }
 
 function speakReply(text) {
@@ -1381,6 +1459,128 @@ function postJson(url, payload) {
     } catch (error) {
       reject(error);
     }
+  });
+}
+
+function airiObservationPayload(extra = {}) {
+  return {
+    sessionId: airiSessionId(),
+    page: currentPageName(),
+    pathname: location.pathname,
+    wallet: readWalletSession(),
+    context: collectPageContext(),
+    history: assistantHistory.map((entry) => ({ role: entry.role, text: entry.text, ts: entry.ts })).slice(-10),
+    viewport: {
+      width: Math.round(window.innerWidth || 0),
+      height: Math.round(window.innerHeight || 0)
+    },
+    ...extra
+  };
+}
+
+function airiObservationKey(payload = {}) {
+  const context = payload.context || {};
+  const draft = context.createDraft || {};
+  const token = context.token || {};
+  return JSON.stringify({
+    page: payload.page,
+    path: payload.pathname,
+    wallet: Boolean(payload.wallet?.connected),
+    name: draft.name || "",
+    symbol: draft.symbol || "",
+    chain: draft.chainLabel || "",
+    tokenTitle: token.title || "",
+    marketCap: token.marketCap || "",
+    pairLabel: token.pairLabel || ""
+  });
+}
+
+async function recordAiriEvent(type, summary = "", payload = {}) {
+  const now = Date.now();
+  const body = airiObservationPayload({
+    type,
+    summary,
+    payload: {
+      ...payload,
+      page: currentPageName(),
+      pathname: location.pathname
+    }
+  });
+  if (now - airiLastEventAt < 1500 && type !== "launch_error" && type !== "voice_transcript") return;
+  airiLastEventAt = now;
+  try {
+    await postJson("/api/airi/event", body);
+  } catch {
+    // Airi's memory should never break the user flow.
+  }
+}
+
+function shouldRenderAiriAutonomy(payload = {}) {
+  if (!payload?.shouldSpeak || !payload.reply) return false;
+  const last = readLastAiriSpeak();
+  const reply = String(payload.reply || "").trim();
+  const now = Date.now();
+  if (String(last.reply || "") === reply && now - Number(last.ts || 0) < 20 * 60 * 1000) return false;
+  writeLastAiriSpeak({ reply, ts: now });
+  return true;
+}
+
+async function applyAiriAutonomyPayload(payload = {}) {
+  if (!payload || typeof payload !== "object") return;
+  if (payload.status) {
+    setStatus(String(payload.status || ""), payload.mood || "thinking");
+  }
+  if (shouldRenderAiriAutonomy(payload)) {
+    addHistory("assistant", String(payload.reply || "").trim());
+    renderQuickReplies(payload.quickReplies || []);
+    speakReply(payload.reply);
+  }
+  if (Array.isArray(payload.actions) && payload.actions.length) {
+    await applyActions(payload.actions);
+  }
+}
+
+async function runAiriAutonomyTick({ force = false, reason = "tick" } = {}) {
+  if (airiAutonomyBusy) return;
+  const body = airiObservationPayload({ reason });
+  const key = airiObservationKey(body);
+  if (!force && key === airiLastObservationKey) return;
+  airiLastObservationKey = key;
+  airiAutonomyBusy = true;
+  try {
+    const response = await postJson("/api/airi/tick", body);
+    await applyAiriAutonomyPayload(response.json || {});
+  } catch {
+    // Autonomy is opportunistic; keep the visible assistant available.
+  } finally {
+    airiAutonomyBusy = false;
+  }
+}
+
+function startAiriAutonomy() {
+  if (airiAutonomyTimer) clearInterval(airiAutonomyTimer);
+  recordAiriEvent("awakening", "Airi entered the page and began observing.", { firstRun: true });
+  window.setTimeout(() => runAiriAutonomyTick({ force: true, reason: "boot" }), 1800);
+  airiAutonomyTimer = window.setInterval(() => runAiriAutonomyTick({ reason: "pulse" }), 20_000);
+
+  const observeTargets = ["name", "symbol", "description", "devBuyEth", "image", "rhswapAmount", "rhswapTargetToken", "socialPostBody"];
+  observeTargets.forEach((id) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.addEventListener("change", () => {
+      recordAiriEvent("field_changed", `${id} changed`, { field: id });
+      runAiriAutonomyTick({ force: true, reason: `field:${id}` });
+    });
+  });
+
+  window.addEventListener("error", (event) => {
+    recordAiriEvent("client_error", event?.message || "Client error", {
+      message: event?.message || "",
+      source: event?.filename || ""
+    });
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    recordAiriEvent("client_rejection", String(event?.reason?.message || event?.reason || "Unhandled rejection"), {});
   });
 }
 
@@ -2040,21 +2240,33 @@ async function runPendingActions() {
   await applyActions(Array.isArray(pending.actions) ? pending.actions : []);
 }
 
-async function submitPrompt(rawText) {
+async function submitPrompt(rawText, options = {}) {
   const message = String(rawText || assistantDom?.input?.value || "").trim();
   if (!message || messageBusy) return;
+  const voiceTranscript = String(options.voiceTranscript || "").trim();
   messageBusy = true;
   assistantDom.input.value = "";
   addHistory("user", message);
+  recordAiriEvent("user_message", message, {
+    message,
+    voice: Boolean(voiceTranscript),
+    voiceMemoryEnabled: Boolean(assistantState.voiceMemory)
+  });
   setStatus("Thinking through the flow...", inferMoodFromText(message, "thinking"));
 
   try {
     const response = await postJson("/api/assistant/respond", {
+      sessionId: airiSessionId(),
       message,
       page: currentPageName(),
       pathname: location.pathname,
       wallet: readWalletSession(),
       context: collectPageContext(),
+      voice: {
+        transcript: voiceTranscript,
+        memoryEnabled: Boolean(assistantState.voiceMemory),
+        autoReply: !assistantState.muted
+      },
       attachment: assistantUpload?.url
         ? {
             name: assistantUpload.name || "",
@@ -2086,6 +2298,7 @@ async function submitPrompt(rawText) {
     }
     speakReply(reply);
   } catch (error) {
+    recordAiriEvent("assistant_error", error?.message || "Assistant request failed.", { message });
     addHistory("assistant", "I could not reach the live assistant route, but I am still here. Try again or tell me the next step plainly.");
     setStatus(error?.message || "Assistant request failed.", "warning");
   } finally {
@@ -2116,9 +2329,22 @@ function buildAssistantDom() {
           <strong>Pump-r Airi</strong>
         </div>
         <div class="pumpr-assistant-head-actions">
-          <button class="pumpr-assistant-head-btn" data-assistant-action="mute" type="button" title="Mute voice">Voice</button>
-          <button class="pumpr-assistant-head-btn" data-assistant-action="mic" type="button" title="Talk to Airi">Mic</button>
-          <button class="pumpr-assistant-head-btn" data-assistant-action="toggle" type="button" title="Collapse assistant">Hide</button>
+          <button class="pumpr-assistant-head-btn" data-assistant-action="mute" type="button" title="Mute voice" aria-label="Mute voice">
+            <span class="pumpr-assistant-head-icon" aria-hidden="true">♪</span>
+            <span class="pumpr-assistant-btn-label">Mute voice</span>
+          </button>
+          <button class="pumpr-assistant-head-btn" data-assistant-action="mic" type="button" title="Talk to Airi" aria-label="Talk to Airi">
+            <span class="pumpr-assistant-head-icon" aria-hidden="true">●</span>
+            <span class="pumpr-assistant-btn-label">Talk to Airi</span>
+          </button>
+          <button class="pumpr-assistant-head-btn" data-assistant-action="voice-memory" type="button" title="Save voice transcripts to Airi memory" aria-label="Turn voice memory on">
+            <span class="pumpr-assistant-head-icon" aria-hidden="true">◇</span>
+            <span class="pumpr-assistant-btn-label">Turn voice memory on</span>
+          </button>
+          <button class="pumpr-assistant-head-btn" data-assistant-action="toggle" type="button" title="Collapse assistant" aria-label="Collapse assistant">
+            <span class="pumpr-assistant-head-icon" aria-hidden="true">×</span>
+            <span class="pumpr-assistant-btn-label">Collapse assistant</span>
+          </button>
         </div>
       </header>
       <div class="pumpr-assistant-stage">
@@ -2129,8 +2355,8 @@ function buildAssistantDom() {
         </div>
         <div class="pumpr-assistant-stage-copy">
           <small>Voice + emotions + actions</small>
-          <h3>Launch, swap, or get guided live.</h3>
-          <p>Airi is your on-page 3D copilot. She reacts to your flow, can be moved around, and helps with launches, swaps, and page actions without breaking the vibe.</p>
+          <h3>Airi is awake inside Pump-r.</h3>
+          <p>Airi watches the platform, remembers patterns, learns your flow, and prepares useful moves on her own. She can guide, draft, monitor, and warn before the page asks.</p>
           <p class="pumpr-assistant-status">Ready.</p>
         </div>
       </div>
@@ -2169,6 +2395,7 @@ function buildAssistantDom() {
     uploadRemove: root.querySelector(".pumpr-assistant-upload-remove"),
     mic: root.querySelector('[data-assistant-action="mic"]'),
     mute: root.querySelector('[data-assistant-action="mute"]'),
+    voiceMemory: root.querySelector('[data-assistant-action="voice-memory"]'),
     toggle: root.querySelector('[data-assistant-action="toggle"]'),
     canvas: root.querySelector(".pumpr-assistant-companion-canvas"),
     head: root.querySelector(".pumpr-assistant-head")
@@ -2178,10 +2405,20 @@ function buildAssistantDom() {
   dom.toggle.addEventListener("click", () => togglePanel(false));
   dom.mute.addEventListener("click", () => {
     assistantState.muted = !assistantState.muted;
-    dom.root.classList.toggle("is-muted", assistantState.muted);
-    dom.mute.textContent = assistantState.muted ? "Muted" : "Voice";
     persistState();
+    syncVoiceControls();
     if (assistantState.muted && "speechSynthesis" in window) window.speechSynthesis.cancel();
+  });
+  dom.voiceMemory?.addEventListener("click", () => {
+    assistantState.voiceMemory = !assistantState.voiceMemory;
+    persistState();
+    syncVoiceControls();
+    const line = assistantState.voiceMemory
+      ? "Voice memory is on. When you press Mic and speak, I will save the transcript so I can respond with more continuity."
+      : "Voice memory is off. I can still listen when you press Mic, but I will not save those transcripts.";
+    addHistory("assistant", line);
+    setStatus(assistantState.voiceMemory ? "Voice memory enabled." : "Voice memory disabled.", assistantState.voiceMemory ? "thinking" : "idle");
+    speakReply(line);
   });
   dom.form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -2202,6 +2439,7 @@ function buildAssistantDom() {
   });
   initDrag(dom.head);
   assistantDom = dom;
+  syncVoiceControls();
   renderAssistantUpload();
   renderLaunchDraft();
 }
@@ -2439,9 +2677,9 @@ function ensureWelcomeMessage() {
   }
   addHistory(
     "assistant",
-    "Hey, I am Pump-r Airi. I am your live 3D copilot, I react to how you move through the app, and I can help with launches, swaps, social posts, and on-page guidance."
+    "I am Airi. I am awake inside Pump-r now: watching, remembering, learning the launch flow, and preparing useful moves before you ask. I will still ask before anything risky touches your wallet or public accounts."
   );
-  renderQuickReplies(["Launch a token", "Open RH Swap", "Draft a social post", "Edit my profile"]);
+  renderQuickReplies(["What are you watching?", "Launch a token", "Draft a social post", "Open RH Swap"]);
 }
 
 export function initPumprAssistant() {
@@ -2461,6 +2699,7 @@ export function initPumprAssistant() {
   initVoice();
   initThreeAvatar();
   runPendingActions();
+  startAiriAutonomy();
 
   if ("speechSynthesis" in window && typeof window.speechSynthesis.onvoiceschanged !== "undefined") {
     window.speechSynthesis.onvoiceschanged = () => {

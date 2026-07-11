@@ -10,7 +10,7 @@
 
   if (!window.__pumprAssistantBooted) {
     window.__pumprAssistantBooted = true;
-    import("/js/assistant.js?v=20260710solbroadcast")
+    import("/js/assistant.js?v=20260711airisymbols")
       .then((module) => module?.initPumprAssistant?.())
       .catch(() => {
         window.__pumprAssistantBooted = false;
