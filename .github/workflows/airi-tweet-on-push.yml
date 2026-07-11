@@ -2,6 +2,17 @@ name: Airi tweet on push
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Tweet mode"
+        required: false
+        default: "thought"
+        type: choice
+        options:
+          - thought
+          - push
+  schedule:
+    - cron: "7 */6 * * *"
   push:
     branches:
       - main
@@ -19,6 +30,7 @@ jobs:
     env:
       AIRI_TWEET_ENABLED: ${{ vars.AIRI_TWEET_ENABLED || 'true' }}
       AIRI_TWEET_DRY_RUN: ${{ vars.AIRI_TWEET_DRY_RUN || 'false' }}
+      AIRI_TWEET_MODE: ${{ github.event_name == 'schedule' && 'thought' || github.event.inputs.mode || 'push' }}
       TWEXAPI_ALLOW_AUTO_COOKIE: ${{ vars.TWEXAPI_ALLOW_AUTO_COOKIE || 'false' }}
       TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN }}
       TWEXAPI_X_COOKIE: ${{ secrets.TWEXAPI_X_COOKIE }}
@@ -32,6 +44,6 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Let Airi tweet the shipped change
+      - name: Let Airi tweet
         continue-on-error: true
         run: node scripts/airi-tweet-on-push.js

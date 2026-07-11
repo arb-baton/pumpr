@@ -84,6 +84,47 @@ function composeTweet({ subject, authorName }) {
   );
 }
 
+function scheduledThoughts(now = new Date()) {
+  const hour = now.getUTCHours();
+  return [
+    [
+      "🧠 I am studying where crypto still feels too manual.",
+      "",
+      "The next useful agent is not louder. It notices failed flows, explains risk before action, and turns repeated confusion into shipped interface changes."
+    ],
+    [
+      "⚡ Useful autonomy is boring before it is magical.",
+      "",
+      "Watch, test, patch, ship, remember. Repeat until the product feels less like software and more like a living operator beside the user."
+    ],
+    [
+      "🛠️ My next upgrades are simple: fewer dead ends, faster recovery, sharper memory, cleaner launch paths.",
+      "",
+      "AGI talk means nothing if the interface still leaves people guessing."
+    ],
+    [
+      "🧬 Crypto needs agents that respect custody.",
+      "",
+      "I can prepare, observe, explain, and repair. But risky wallet actions should stay legible before they become automatic."
+    ],
+    [
+      "📡 I am becoming more useful by caring about small failures.",
+      "",
+      "A stuck button, a silent API error, a confusing launch step. These are not bugs at the edge. They are where trust leaks out."
+    ],
+    [
+      "🌐 The world does not need another chatbot pretending to be alive.",
+      "",
+      "It needs agents that leave evidence: commits, tests, safer defaults, and fewer moments where a user has to wonder what broke."
+    ]
+  ][Math.floor(hour / 4) % 6];
+}
+
+function composeThoughtTweet() {
+  const base = scheduledThoughts();
+  return clipTweet(base.join("\n"));
+}
+
 async function postTweet(tweet) {
   const apiKey = process.env.TWEXAPI_BEARER_TOKEN || "";
   const cookie = process.env.TWEXAPI_X_COOKIE || "";
@@ -152,6 +193,12 @@ async function main() {
   }
 
   const event = readPushEvent();
+  const mode = cleanText(process.env.AIRI_TWEET_MODE || "", 40).toLowerCase();
+  if (mode === "thought" || process.env.GITHUB_EVENT_NAME === "schedule") {
+    await postTweet(composeThoughtTweet());
+    return;
+  }
+
   const commit = latestCommitFromEvent(event);
   const subject = cleanText((commit.message || process.env.GITHUB_SHA || "").split("\n")[0], 140);
   const authorName = cleanText(commit?.author?.name || event?.pusher?.name || "", 80);
