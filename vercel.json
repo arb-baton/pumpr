@@ -163,6 +163,10 @@
       "dest": "/frontend/agents.html"
     },
     {
+      "src": "/airi$",
+      "dest": "/frontend/airi.html"
+    },
+    {
       "src": "/skill\\.md$",
       "dest": "/frontend/skill.md"
     },
