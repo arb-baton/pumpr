@@ -85,9 +85,9 @@ jobs:
         shell: bash
         run: |
           HEAD_MESSAGE="$(git log -1 --pretty=%B || true)"
-          if [[ "$HEAD_MESSAGE" == *"Airi: autonomous self-improvement"* || "$HEAD_MESSAGE" == *"Merge Airi autonomous self-improvement"* ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "push" && ( "$HEAD_MESSAGE" == *"Airi: autonomous self-improvement"* || "$HEAD_MESSAGE" == *"Merge Airi autonomous self-improvement"* ) ]]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping Airi's own self-improvement commit."
+            echo "Skipping Airi's own self-improvement push to avoid a loop."
             exit 0
           fi
           if [ -z "${OPENAI_API_KEY:-}" ]; then
