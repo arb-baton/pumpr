@@ -172,6 +172,18 @@ if (dom.terminal) {
         el.scrollTop = el.scrollHeight;
         handled = true;
         break;
+      case " ":
+        // Spacebar scrolls down
+        el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + Math.floor(el.clientHeight * 0.9));
+        handled = true;
+        break;
+      case "Shift":
+        // Shift+Space scrolls up
+        if (event.shiftKey) {
+          el.scrollTop = Math.max(0, el.scrollTop - Math.floor(el.clientHeight * 0.9));
+          handled = true;
+        }
+        break;
     }
     if (handled) {
       event.preventDefault();
