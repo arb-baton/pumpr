@@ -3765,7 +3765,7 @@ function officialAirdropConfig() {
   const token = chainId === 101 ? normalizeSolanaAddress(rawToken) : normalizeAddress(rawToken);
   const minHolderPct = Math.max(
     0,
-    Number(process.env.PUMPR_AIRDROP_MIN_HOLDER_PCT || process.env.AIRDROP_MIN_HOLDER_PCT || "1") || 1
+    Number(process.env.PUMPR_AIRDROP_MIN_HOLDER_PCT || process.env.AIRDROP_MIN_HOLDER_PCT || "0.5") || 0.5
   );
   return {
     configured: Boolean(token),
@@ -3779,7 +3779,7 @@ function officialAirdropConfig() {
     minHolderPct,
     message: String(
       process.env.AIRDROP_MESSAGE ||
-        "Pumpfun Remastered airdrops are reserved for top holders who keep holding long term. This page tracks the official Pump.fun mint and prioritizes loyal holders over short-term flips."
+        "Pumpfun Remastered airdrops are reserved for current live non-dev holders with at least 0.5% of supply at snapshot."
     ).trim()
   };
 }

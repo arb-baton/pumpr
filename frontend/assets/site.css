@@ -9941,6 +9941,20 @@ select:focus,
   cursor: pointer;
 }
 
+.airdrop-proof-pending {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 210, 106, 0.32);
+  border-radius: 7px;
+  background: rgba(255, 210, 106, 0.08);
+  color: #ffe29a;
+  padding: 0.34rem 0.58rem;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
 .airdrop-proof-menu .airdrop-tx-links {
   position: absolute;
   right: 0;

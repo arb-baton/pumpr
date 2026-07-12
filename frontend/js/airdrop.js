@@ -4,7 +4,7 @@ import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260706mobileauth"
 import { KOL_LEADERBOARD } from "./kolData.js?v=20260703kol51";
 
 const AIRDROP_HOLDER_REFRESH_MS = 30_000;
-const AIRDROP_HISTORY_URL = "/data/pumpr-airdrops.json?v=20260706weighted1m-live7";
+const AIRDROP_HISTORY_URL = "/data/pumpr-airdrops.json?v=20260712live0p5ready";
 const COMPLETED_AIRDROP_URL = "/data/pumpr-airdrop-250k.json?v=20260703drop250k";
 const OUTREACH_AIRDROP_URL = "/data/pumpr-outreach-airdrops.json?v=20260706ansemtop100";
 const KOL_SEED_AMOUNT = 5_000;
@@ -132,12 +132,20 @@ function solscanTxUrl(signature = "") {
 }
 
 function completedStatusLabel(status = "") {
-  return status === "retained_by_dev_wallet_self_allocation" ? "Dev allocation retained" : "Sent";
+  if (status === "retained_by_dev_wallet_self_allocation") return "Dev allocation retained";
+  if (status === "ready_to_send") return "Ready";
+  if (status === "pending" || status === "queued") return "Queued";
+  return "Sent";
+}
+
+function dropIsReady(drop = completedAirdrop) {
+  return ["ready_to_send", "queued", "pending"].includes(String(drop?.status || "").toLowerCase());
 }
 
 function completedDropTag(drop = completedAirdrop) {
   if (!drop) return "";
   if (drop.badge) return String(drop.badge);
+  if (dropIsReady(drop)) return "Ready";
   if (Array.isArray(drop.tiers) && drop.tiers.length) return "Tiered";
   const amount = Number(drop.amountPerHolderPumpr || 0);
   return amount > 0 ? `${formatTokenAmount(amount)} each` : "Completed";
@@ -204,7 +212,7 @@ function setCompletedStats() {
   if (!completedAirdrop) return;
   if (ui.claimableStat) ui.claimableStat.textContent = `${formatTokenAmount(completedAirdrop.totalAllocatedPumpr)} $PUMPR`;
   if (ui.holderStat) ui.holderStat.textContent = String(completedAirdrop.eligibleHolderCount || completedAirdrop.recipients?.length || 0);
-  if (ui.chainStat) ui.chainStat.textContent = "SOL";
+  if (ui.chainStat) ui.chainStat.textContent = dropIsReady(completedAirdrop) ? "READY" : "SOL";
 }
 
 function completedAirdropHtml() {
@@ -223,9 +231,24 @@ function completedAirdropHtml() {
   const perHolderLabel = completedAirdrop.summaryAmountLabel || (completedAirdrop.amountPerHolderPumpr ? "Per holder" : "Max per holder");
   const total = formatTokenAmount(completedAirdrop.totalAllocatedPumpr);
   const source = completedAirdrop.source || {};
+  const isReady = dropIsReady(completedAirdrop);
+  const eventTime = formatDateTime(isReady ? completedAirdrop.preparedAt || completedAirdrop.snapshotAt : completedAirdrop.executedAt);
+  const stateLabel = isReady ? "Ready to send" : "Completed drop";
+  const timeVerb = isReady ? "Prepared" : "Executed";
+  const receivedLabel = isReady ? "Planned" : "Received";
+  const proofLabel = isReady ? "Status" : "Proof";
+  const totalLabel = isReady ? "Planned allocation" : "Total allocated";
   const txLinks = (completedAirdrop.txSignatures || [])
     .map((signature, index) => `<a href="${solscanTxUrl(signature)}" target="_blank" rel="noopener noreferrer">Batch ${index + 1}</a>`)
     .join("");
+  const proofControls = txLinks
+    ? `
+      <details class="airdrop-proof-menu">
+        <summary>Proof txs</summary>
+        <div class="airdrop-tx-links">${txLinks}</div>
+      </details>
+    `
+    : `<span class="airdrop-proof-pending">${isReady ? "Awaiting send" : "No proof yet"}</span>`;
   const tierRows = Array.isArray(completedAirdrop.tiers) && completedAirdrop.tiers.length
     ? `
       <div class="airdrop-tier-row">
@@ -242,21 +265,18 @@ function completedAirdropHtml() {
     <article class="panel-card airdrop-plan-card airdrop-completed-card">
       <div class="airdrop-plan-head">
         <div>
-          <small>Completed drop</small>
+          <small>${escapeHtml(stateLabel)}</small>
           <h2>${escapeHtml(completedAirdrop.title || "PUMPR current 0.5%+ holder airdrop")} <span>${escapeHtml(completedDropTag(completedAirdrop))}</span></h2>
-          <p>${escapeHtml(completedDropSummary(completedAirdrop))} Executed ${escapeHtml(executed)}.</p>
+          <p>${escapeHtml(completedDropSummary(completedAirdrop))} ${escapeHtml(timeVerb)} ${escapeHtml(eventTime || executed)}.</p>
         </div>
         <div class="airdrop-plan-actions">
           ${completedDropHistoryControl()}
           ${source.primaryUrl ? `<a href="${escapeHtml(source.primaryUrl)}" target="_blank" rel="noopener noreferrer">Pump.fun</a>` : ""}
-          <details class="airdrop-proof-menu">
-            <summary>Proof txs</summary>
-            <div class="airdrop-tx-links">${txLinks}</div>
-          </details>
+          ${proofControls}
         </div>
       </div>
       <div class="airdrop-kpi-grid">
-        <span><b>${escapeHtml(total)} $PUMPR</b><small>Total allocated</small></span>
+        <span><b>${escapeHtml(total)} $PUMPR</b><small>${escapeHtml(totalLabel)}</small></span>
         <span><b>${escapeHtml(String(completedAirdrop.eligibleHolderCount || rows.length))}</b><small>Eligible holders</small></span>
         <span><b>${escapeHtml(amount)} $PUMPR</b><small>${escapeHtml(perHolderLabel)}</small></span>
       </div>
@@ -269,10 +289,10 @@ function completedAirdropHtml() {
         <div class="airdrop-table-head">
           <span>#</span>
           <span>Holder</span>
-          <span>Received</span>
+          <span>${escapeHtml(receivedLabel)}</span>
           <span>Share</span>
           <span>Holding since</span>
-          <span>Proof</span>
+          <span>${escapeHtml(proofLabel)}</span>
         </div>
         ${rows
           .map((row, index) => {
