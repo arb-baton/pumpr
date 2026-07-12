@@ -19989,12 +19989,14 @@ button[disabled] {
 .airi-live-dashboard {
   display: grid;
   grid-template-columns: 1.2fr 1fr 1.2fr;
-  grid-template-rows: repeat(2, minmax(240px, auto));
+  grid-template-rows: none;
+  align-items: start;
   gap: 14px;
   min-height: 0;
 }
 
 .airi-live-panel {
+  align-self: start;
   min-width: 0;
   min-height: 0;
   padding: 18px;
@@ -20035,8 +20037,8 @@ button[disabled] {
 .airi-live-now h2 {
   margin: 0;
   color: #ffffff;
-  font-size: clamp(24px, 2.4vw, 38px);
-  line-height: 1;
+  font-size: clamp(22px, 1.65vw, 30px);
+  line-height: 1.08;
   letter-spacing: 0;
 }
 
@@ -20178,6 +20180,17 @@ button[disabled] {
 .airi-live-change-stack {
   display: grid;
   gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.airi-live-changes,
+.airi-live-memory,
+.airi-live-roadmap {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: clamp(320px, 42vh, 500px);
 }
 
 .airi-live-change {
@@ -20222,14 +20235,15 @@ button[disabled] {
 }
 
 .airi-live-terminal {
-  grid-row: span 2;
+  grid-row: auto;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  max-height: clamp(360px, 46vh, 560px);
 }
 
 .airi-live-terminal-lines {
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -20284,8 +20298,10 @@ button[disabled] {
   align-content: flex-start;
   flex-wrap: wrap;
   gap: 8px;
+  min-height: 0;
   max-height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .airi-live-memory-grid span {
@@ -20307,6 +20323,9 @@ button[disabled] {
 
 .airi-live-queue {
   counter-reset: queue;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .airi-live-queue li {
