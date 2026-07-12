@@ -95,7 +95,11 @@ jobs:
             echo "OPENAI_API_KEY is not configured. Airi cannot write code yet."
             exit 0
           fi
-          node scripts/airi-autonomous-coder.js
+          if ! node scripts/airi-autonomous-coder.js; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Airi could not produce a valid safe patch this cycle. Skipping without failing the workflow."
+            exit 0
+          fi
           if git diff --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Airi found no useful safe patch this cycle."
