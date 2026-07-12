@@ -148,7 +148,7 @@ function completedDropSummary(drop = completedAirdrop) {
   return (
     drop.summary ||
     drop.source?.rule ||
-    "Paid loyal holders from the Pump.fun holder list and live Solana holder cross-check."
+    "Paid current 0.5%+ holders from the Pump.fun holder list and live Solana holder cross-check."
   );
 }
 
@@ -243,7 +243,7 @@ function completedAirdropHtml() {
       <div class="airdrop-plan-head">
         <div>
           <small>Completed drop</small>
-          <h2>${escapeHtml(completedAirdrop.title || "PUMPR loyal holder airdrop")} <span>${escapeHtml(completedDropTag(completedAirdrop))}</span></h2>
+          <h2>${escapeHtml(completedAirdrop.title || "PUMPR current 0.5%+ holder airdrop")} <span>${escapeHtml(completedDropTag(completedAirdrop))}</span></h2>
           <p>${escapeHtml(completedDropSummary(completedAirdrop))} Executed ${escapeHtml(executed)}.</p>
         </div>
         <div class="airdrop-plan-actions">
@@ -520,7 +520,7 @@ function bindAirdropHistoryControls() {
   });
 }
 
-function renderEmpty(message = "The official Pumpfun Remastered mint is locked here. Current top holders are tracked over time so loyal holders can qualify for airdrops.", title = "Long-term holder tracking") {
+function renderEmpty(message = "The official Pumpfun Remastered mint is locked here. Only current live non-dev holders at or above 0.5% of supply qualify at snapshot.", title = "Current 0.5%+ holder tracking") {
   if (!ui.results) return;
   ui.results.innerHTML = `
     ${completedAirdropHtml()}
@@ -562,7 +562,7 @@ function renderPreview(payload) {
         <div>
           <small>Step 2</small>
           <h2>${escapeHtml(payload?.name || "Token")} <span>$${escapeHtml(symbol)}</span></h2>
-          <p>${escapeHtml(payload?.longTermPolicy || "Top holders who keep holding over time are prioritized for the airdrop.")}</p>
+          <p>${escapeHtml(payload?.longTermPolicy || "Current live non-dev holders with at least 0.5% of supply at snapshot are eligible for this airdrop.")}</p>
         </div>
         <div class="airdrop-plan-actions">
           <a class="btn-ghost" href="${tokenUrl}" ${isSolana ? 'target="_blank" rel="noopener noreferrer"' : ""}>Open token</a>
@@ -620,7 +620,7 @@ async function previewAirdrop(options = {}) {
   const silent = Boolean(options.silent);
   if (!officialAirdrop?.configured) {
     renderEmpty(
-      "The official Pumpfun Remastered mint is not configured yet. After launch, set AIRDROP_TOKEN_ADDRESS and AIRDROP_CHAIN_ID so this page can show top long-term holders.",
+      "The official Pumpfun Remastered mint is not configured yet. After launch, set AIRDROP_TOKEN_ADDRESS and AIRDROP_CHAIN_ID so this page can show current 0.5%+ holders.",
       "Official token not configured"
     );
     if (!silent) setAlert(ui.alert, "Official airdrop token is not configured yet.", true);
@@ -630,11 +630,11 @@ async function previewAirdrop(options = {}) {
     if (!silent) {
       ui.previewBtn.disabled = true;
       ui.previewBtn.textContent = "Reading holders...";
-      ui.status.textContent = `Reading top ${officialAirdrop.chainShortName || officialAirdrop.chainName || ""} holders and updating long-term holder tracking...`;
+      ui.status.textContent = `Reading live ${officialAirdrop.chainShortName || officialAirdrop.chainName || ""} holders and updating 0.5%+ eligibility...`;
     }
     const payload = await api.airdropPreview({ limit: 30, fresh: true });
     renderPreview(payload);
-    ui.status.textContent = silent ? "Holder list refreshed." : "Long-term holder reward preview is ready.";
+    ui.status.textContent = silent ? "Holder list refreshed." : "Current 0.5%+ holder reward preview is ready.";
   } catch (err) {
     if (!silent) {
       renderEmpty(parseUiError(err), "Airdrop preview unavailable");
@@ -655,20 +655,20 @@ function renderOfficialAirdrop(config) {
   const symbol = String(config?.symbol || "Pump-r").replace(/^\$/, "").toUpperCase();
   const chain = String(config?.chainShortName || config?.chainName || "-").toUpperCase();
   const token = String(config?.token || "");
-  if (ui.officialTop) ui.officialTop.textContent = configured ? `$${symbol} loyal holder rewards` : "Official holder rewards";
+  if (ui.officialTop) ui.officialTop.textContent = configured ? `$${symbol} current 0.5%+ holder rewards` : "Official holder rewards";
   if (ui.officialName) ui.officialName.textContent = configured ? `${config?.name || "Pumpfun Remastered"} airdrop` : "Official Pumpfun Remastered token";
   if (ui.officialMeta) {
     ui.officialMeta.textContent = configured
-      ? `${chain} - ${shortAddress(token)} - top long-term holders are prioritized`
+      ? `${chain} - ${shortAddress(token)} - current live 0.5%+ holders qualify at snapshot`
       : "The official Pump.fun mint will be locked here after launch.";
   }
   if (ui.heroCopy) ui.heroCopy.textContent = config?.message || ui.heroCopy.textContent;
-  if (ui.status) ui.status.textContent = configured ? "Official mint locked. Ready to track long-term top holders." : "Official airdrop token not configured yet.";
+  if (ui.status) ui.status.textContent = configured ? "Official mint locked. Ready to track current 0.5%+ holders." : "Official airdrop token not configured yet.";
   if (ui.previewBtn) ui.previewBtn.disabled = !configured;
   if (!configured) {
     renderEmpty(
-      "The official Pumpfun Remastered mint is locked here. Current top holders are tracked over time so loyal holders can qualify for airdrops.",
-      "Long-term holder tracking"
+      "The official Pumpfun Remastered mint is locked here. Only current live non-dev holders at or above 0.5% of supply qualify at snapshot.",
+      "Current 0.5%+ holder tracking"
     );
   }
 }
