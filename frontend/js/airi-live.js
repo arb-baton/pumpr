@@ -136,7 +136,7 @@ if (dom.terminal) {
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const scrollAmount = 40;
+    const scrollAmount = 80;
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
