@@ -343,6 +343,7 @@ function appendStreamLine(text, kind = "signal") {
   line.innerHTML = `<span>${formatTime()}</span>${escapeHtml(text)}`;
   dom.terminal.appendChild(line);
   while (dom.terminal.children.length > 24) dom.terminal.removeChild(dom.terminal.firstElementChild);
+  // Always scroll to bottom after adding a new line
   dom.terminal.scrollTop = dom.terminal.scrollHeight;
   saveTerminal();
 }
