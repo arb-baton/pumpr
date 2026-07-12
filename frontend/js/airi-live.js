@@ -133,6 +133,15 @@ const dom = {
 // Make terminal focusable and add keyboard scroll support
 if (dom.terminal) {
   dom.terminal.setAttribute("tabindex", "0");
+  dom.terminal.setAttribute("role", "log");
+  dom.terminal.style.outline = "none";
+  dom.terminal.addEventListener("focus", () => {
+    dom.terminal.style.outline = "2px solid #67f2aa";
+    dom.terminal.style.outlineOffset = "2px";
+  });
+  dom.terminal.addEventListener("blur", () => {
+    dom.terminal.style.outline = "none";
+  });
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
@@ -165,8 +174,8 @@ if (dom.terminal) {
         break;
     }
     if (handled) {
-    event.preventDefault();
-  }
+      event.preventDefault();
+    }
   });
 }
 
