@@ -164,7 +164,9 @@ if (dom.terminal) {
         handled = true;
         break;
     }
-    if (handled) event.preventDefault();
+    if (handled) {
+    event.preventDefault();
+  }
   });
 }
 
