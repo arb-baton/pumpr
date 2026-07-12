@@ -36,12 +36,13 @@ jobs:
       AIRI_TWEET_MODE: ${{ github.event.inputs.mode || 'push' }}
       AIRI_TWEET_CONTEXT: ${{ github.event.inputs.context || '' }}
       AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
+      AIRI_TWEET_REQUIRE_POST: ${{ vars.AIRI_TWEET_REQUIRE_POST || 'true' }}
       AIRI_THOUGHT_TWEET_CHANCE: ${{ vars.AIRI_THOUGHT_TWEET_CHANCE || '0.35' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_AIRI_TWEET_MODEL: ${{ vars.OPENAI_AIRI_TWEET_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
       TWEXAPI_ALLOW_AUTO_COOKIE: ${{ vars.TWEXAPI_ALLOW_AUTO_COOKIE || 'false' }}
-      TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN }}
-      TWEXAPI_X_COOKIE: ${{ secrets.TWEXAPI_X_COOKIE }}
+      TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN || secrets.TWITTERX_API_KEY || secrets.TWEX_API_KEY || secrets.AIRI_TWEX_API_KEY || secrets.AIRI_TWITTERX_API_KEY }}
+      TWEXAPI_X_COOKIE: ${{ secrets.TWEXAPI_X_COOKIE || secrets.TWITTER_X_COOKIE || secrets.X_COOKIE || secrets.AIRI_X_COOKIE || secrets.AIRI_TWITTER_COOKIE }}
       TWEXAPI_PROXY: ${{ secrets.TWEXAPI_PROXY }}
     steps:
       - name: Checkout main
@@ -61,7 +62,6 @@ jobs:
             airi-tweet-history-
 
       - name: Let Airi tweet
-        continue-on-error: true
         run: node scripts/airi-tweet-on-push.js
 
       - name: Save Airi tweet memory
