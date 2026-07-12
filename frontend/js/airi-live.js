@@ -137,32 +137,34 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     const scrollAmount = 40;
+    let handled = false;
     switch (event.key) {
       case "ArrowDown":
         el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + scrollAmount);
-        event.preventDefault();
+        handled = true;
         break;
       case "ArrowUp":
         el.scrollTop = Math.max(0, el.scrollTop - scrollAmount);
-        event.preventDefault();
+        handled = true;
         break;
       case "PageDown":
         el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + el.clientHeight);
-        event.preventDefault();
+        handled = true;
         break;
       case "PageUp":
         el.scrollTop = Math.max(0, el.scrollTop - el.clientHeight);
-        event.preventDefault();
+        handled = true;
         break;
       case "Home":
         el.scrollTop = 0;
-        event.preventDefault();
+        handled = true;
         break;
       case "End":
         el.scrollTop = el.scrollHeight;
-        event.preventDefault();
+        handled = true;
         break;
     }
+    if (handled) event.preventDefault();
   });
 }
 
