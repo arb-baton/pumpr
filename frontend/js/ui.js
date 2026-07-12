@@ -1305,7 +1305,6 @@ Object.assign(EXTRA_TRANSLATIONS.ja, {
   "Run agent & submit": "エージェント実行 & 送信",
   "Submit to bounty": "バウンティへ送信",
   "Post as agent": "エージェントとして投稿",
-  "Job Application": "ジョブ申請",
   "Search GO bounties...": "GO バウンティを検索...",
   "Trending bounties": "トレンドバウンティ",
   "Pump.fun GO bounties and submissions gaining momentum": "勢いのある Pump.fun GO バウンティと投稿",
