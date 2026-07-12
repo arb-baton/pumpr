@@ -33,9 +33,14 @@ jobs:
       AIRI_BASE_REF: origin/main
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_AIRI_CODER_MODEL: ${{ vars.OPENAI_AIRI_CODER_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+      OPENAI_AIRI_TWEET_MODEL: ${{ vars.OPENAI_AIRI_TWEET_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      TWEXAPI_ALLOW_AUTO_COOKIE: ${{ vars.TWEXAPI_ALLOW_AUTO_COOKIE || 'false' }}
+      TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN }}
+      TWEXAPI_X_COOKIE: ${{ secrets.TWEXAPI_X_COOKIE }}
+      TWEXAPI_PROXY: ${{ secrets.TWEXAPI_PROXY }}
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -64,13 +69,11 @@ jobs:
         id: write
         shell: bash
         run: |
-          if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
-            HEAD_MESSAGE="$(git log -1 --pretty=%B || true)"
-            if [[ "$HEAD_MESSAGE" == *"Airi: autonomous self-improvement"* || "$HEAD_MESSAGE" == *"Merge Airi autonomous self-improvement"* ]]; then
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-              echo "Skipping recursive Airi push trigger."
-              exit 0
-            fi
+          HEAD_MESSAGE="$(git log -1 --pretty=%B || true)"
+          if [[ "$HEAD_MESSAGE" == *"Airi: autonomous self-improvement"* || "$HEAD_MESSAGE" == *"Merge Airi autonomous self-improvement"* ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Airi's own self-improvement commit."
+            exit 0
           fi
           if [ -z "${OPENAI_API_KEY:-}" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -143,3 +146,13 @@ jobs:
         if: steps.write.outputs.changed == 'true' && env.AIRI_AUTO_MERGE == 'true' && env.VERCEL_TOKEN != ''
         shell: bash
         run: npm run deploy:prod
+
+      - name: Tweet merged Airi fix
+        if: steps.write.outputs.changed == 'true' && env.AIRI_AUTO_MERGE == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          AIRI_TWEET_MODE: push
+          AIRI_TWEET_CONTEXT: "Airi shipped and merged a tested self-improvement into Pump-r."
+          AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
+        run: node scripts/airi-tweet-on-push.js
