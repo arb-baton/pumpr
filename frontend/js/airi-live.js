@@ -148,11 +148,11 @@ if (dom.terminal) {
         handled = true;
         break;
       case "PageDown":
-        el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + el.clientHeight);
+        el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + Math.floor(el.clientHeight * 0.9));
         handled = true;
         break;
       case "PageUp":
-        el.scrollTop = Math.max(0, el.scrollTop - el.clientHeight);
+        el.scrollTop = Math.max(0, el.scrollTop - Math.floor(el.clientHeight * 0.9));
         handled = true;
         break;
       case "Home":
