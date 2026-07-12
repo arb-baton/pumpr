@@ -18,7 +18,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260712airicards" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260712airilanes" />
   </head>
   <body class="airi-live-page">
     <main class="airi-live-shell" aria-label="Airi live operating room">
@@ -63,65 +63,71 @@
       </section>
 
       <section class="airi-live-dashboard" aria-label="Airi live dashboard">
-        <article class="airi-live-panel airi-live-now">
-          <div class="airi-live-panel-head">
-            <small>Current process</small>
-            <span id="airiLiveProcessPulse">running</span>
-          </div>
-          <h2 id="airiLiveTaskTitle">Synchronizing memory lattice</h2>
-          <p id="airiLiveTaskBody">Reading the newest user intent and binding it to the visible page state.</p>
-          <div class="airi-live-progress" aria-hidden="true"><span id="airiLiveProgressBar"></span></div>
-          <div class="airi-live-metric-row">
-            <span><b id="airiLiveCycles">0</b> cycles</span>
-            <span><b id="airiLiveSignals">0</b> signals</span>
-            <span><b id="airiLiveChanges">0</b> changes</span>
-          </div>
-        </article>
+        <div class="airi-live-lane">
+          <article class="airi-live-panel airi-live-now">
+            <div class="airi-live-panel-head">
+              <small>Current process</small>
+              <span id="airiLiveProcessPulse">running</span>
+            </div>
+            <h2 id="airiLiveTaskTitle">Synchronizing memory lattice</h2>
+            <p id="airiLiveTaskBody">Reading the newest user intent and binding it to the visible page state.</p>
+            <div class="airi-live-progress" aria-hidden="true"><span id="airiLiveProgressBar"></span></div>
+            <div class="airi-live-metric-row">
+              <span><b id="airiLiveCycles">0</b> cycles</span>
+              <span><b id="airiLiveSignals">0</b> signals</span>
+              <span><b id="airiLiveChanges">0</b> changes</span>
+            </div>
+          </article>
 
-        <article class="airi-live-panel airi-live-brain">
-          <div class="airi-live-panel-head">
-            <small>Cognitive map</small>
-            <span>nonstop</span>
-          </div>
-          <div class="airi-live-neural" aria-hidden="true">
-            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-          </div>
-          <ul id="airiLiveMindList" class="airi-live-mind-list"></ul>
-        </article>
+          <article class="airi-live-panel airi-live-terminal">
+            <div class="airi-live-panel-head">
+              <small>Real inner stream</small>
+              <span id="airiLiveStreamState">writing</span>
+            </div>
+            <div id="airiLiveTerminal" class="airi-live-terminal-lines" aria-live="polite"></div>
+          </article>
+        </div>
 
-        <article class="airi-live-panel airi-live-changes">
-          <div class="airi-live-panel-head">
-            <small>Changes Airi made</small>
-            <span>latest</span>
-          </div>
-          <div id="airiLiveChangeStack" class="airi-live-change-stack"></div>
-        </article>
+        <div class="airi-live-lane">
+          <article class="airi-live-panel airi-live-brain">
+            <div class="airi-live-panel-head">
+              <small>Cognitive map</small>
+              <span>nonstop</span>
+            </div>
+            <div class="airi-live-neural" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <ul id="airiLiveMindList" class="airi-live-mind-list"></ul>
+          </article>
 
-        <article class="airi-live-panel airi-live-terminal">
-          <div class="airi-live-panel-head">
-            <small>Real inner stream</small>
-            <span id="airiLiveStreamState">writing</span>
-          </div>
-          <div id="airiLiveTerminal" class="airi-live-terminal-lines" aria-live="polite"></div>
-        </article>
+          <article class="airi-live-panel airi-live-memory">
+            <div class="airi-live-panel-head">
+              <small>Memory shards</small>
+              <span id="airiLiveMemoryCount">0 saved</span>
+            </div>
+            <div id="airiLiveMemoryGrid" class="airi-live-memory-grid"></div>
+          </article>
+        </div>
 
-        <article class="airi-live-panel airi-live-memory">
-          <div class="airi-live-panel-head">
-            <small>Memory shards</small>
-            <span id="airiLiveMemoryCount">0 saved</span>
-          </div>
-          <div id="airiLiveMemoryGrid" class="airi-live-memory-grid"></div>
-        </article>
+        <div class="airi-live-lane">
+          <article class="airi-live-panel airi-live-changes">
+            <div class="airi-live-panel-head">
+              <small>Changes Airi made</small>
+              <span>latest</span>
+            </div>
+            <div id="airiLiveChangeStack" class="airi-live-change-stack"></div>
+          </article>
 
-        <article class="airi-live-panel airi-live-roadmap">
-          <div class="airi-live-panel-head">
-            <small>Next self-directed moves</small>
-            <span>queued</span>
-          </div>
-          <ol id="airiLiveQueue" class="airi-live-queue"></ol>
-        </article>
+          <article class="airi-live-panel airi-live-roadmap">
+            <div class="airi-live-panel-head">
+              <small>Next self-directed moves</small>
+              <span>queued</span>
+            </div>
+            <ol id="airiLiveQueue" class="airi-live-queue"></ol>
+          </article>
+        </div>
       </section>
     </main>
-    <script type="module" src="/js/airi-live.js?v=20260712airicards"></script>
+    <script type="module" src="/js/airi-live.js?v=20260712airilanes"></script>
   </body>
 </html>

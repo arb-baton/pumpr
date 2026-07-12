@@ -19989,10 +19989,16 @@ button[disabled] {
 .airi-live-dashboard {
   display: grid;
   grid-template-columns: 1.2fr 1fr 1.2fr;
-  grid-template-rows: none;
   align-items: start;
   gap: 14px;
   min-height: 0;
+}
+
+.airi-live-lane {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
 }
 
 .airi-live-panel {
@@ -20238,7 +20244,8 @@ button[disabled] {
   grid-row: auto;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  max-height: clamp(360px, 46vh, 560px);
+  min-height: clamp(320px, 42vh, 520px);
+  max-height: clamp(360px, 48vh, 580px);
 }
 
 .airi-live-terminal-lines {
@@ -20406,6 +20413,10 @@ button[disabled] {
   .airi-live-dashboard {
     grid-template-columns: 1fr;
     grid-template-rows: none;
+  }
+
+  .airi-live-lane {
+    gap: 14px;
   }
 
   .airi-live-terminal {
