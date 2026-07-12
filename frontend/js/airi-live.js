@@ -130,6 +130,42 @@ const dom = {
   streamState: document.getElementById("airiLiveStreamState")
 };
 
+// Make terminal focusable and add keyboard scroll support
+if (dom.terminal) {
+  dom.terminal.setAttribute("tabindex", "0");
+  dom.terminal.addEventListener("keydown", (event) => {
+    const el = dom.terminal;
+    if (!el) return;
+    const scrollAmount = 40;
+    switch (event.key) {
+      case "ArrowDown":
+        el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + scrollAmount);
+        event.preventDefault();
+        break;
+      case "ArrowUp":
+        el.scrollTop = Math.max(0, el.scrollTop - scrollAmount);
+        event.preventDefault();
+        break;
+      case "PageDown":
+        el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + el.clientHeight);
+        event.preventDefault();
+        break;
+      case "PageUp":
+        el.scrollTop = Math.max(0, el.scrollTop - el.clientHeight);
+        event.preventDefault();
+        break;
+      case "Home":
+        el.scrollTop = 0;
+        event.preventDefault();
+        break;
+      case "End":
+        el.scrollTop = el.scrollHeight;
+        event.preventDefault();
+        break;
+    }
+  });
+}
+
 function safeParse(value, fallback) {
   try {
     return JSON.parse(String(value || ""));
