@@ -344,9 +344,7 @@ function appendStreamLine(text, kind = "signal") {
   dom.terminal.appendChild(line);
   while (dom.terminal.children.length > 24) dom.terminal.removeChild(dom.terminal.firstElementChild);
   // Always scroll to bottom after adding a new line
-  if (dom.terminal.scrollHeight > dom.terminal.clientHeight) {
-    dom.terminal.scrollTop = dom.terminal.scrollHeight;
-  }
+  dom.terminal.scrollTop = dom.terminal.scrollHeight;
   saveTerminal();
 }
 
