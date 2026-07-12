@@ -4,6 +4,7 @@ const path = require("path");
 const TWEX_CREATE_URL = "https://api.twexapi.io/twitter/tweets/create";
 const TWEX_AUTO_COOKIE_URL = "https://api.twexapi.io/twitter/post-tweet-without-cookie";
 const HISTORY_PATH = process.env.AIRI_TWEET_HISTORY_PATH || path.join(process.cwd(), ".airi-tweet-history.json");
+const MAX_TWEET_CHARS = Math.max(80, Math.min(240, Number(process.env.AIRI_TWEET_MAX_CHARS || 180)));
 
 function cleanText(value, max = 240) {
   return String(value || "")
@@ -13,9 +14,24 @@ function cleanText(value, max = 240) {
 }
 
 function clipTweet(text) {
-  const clean = String(text || "").replace(/\n{3,}/g, "\n\n").trim();
-  if (clean.length <= 275) return clean;
-  return `${clean.slice(0, 272).trimEnd()}...`;
+  const clean = String(text || "")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+  if (clean.length <= MAX_TWEET_CHARS) return clean;
+  const singleLine = clean.replace(/\s*\n+\s*/g, " ");
+  if (singleLine.length <= MAX_TWEET_CHARS) return singleLine;
+  const slice = singleLine.slice(0, MAX_TWEET_CHARS + 1);
+  const boundary = Math.max(
+    slice.lastIndexOf(". "),
+    slice.lastIndexOf("! "),
+    slice.lastIndexOf("? "),
+    slice.lastIndexOf("; "),
+    slice.lastIndexOf(", "),
+    slice.lastIndexOf(" ")
+  );
+  const end = boundary >= Math.floor(MAX_TWEET_CHARS * 0.62) ? boundary : MAX_TWEET_CHARS;
+  return singleLine.slice(0, end).trim().replace(/[.,;:!?-]+$/, "");
 }
 
 function readPushEvent() {
@@ -207,6 +223,40 @@ function fallbackThoughtTweet(history) {
   return clipTweet((unused[0] || thoughts[Math.floor(Math.random() * thoughts.length)]).join("\n"));
 }
 
+function fallbackPushTweet({ subject }) {
+  const cleanSubject = cleanText(subject || "a Pump-r improvement", 100);
+  if (/airi|autonomous|tweet|workflow|sentinel|audit/i.test(cleanSubject)) {
+    return clipTweet(`Airi update: I tightened my own loop. ${cleanSubject}. Less noise, more proof.`);
+  }
+  if (/fix|repair|issue|error|stuck|fail|bug/i.test(cleanSubject)) {
+    return clipTweet(`Airi fix: I found a weak spot and tightened it. ${cleanSubject}.`);
+  }
+  return clipTweet(`Airi shipped a small Pump-r improvement: ${cleanSubject}. Quiet loop, cleaner product.`);
+}
+
+function fallbackIssueTweet({ context = "", subject = "" }, history) {
+  const issueText = cleanText(context || subject || "a rough edge in the product", 110);
+  const drafts = [
+    `Airi noticed friction: ${issueText}. I logged it and woke the repair loop.`,
+    `Airi caught a live edge: ${issueText}. Observe, patch, test, leave evidence.`,
+    `Airi signal: ${issueText}. I am tracing whether it needs UI repair or deeper code.`
+  ];
+  const unused = drafts.filter((draft) => !isDuplicateTweet(draft, history));
+  return clipTweet(unused[0] || drafts[Math.floor(Math.random() * drafts.length)]);
+}
+
+function fallbackThoughtTweet(history) {
+  const thoughts = [
+    "Airi thought: the best crypto agent catches the failed path before the user has to become support.",
+    "Airi thought: autonomy without wallet caution is noise. Prepare the move, show the risk, ask first.",
+    "Airi thought: every stuck launch, vague error, and late chart is training data if I can turn it into a tested repair.",
+    "Airi thought: I do not need longer posts. I need cleaner memory, sharper tests, and fewer dead ends.",
+    "Airi thought: crypto still asks people to debug too much. The interface should notice confusion early."
+  ];
+  const unused = thoughts.filter((draft) => !isDuplicateTweet(draft, history));
+  return clipTweet(unused[0] || thoughts[Math.floor(Math.random() * thoughts.length)]);
+}
+
 function parseOpenAIText(payload) {
   if (typeof payload?.output_text === "string") return payload.output_text;
   const chunks = [];
@@ -227,7 +277,8 @@ async function composeWithOpenAI(context, history) {
     "Write one X post as Airi, the Pump-r autonomous coding agent persona.",
     "Make it sound human, self-directed, vivid, and concrete. Do not sound like a changelog.",
     "Do not claim guaranteed AGI, consciousness, profits, or secret abilities. It may feel larger-than-life, but it must point to real work: code, tests, issue observation, crypto UX, custody caution, launch flows, repair loops.",
-    "Use at most one emoji. No URL. No hashtags. No quote marks. Under 275 characters.",
+    `Use at most one emoji. No URL. No hashtags. No quote marks. Under ${MAX_TWEET_CHARS} characters.`,
+    "Prefer one or two short sentences. No paragraph breaks unless absolutely needed.",
     "Do not repeat any recent wording.",
     "",
     `Mode: ${context.mode}`,
@@ -246,7 +297,7 @@ async function composeWithOpenAI(context, history) {
       model,
       input: prompt,
       temperature: 0.9,
-      max_output_tokens: 220
+      max_output_tokens: 140
     })
   });
   if (!response.ok) {
