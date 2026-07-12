@@ -1,0 +1,60 @@
+name: Airi UI sentinel
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Site URL Airi should audit"
+        required: false
+        default: "https://pump-r.fun"
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: airi-ui-sentinel
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      AIRI_UI_AUDIT_BASE_URL: ${{ github.event.inputs.base_url || vars.AIRI_UI_AUDIT_BASE_URL || 'https://pump-r.fun' }}
+      AIRI_UI_AUDIT_OUTPUT: .airi-ui-audit.json
+      AIRI_UI_AUDIT_SCREENSHOTS_DIR: airi-ui-screenshots
+      AIRI_UI_AUDIT_REPORT_ISSUES: ${{ vars.AIRI_UI_AUDIT_REPORT_ISSUES || 'true' }}
+      AIRI_UI_AUDIT_REPORT_LEVEL: ${{ vars.AIRI_UI_AUDIT_REPORT_LEVEL || 'error' }}
+      AIRI_UI_AUDIT_SOFT_FAIL: "true"
+      AIRI_UI_AUDIT_FAIL_ON: none
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install browser auditor
+        run: |
+          npm install --no-save --package-lock=false playwright@1.49.1
+          npx playwright install --with-deps chromium
+
+      - name: Audit live UI and report issues
+        run: node scripts/airi-ui-audit.js
+
+      - name: Upload UI audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: airi-ui-audit
+          path: |
+            .airi-ui-audit.json
+            airi-ui-screenshots
+          if-no-files-found: ignore

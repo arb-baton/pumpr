@@ -34,8 +34,10 @@ const denyList = [
 const contextFiles = [
   ".github/workflows/airi-self-merge.yml",
   ".github/workflows/airi-autonomous-coder.yml",
+  ".github/workflows/airi-ui-sentinel.yml",
   "scripts/airi-merge-guard.js",
   "scripts/airi-autonomous-coder.js",
+  "scripts/airi-ui-audit.js",
   "frontend/airi.html",
   "frontend/js/airi-live.js",
   "frontend/js/assistant.js",
@@ -187,6 +189,29 @@ async function fetchLiveAiriIssues() {
   }
 }
 
+function readUiAuditReport() {
+  const reportPath = path.resolve(ROOT, process.env.AIRI_UI_AUDIT_OUTPUT || ".airi-ui-audit.json");
+  if (!fs.existsSync(reportPath)) return null;
+  try {
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+    return {
+      ok: Boolean(report?.ok),
+      auditedAt: String(report?.auditedAt || ""),
+      baseUrl: String(report?.baseUrl || ""),
+      summary: report?.summary || {},
+      issues: (Array.isArray(report?.issues) ? report.issues : []).slice(0, 15).map((entry) => ({
+        kind: String(entry?.kind || "ui_issue").slice(0, 80),
+        severity: String(entry?.severity || "warning").slice(0, 40),
+        page: String(entry?.page || "").slice(0, 80),
+        pathname: String(entry?.pathname || "").slice(0, 160),
+        summary: String(entry?.summary || "").slice(0, 500)
+      }))
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function buildRepoContext() {
   let recentCommits = "";
   let status = "";
@@ -220,6 +245,7 @@ async function buildRepoContext() {
   ].filter((item) => item.content);
 
   const liveIssues = await fetchLiveAiriIssues();
+  const uiAudit = readUiAuditReport();
 
   return {
     now: new Date().toISOString(),
@@ -227,6 +253,7 @@ async function buildRepoContext() {
     recentCommits,
     status,
     liveIssues,
+    uiAudit,
     files,
     snippets
   };
@@ -250,6 +277,7 @@ function buildPrompt(context) {
     "Do not invent blockchain addresses. Do not add claims that Airi is literally conscious or guaranteed AGI. Build capability and presence, not deception.",
     "Prefer improvements that make the Backroom, assistant behavior, autonomous coder loop, or user-visible Airi state more real, useful, stable, or inspectable.",
     "If liveIssues contains user-facing bugs, prioritize the highest severity reproducible issue over cosmetic changes.",
+    "If uiAudit contains browser-rendered UI problems, prioritize concrete layout, console, route, or overflow fixes that the audit can verify.",
     "If you fix or improve issue handling, make the user-visible benefit concrete and avoid tiny redundant edits.",
     "",
     "Return JSON only, with this exact shape:",
