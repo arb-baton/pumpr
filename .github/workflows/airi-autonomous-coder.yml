@@ -131,21 +131,28 @@ jobs:
         shell: bash
         run: |
           npm run compile
+          node backend/server.js > /tmp/airi-ui-server.log 2>&1 &
+          AIRI_SERVER_PID=$!
+          trap 'kill $AIRI_SERVER_PID 2>/dev/null || true' EXIT
+          SERVER_READY=false
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4173/airi >/dev/null 2>&1; then
+              SERVER_READY=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$SERVER_READY" != "true" ]; then
+            echo "Local Pump-r server did not become ready for Airi UI audit."
+            cat /tmp/airi-ui-server.log || true
+            exit 1
+          fi
+          AIRI_UI_AUDIT_BASE_URL=http://127.0.0.1:4173 AIRI_UI_AUDIT_OUTPUT=.airi-ui-audit-after.json AIRI_UI_AUDIT_REPORT_ISSUES=false node scripts/airi-ui-audit.js
           if [ -n "${VERCEL_TOKEN:-}" ] && [ -n "${VERCEL_ORG_ID:-}" ] && [ -n "${VERCEL_PROJECT_ID:-}" ]; then
             npx vercel build --prod --yes
           else
             echo "Skipping Vercel build validation because Vercel secrets are not fully configured."
           fi
-          node backend/server.js > /tmp/airi-ui-server.log 2>&1 &
-          AIRI_SERVER_PID=$!
-          trap 'kill $AIRI_SERVER_PID 2>/dev/null || true' EXIT
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:4173/airi >/dev/null 2>&1; then
-              break
-            fi
-            sleep 1
-          done
-          AIRI_UI_AUDIT_BASE_URL=http://127.0.0.1:4173 AIRI_UI_AUDIT_OUTPUT=.airi-ui-audit-after.json AIRI_UI_AUDIT_REPORT_ISSUES=false node scripts/airi-ui-audit.js
           git diff --cached --check
 
       - name: Commit and push Airi branch after validation
