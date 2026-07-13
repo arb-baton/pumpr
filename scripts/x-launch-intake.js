@@ -456,6 +456,7 @@ async function fetchMentionsFromConfiguredSource(state) {
   if (source === "official") return fetchMentions(state);
 
   const errors = [];
+  let autoTwexMentions = null;
   if (source === "twex" || source === "auto") {
     const combined = [];
     let twexReadOk = false;
@@ -486,6 +487,7 @@ async function fetchMentionsFromConfiguredSource(state) {
 
     const mentions = dedupeMentions(combined, state);
     if (mentions.length || source === "twex") return mentions;
+    if (source === "auto" && twexReadOk) autoTwexMentions = mentions;
     if (source === "auto" && !bearerToken() && twexReadOk) return mentions;
   }
 
@@ -494,6 +496,8 @@ async function fetchMentionsFromConfiguredSource(state) {
       return fetchMentions(state);
     } catch (error) {
       errors.push(`official: ${error.message || error}`);
+      log(`Official X mention fetch unavailable: ${error.message || error}`);
+      if (autoTwexMentions) return autoTwexMentions;
     }
   }
 
