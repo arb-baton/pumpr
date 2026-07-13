@@ -545,7 +545,8 @@ async function fetchMentionsFromConfiguredSource(state) {
   const errors = [];
   if (source === "twex") {
     const combined = [];
-    const notificationMode = cleanText(process.env.X_LAUNCH_TWEX_NOTIFICATIONS_MODE || "pending", 20).toLowerCase();
+    const notificationMode = cleanText(process.env.X_LAUNCH_TWEX_NOTIFICATIONS_MODE || "always", 20).toLowerCase();
+    const searchMode = cleanText(process.env.X_LAUNCH_TWEX_SEARCH_MODE || "off", 20).toLowerCase();
     const shouldFetchNotifications = notificationMode === "always" || (notificationMode !== "off" && hasPendingConversation(state));
     if (shouldFetchNotifications) {
       try {
@@ -565,13 +566,18 @@ async function fetchMentionsFromConfiguredSource(state) {
       await sleep(TWEX_READ_DELAY_MS);
     }
 
-    try {
-      const search = await fetchMentionsWithTwexSearch();
-      log(`Twex public search returned ${search.length} mention tweet(s).`);
-      combined.push(...search);
-    } catch (error) {
-      errors.push(`search: ${error.message || error}`);
-      log(`Twex search unavailable: ${error.message || error}`);
+    const shouldFetchSearch = searchMode === "always" || (searchMode === "fallback" && combined.length === 0);
+    if (shouldFetchSearch) {
+      try {
+        const search = await fetchMentionsWithTwexSearch();
+        log(`Twex public search returned ${search.length} mention tweet(s).`);
+        combined.push(...search);
+      } catch (error) {
+        errors.push(`search: ${error.message || error}`);
+        log(`Twex search unavailable: ${error.message || error}`);
+      }
+    } else {
+      log(`Twex public search skipped (${searchMode}); notification mentions are the low-credit source.`);
     }
 
     return dedupeMentions(combined, state);
@@ -592,7 +598,7 @@ function firstImageUrl(tweet = {}) {
 function extractLabeled(text, labels, stopLabels) {
   const labelPattern = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const stopPattern = stopLabels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  const regex = new RegExp(`\\b(?:${labelPattern})\\b\\s*(?:is|=|:|-)?\\s+(.+?)(?=\\s+\\b(?:${stopPattern})\\b\\s*(?:is|=|:|-)?|$)`, "i");
+  const regex = new RegExp(`\\b(?:${labelPattern})\\b\\s*(?:is|=|:|-)?\\s+(.+?)(?=\\s+(?:and\\s+)?\\b(?:${stopPattern})\\b\\s*(?:is|=|:|-)?|$)`, "i");
   return cleanText(text.match(regex)?.[1] || "", 280).replace(/^["']|["']$/g, "");
 }
 
