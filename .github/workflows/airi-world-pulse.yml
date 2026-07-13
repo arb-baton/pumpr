@@ -1,44 +1,35 @@
-name: Airi tweet on push
+name: Airi world pulse
 
 on:
   workflow_dispatch:
     inputs:
-      mode:
-        description: "Tweet mode"
-        required: false
-        default: "thought"
-        type: choice
-        options:
-          - thought
-          - world
-          - push
-          - issue
       context:
-        description: "Extra issue/thought context for Airi"
+        description: "Optional signal Airi should think from"
         required: false
         default: ""
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: "17 */2 * * *"
 
 permissions:
   contents: read
 
 concurrency:
-  group: airi-tweet-on-push-${{ github.ref }}
+  group: airi-world-pulse
   cancel-in-progress: false
 
 jobs:
-  tweet:
+  pulse:
     runs-on: ubuntu-latest
     env:
       AIRI_TWEET_ENABLED: ${{ vars.AIRI_TWEET_ENABLED || 'true' }}
       AIRI_TWEET_DRY_RUN: ${{ vars.AIRI_TWEET_DRY_RUN || 'false' }}
-      AIRI_TWEET_MODE: ${{ github.event.inputs.mode || 'push' }}
+      AIRI_TWEET_MODE: world
       AIRI_TWEET_CONTEXT: ${{ github.event.inputs.context || '' }}
       AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
       AIRI_TWEET_REQUIRE_POST: ${{ vars.AIRI_TWEET_REQUIRE_POST || 'true' }}
-      AIRI_THOUGHT_TWEET_CHANCE: ${{ vars.AIRI_THOUGHT_TWEET_CHANCE || '0.35' }}
+      AIRI_TWEET_MAX_CHARS: ${{ vars.AIRI_TWEET_MAX_CHARS || '180' }}
+      AIRI_WORLD_POST_CHANCE: ${{ vars.AIRI_WORLD_POST_CHANCE || '0.7' }}
+      AIRI_WORLD_MIN_HOURS: ${{ vars.AIRI_WORLD_MIN_HOURS || '3' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_AIRI_TWEET_MODEL: ${{ vars.OPENAI_AIRI_TWEET_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
       TWEXAPI_ALLOW_AUTO_COOKIE: ${{ vars.TWEXAPI_ALLOW_AUTO_COOKIE || 'false' }}
@@ -62,7 +53,7 @@ jobs:
           restore-keys: |
             airi-tweet-history-
 
-      - name: Let Airi tweet
+      - name: Let Airi watch the world
         run: node scripts/airi-tweet-on-push.js
 
       - name: Save Airi tweet memory

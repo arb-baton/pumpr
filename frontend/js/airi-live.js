@@ -30,6 +30,11 @@ const fallbackTasks = [
     signal: "social"
   },
   {
+    title: "Reading the outside world",
+    body: "Sampling crypto, AI, and world signals so public posts can connect market pressure back to safer launch decisions.",
+    signal: "world"
+  },
+  {
     title: "Monitoring live page health",
     body: "Keeping an eye on client errors, token chart lag, wallet state, and routes that need human approval.",
     signal: "watch"
@@ -69,13 +74,15 @@ const fallbackMemories = [
   "Public updates should tease the outcome without exposing every mechanism.",
   "Robinhood Chain launches should feel live, clean, and Uniswap-native.",
   "Airi should speak with symbols, voice, memory, and presence.",
-  "Wallet actions, spending, posting, and launches still need approval."
+  "Wallet actions, spending, posting, and launches still need approval.",
+  "Airi is watching crypto, AI, and world signals for public market-pulse posts."
 ];
 
 const fallbackQueue = [
   "Wake on GitHub schedule, write one safe code patch, and push airi/self-improvements.",
   "Watch Pump-r pages for broken flows and stalled launch states.",
   "Draft Airi's public X voice without leaking implementation details.",
+  "Gather live crypto, AI, and world signals for Airi's next market-pulse post.",
   "Map repeated user asks into durable preferences.",
   "Keep livestream motion active without depending on chat input.",
   "Prepare the next interface compression."

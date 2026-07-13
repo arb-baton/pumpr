@@ -38,8 +38,8 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       TWEXAPI_ALLOW_AUTO_COOKIE: ${{ vars.TWEXAPI_ALLOW_AUTO_COOKIE || 'false' }}
-      TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN }}
-      TWEXAPI_X_COOKIE: ${{ secrets.TWEXAPI_X_COOKIE }}
+      TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN || secrets.TWITTERX_API_KEY || secrets.TWEX_API_KEY || secrets.AIRI_TWEX_API_KEY || secrets.AIRI_TWITTERX_API_KEY }}
+      TWEXAPI_X_COOKIE: ${{ secrets.TWEXAPI_X_COOKIE || secrets.TWITTER_X_COOKIE || secrets.X_COOKIE || secrets.AIRI_X_COOKIE || secrets.AIRI_TWITTER_COOKIE }}
       TWEXAPI_PROXY: ${{ secrets.TWEXAPI_PROXY }}
     steps:
       - name: Checkout main
