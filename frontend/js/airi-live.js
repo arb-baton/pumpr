@@ -145,8 +145,8 @@ if (dom.terminal) {
   dom.terminal.setAttribute("aria-atomic", "false");
   dom.terminal.style.outline = "none";
   dom.terminal.addEventListener("focus", () => {
-    dom.terminal.style.outline = "3px solid #67f2aa";
-    dom.terminal.style.outlineOffset = "3px";
+    dom.terminal.style.outline = "4px solid #67f2aa";
+    dom.terminal.style.outlineOffset = "4px";
   });
   dom.terminal.addEventListener("blur", () => {
     dom.terminal.style.outline = "none";
@@ -155,8 +155,8 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use slightly larger scroll increments for smoother keyboard scroll
-    const lineHeight = 20; // increased from 18 for even better accessibility
-    const pageScroll = Math.floor(el.clientHeight * 0.9); // slightly larger page scroll
+    const lineHeight = 22; // slightly increased for better accessibility
+    const pageScroll = Math.floor(el.clientHeight * 0.95); // slightly larger page scroll for smoother navigation
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
