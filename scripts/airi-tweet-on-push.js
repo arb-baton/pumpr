@@ -686,6 +686,16 @@ async function postTweet(tweet) {
     return { skipped: true, reason: "missing_airi_cookie" };
   }
 
+  if (!isTruthy(process.env.AIRI_TWEET_UI_FIRST)) {
+    try {
+      const result = await postTweetWithXWebCookie(cookie, tweet);
+      console.log(`[airi-tweet] Tweet posted through ${result.method}.`);
+      return result;
+    } catch (webError) {
+      console.log(`[airi-tweet] X web-cookie post failed, trying browser UI: ${cleanText(webError.message || webError, 220)}`);
+    }
+  }
+
   const { chromium } = loadPlaywright();
   const browser = await chromium.launch({
     headless: true,

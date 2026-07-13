@@ -900,6 +900,15 @@ async function waitForPostedReply(page, tweetId, text) {
 async function replyWithBrowser(tweetId, text, mediaUrl = "") {
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser reply worker can open @pumpr_fun.");
+  if (!isTruthy(process.env.X_LAUNCH_REPLY_UI_FIRST)) {
+    try {
+      const result = await postWithXWebCookie(cookie, text, tweetId);
+      log(`Reply posted through ${result.method} to ${tweetId}.`);
+      return result;
+    } catch (webError) {
+      log(`X web-cookie reply failed, trying browser UI: ${cleanText(webError.message || webError, 220)}`);
+    }
+  }
   const { chromium } = loadPlaywright();
   const browser = await chromium.launch({
     headless: true,
