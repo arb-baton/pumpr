@@ -155,19 +155,19 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use smaller scroll increments for smoother experience
-    const lineHeight = 2;
+    const lineHeight = 18; // approximate line height in px for better scroll
     const pageScroll = Math.floor(el.clientHeight * 0.5);
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
         if (el.scrollTop < el.scrollHeight - el.clientHeight) {
-          el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + lineHeight * 8);
+          el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + lineHeight);
           handled = true;
         }
         break;
       case "ArrowUp":
         if (el.scrollTop > 0) {
-          el.scrollTop = Math.max(0, el.scrollTop - lineHeight * 8);
+          el.scrollTop = Math.max(0, el.scrollTop - lineHeight);
           handled = true;
         }
         break;
