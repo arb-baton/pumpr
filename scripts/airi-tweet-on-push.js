@@ -509,12 +509,14 @@ async function postTweet(tweet) {
     const page = await context.newPage();
     const composerSelector = '[data-testid="tweetTextarea_0"], div[role="textbox"][contenteditable="true"]';
     const composeUrls = [
+      `https://x.com/intent/tweet?text=${encodeURIComponent(tweet)}`,
       "https://x.com/compose/post",
       "https://x.com/compose/tweet",
       "https://twitter.com/compose/tweet"
     ];
     let composer = null;
     for (const url of composeUrls) {
+      console.log(`[airi-tweet] Opening composer: ${url.replace(/\?.*/, "?...")}`);
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
       await page.waitForTimeout(3000);
       if (/\/i\/flow\/login|\/login/i.test(page.url())) {
@@ -538,17 +540,29 @@ async function postTweet(tweet) {
         throw new Error("Airi X cookie opened a login page. Refresh AIRI_X_COOKIE from the signed-in Airi account.");
       }
       const newPostButton = page.locator('[data-testid="SideNav_NewTweet_Button"], a[href="/compose/post"], a[href="/compose/tweet"]').first();
-      await newPostButton.waitFor({ state: "visible", timeout: 15_000 });
+      await newPostButton.waitFor({ state: "visible", timeout: 15_000 }).catch(async (error) => {
+        const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 240);
+        throw new Error(`Airi browser could not find X new-post button. url=${page.url()} body="${bodyText}"`);
+      });
       await newPostButton.click();
       composer = page.locator(composerSelector).first();
-      await composer.waitFor({ state: "visible", timeout: 15_000 });
+      await composer.waitFor({ state: "visible", timeout: 15_000 }).catch(async () => {
+        const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 240);
+        throw new Error(`Airi browser opened compose but could not find textbox. url=${page.url()} body="${bodyText}"`);
+      });
     }
 
+    const existingText = cleanText(await composer.innerText().catch(() => ""), 320);
     await composer.click();
-    await page.keyboard.insertText(tweet);
+    if (!existingText.includes(tweet)) {
+      await page.keyboard.insertText(tweet);
+    }
 
     const postButton = page.locator('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]').last();
-    await postButton.waitFor({ state: "visible", timeout: 20_000 });
+    await postButton.waitFor({ state: "visible", timeout: 20_000 }).catch(async () => {
+      const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 240);
+      throw new Error(`Airi browser could not find X post button. url=${page.url()} body="${bodyText}"`);
+    });
     await postButton.click();
     await page.waitForTimeout(4500);
 
