@@ -1,0 +1,79 @@
+name: X launch intake
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Parse and reply/queue without launching"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: x-launch-intake
+  cancel-in-progress: false
+
+jobs:
+  intake:
+    runs-on: ubuntu-latest
+    env:
+      APP_BASE_URL: ${{ vars.APP_BASE_URL || vars.PUBLIC_BASE_URL || 'https://pump-r.fun' }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL || 'https://pump-r.fun' }}
+      X_LAUNCH_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || vars.X_LAUNCH_DRY_RUN || 'false' }}
+      X_LAUNCH_AUTOPILOT_ENABLED: ${{ vars.X_LAUNCH_AUTOPILOT_ENABLED || 'false' }}
+      X_LAUNCH_ALLOW_PUBLIC: ${{ vars.X_LAUNCH_ALLOW_PUBLIC || 'false' }}
+      X_LAUNCH_ALLOWED_USERNAMES: ${{ vars.X_LAUNCH_ALLOWED_USERNAMES || '' }}
+      X_LAUNCH_ALLOWED_USER_IDS: ${{ vars.X_LAUNCH_ALLOWED_USER_IDS || '' }}
+      X_LAUNCH_MAX_MENTIONS: ${{ vars.X_LAUNCH_MAX_MENTIONS || '20' }}
+      PUMPR_X_USERNAME: ${{ vars.PUMPR_X_USERNAME || 'pumpr_fun' }}
+      PUMPR_X_USER_ID: ${{ vars.PUMPR_X_USER_ID || '' }}
+      X_LAUNCH_INTAKE_STATE_PATH: cache/x-launch-intake-state.json
+      X_LAUNCH_INTAKE_QUEUE_PATH: cache/x-launch-queue.json
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_X_LAUNCH_MODEL: ${{ vars.OPENAI_X_LAUNCH_MODEL || vars.OPENAI_AGENT_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+      PUMPR_X_BEARER_TOKEN: ${{ secrets.PUMPR_X_BEARER_TOKEN || secrets.X_BEARER_TOKEN || secrets.TWITTER_BEARER_TOKEN }}
+      PUMPR_X_USER_ACCESS_TOKEN: ${{ secrets.PUMPR_X_USER_ACCESS_TOKEN || secrets.X_USER_ACCESS_TOKEN }}
+      TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN || secrets.TWITTERX_API_KEY || secrets.TWEX_API_KEY }}
+      PUMPR_TWEX_X_COOKIE: ${{ secrets.PUMPR_TWEX_X_COOKIE || secrets.TWEXAPI_PUMPR_X_COOKIE || secrets.X_PUMPR_COOKIE || secrets.PUMPR_X_COOKIE }}
+      X_LAUNCH_SOLANA_PRIVATE_KEY: ${{ secrets.X_LAUNCH_SOLANA_PRIVATE_KEY || secrets.PUMPR_X_LAUNCH_SOLANA_PRIVATE_KEY }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install runtime dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Restore X launch intake memory
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            cache/x-launch-intake-state.json
+            cache/x-launch-queue.json
+          key: x-launch-intake-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            x-launch-intake-
+
+      - name: Process @pumpr_fun launch mentions
+        run: node scripts/x-launch-intake.js
+
+      - name: Save X launch intake memory
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            cache/x-launch-intake-state.json
+            cache/x-launch-queue.json
+          key: x-launch-intake-${{ github.run_id }}-${{ github.run_attempt }}
