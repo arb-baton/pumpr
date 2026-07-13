@@ -48,6 +48,8 @@ jobs:
       X_LAUNCH_TWEX_NOTIFICATIONS_MODE: ${{ vars.X_LAUNCH_TWEX_NOTIFICATIONS_MODE || 'always' }}
       X_LAUNCH_TWEX_SEARCH_MODE: ${{ vars.X_LAUNCH_TWEX_SEARCH_MODE || 'off' }}
       X_LAUNCH_PUBLIC_SEARCH_TERMS: ${{ vars.X_LAUNCH_PUBLIC_SEARCH_TERMS || '@pumpr_fun' }}
+      X_LAUNCH_LOOP_INTERVAL_SECONDS: ${{ vars.X_LAUNCH_LOOP_INTERVAL_SECONDS || '30' }}
+      X_LAUNCH_LOOP_RUNS: ${{ vars.X_LAUNCH_LOOP_RUNS || '9' }}
       X_LAUNCH_ROBINHOOD_RPC_URL: ${{ vars.X_LAUNCH_ROBINHOOD_RPC_URL || vars.ROBINHOOD_RPC_URL || '' }}
       X_LAUNCH_ROBINHOOD_CREATOR_BPS: ${{ vars.X_LAUNCH_ROBINHOOD_CREATOR_BPS || '0' }}
       X_LAUNCH_ROBINHOOD_TRADE_FEE_BPS: ${{ vars.X_LAUNCH_ROBINHOOD_TRADE_FEE_BPS || '50' }}
@@ -90,8 +92,8 @@ jobs:
           restore-keys: |
             x-launch-intake-
 
-      - name: Fetch @pumpr_fun launch mentions once
-        run: node scripts/x-launch-intake.js
+      - name: Fetch @pumpr_fun launch mentions every 30 seconds
+        run: node scripts/x-launch-intake-loop.js
 
       - name: Save X launch intake memory
         if: always()
