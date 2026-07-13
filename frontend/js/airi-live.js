@@ -191,7 +191,7 @@ if (dom.terminal) {
         break;
       case "End":
         if (el.scrollTop < el.scrollHeight - el.clientHeight) {
-          el.scrollTop = el.scrollHeight;
+          el.scrollTop = el.scrollHeight - el.clientHeight;
           handled = true;
         }
         break;
