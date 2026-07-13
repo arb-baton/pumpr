@@ -507,13 +507,45 @@ async function postTweet(tweet) {
     });
     await context.addCookies(browserCookiesFromHeader(cookie));
     const page = await context.newPage();
-    await page.goto("https://x.com/compose/post", { waitUntil: "domcontentloaded", timeout: 45_000 });
-    await page.waitForTimeout(3500);
+    const composerSelector = '[data-testid="tweetTextarea_0"], div[role="textbox"][contenteditable="true"]';
+    const composeUrls = [
+      "https://x.com/compose/post",
+      "https://x.com/compose/tweet",
+      "https://twitter.com/compose/tweet"
+    ];
+    let composer = null;
+    for (const url of composeUrls) {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
+      await page.waitForTimeout(3000);
+      if (/\/i\/flow\/login|\/login/i.test(page.url())) {
+        throw new Error("Airi X cookie opened a login page. Refresh AIRI_X_COOKIE from the signed-in Airi account.");
+      }
+      const candidate = page.locator(composerSelector).first();
+      if (await candidate.count()) {
+        try {
+          await candidate.waitFor({ state: "visible", timeout: 5000 });
+          composer = candidate;
+          break;
+        } catch {
+          // Try the next compose surface.
+        }
+      }
+    }
+    if (!composer) {
+      await page.goto("https://x.com/home", { waitUntil: "domcontentloaded", timeout: 45_000 });
+      await page.waitForTimeout(3000);
+      if (/\/i\/flow\/login|\/login/i.test(page.url())) {
+        throw new Error("Airi X cookie opened a login page. Refresh AIRI_X_COOKIE from the signed-in Airi account.");
+      }
+      const newPostButton = page.locator('[data-testid="SideNav_NewTweet_Button"], a[href="/compose/post"], a[href="/compose/tweet"]').first();
+      await newPostButton.waitFor({ state: "visible", timeout: 15_000 });
+      await newPostButton.click();
+      composer = page.locator(composerSelector).first();
+      await composer.waitFor({ state: "visible", timeout: 15_000 });
+    }
 
-    const composer = page.locator('[data-testid="tweetTextarea_0"]').first();
-    await composer.waitFor({ state: "visible", timeout: 25_000 });
     await composer.click();
-    await composer.fill(tweet);
+    await page.keyboard.insertText(tweet);
 
     const postButton = page.locator('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]').last();
     await postButton.waitFor({ state: "visible", timeout: 20_000 });
