@@ -11,6 +11,7 @@ const TWEX_NOTIFICATIONS_URL = "https://api.twexapi.io/twitter/notifications";
 const TWEX_ADVANCED_SEARCH_URL = "https://api.twexapi.io/twitter/advanced_search";
 const MAX_MENTIONS = Math.max(5, Math.min(100, Number(process.env.X_LAUNCH_MAX_MENTIONS || 20)));
 const BROWSER_MENTION_URL = "https://x.com/notifications/mentions";
+const BROWSER_SEARCH_BASE_URL = "https://x.com/search";
 const MAX_STATE_IDS = 240;
 const EMPTY_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES || 0));
 const ACTIVE_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES || 0));
@@ -226,6 +227,10 @@ function processedStatus(state, tweetId) {
 
 function shouldReprocessTweet(tweet, state) {
   const status = processedStatus(state, tweet.id);
+  if (status === "ignored") {
+    const fallback = fallbackClassify(tweet, {});
+    return Boolean(fallback.isLaunchRequest && fallback.launchpad && fallback.name && fallback.ticker);
+  }
   if (status === "queued_author_not_allowlisted" && isTruthy(process.env.X_LAUNCH_ALLOW_PUBLIC)) return true;
   if (status === "queued_unsupported") {
     const fallback = fallbackClassify(tweet, {});
@@ -523,6 +528,7 @@ async function fetchMentionsWithBrowser() {
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_TWEX_X_COOKIE so the browser mention watcher can open @pumpr_fun notifications.");
   const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim().toLowerCase();
+  const searchUrl = `${BROWSER_SEARCH_BASE_URL}?q=${encodeURIComponent(`@${username} (create OR launch OR deploy OR mint)`)}&src=typed_query&f=live`;
   const { chromium } = loadPlaywright();
   const browser = await chromium.launch({
     headless: true,
@@ -535,13 +541,7 @@ async function fetchMentionsWithBrowser() {
     });
     await context.addCookies(browserCookiesFromHeader(cookie));
     const page = await context.newPage();
-    await page.goto(BROWSER_MENTION_URL, { waitUntil: "domcontentloaded", timeout: 45_000 });
-    await page.waitForTimeout(3500);
-    for (let i = 0; i < 2; i += 1) {
-      await page.mouse.wheel(0, 900);
-      await page.waitForTimeout(1200);
-    }
-    const rows = await page.evaluate((targetUsername) => {
+    const scrapeCurrentPage = async () => page.evaluate((targetUsername) => {
       const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
       const articles = Array.from(document.querySelectorAll("article"));
       return articles.map((article) => {
@@ -570,15 +570,28 @@ async function fetchMentionsWithBrowser() {
           createdAt: time?.getAttribute("datetime") || "",
           media,
           sourceUrl: statusUrl,
-          mentionsTarget: new RegExp(`@${targetUsername}\\b`, "i").test(tweetText || fullText)
-        };
+        mentionsTarget: new RegExp(`@${targetUsername}\\b`, "i").test(tweetText || fullText)
+      };
       }).filter((row) => {
         if (!row.id || !row.text || !row.authorUsername) return false;
         if (row.authorUsername.toLowerCase() === targetUsername) return false;
         return row.mentionsTarget || /create|launch|deploy|mint/i.test(row.text);
       });
     }, username);
-    log(`Browser notifications returned ${rows.length} candidate mention tweet(s).`);
+    const scrapeUrl = async (url) => {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
+      await page.waitForTimeout(3500);
+      for (let i = 0; i < 2; i += 1) {
+        await page.mouse.wheel(0, 900);
+        await page.waitForTimeout(1200);
+      }
+      return scrapeCurrentPage();
+    };
+    const rows = [
+      ...(await scrapeUrl(BROWSER_MENTION_URL)),
+      ...(await scrapeUrl(searchUrl))
+    ];
+    log(`Browser mention scan returned ${rows.length} candidate tweet(s).`);
     return rows.map((row) => ({
       id: String(row.id || ""),
       text: String(row.text || ""),
@@ -1257,7 +1270,7 @@ async function processTweet(tweet, state) {
   const prior = state.pendingByConversation[tweet.conversationId] || {};
   const classification = await classifyLaunchRequest(tweet, prior);
   if (!classification.isLaunchRequest || classification.confidence < 0.55) {
-    log(`Ignoring ${tweet.id}: ${classification.reason || "not launch intent"}`);
+    log(`Ignoring ${tweet.id}: ${classification.reason || "not launch intent"} | text="${cleanText(tweet.text, 160)}"`);
     rememberProcessed(state, tweet.id, "ignored");
     return "ignored";
   }
@@ -1326,6 +1339,7 @@ module.exports = {
     fallbackClassify,
     inferLaunchpad,
     mergeClassification,
+    shouldReprocessTweet,
     unsupportedLaunchpadReply
   }
 };
