@@ -493,7 +493,7 @@ async function fetchMentionsFromConfiguredSource(state) {
 
   if (source === "auto") {
     try {
-      return fetchMentions(state);
+      return await fetchMentions(state);
     } catch (error) {
       errors.push(`official: ${error.message || error}`);
       log(`Official X mention fetch unavailable: ${error.message || error}`);
