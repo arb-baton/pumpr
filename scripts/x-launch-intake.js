@@ -11,7 +11,7 @@ const TWEX_NOTIFICATIONS_URL = "https://api.twexapi.io/twitter/notifications";
 const TWEX_ADVANCED_SEARCH_URL = "https://api.twexapi.io/twitter/advanced_search";
 const MAX_MENTIONS = Math.max(5, Math.min(100, Number(process.env.X_LAUNCH_MAX_MENTIONS || 20)));
 const MAX_STATE_IDS = 240;
-const EMPTY_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES || 15));
+const EMPTY_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES || 0));
 const ACTIVE_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES || 0));
 
 const LAUNCHPAD_ALIASES = new Map([
@@ -376,11 +376,12 @@ async function fetchMentionsWithTwexNotifications(state = {}) {
 
 async function fetchMentionsWithTwexSearch() {
   const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim();
+  const searchTerm = String(process.env.X_LAUNCH_PUBLIC_SEARCH_TERM || `@${username} -from:${username}`).trim();
   const payload = await fetchJson(TWEX_ADVANCED_SEARCH_URL, {
     method: "POST",
     headers: twexHeaders(),
     body: JSON.stringify({
-      searchTerms: [`@${username} -from:${username}`],
+      searchTerms: [searchTerm],
       maxItems: MAX_MENTIONS,
       sortBy: "Latest"
     })
@@ -417,12 +418,12 @@ async function fetchMentionsFromConfiguredSource(state) {
 
   const errors = [];
   if (source === "twex" || source === "auto") {
+    const combined = [];
     try {
       const notifications = await fetchMentionsWithTwexNotifications(state);
       const label = hasPendingConversation(state) ? "all/pending-thread" : "mention";
       log(`Twex notifications returned ${notifications.length} ${label} notification(s).`);
-      const mentions = dedupeMentions(notifications, state);
-      if (mentions.length || source === "twex") return mentions;
+      combined.push(...notifications);
     } catch (error) {
       errors.push(`notifications: ${error.message || error}`);
       log(`Twex notifications unavailable: ${error.message || error}`);
@@ -430,12 +431,15 @@ async function fetchMentionsFromConfiguredSource(state) {
 
     try {
       const search = await fetchMentionsWithTwexSearch();
-      log(`Twex search returned ${search.length} mention tweet(s).`);
-      return dedupeMentions(search, state);
+      log(`Twex public search returned ${search.length} mention tweet(s).`);
+      combined.push(...search);
     } catch (error) {
       errors.push(`search: ${error.message || error}`);
       log(`Twex search unavailable: ${error.message || error}`);
     }
+
+    const mentions = dedupeMentions(combined, state);
+    if (mentions.length || source === "twex") return mentions;
   }
 
   if (source === "auto") {
