@@ -648,6 +648,7 @@ async function classifyWithOpenAI(tweet, prior = {}) {
     "Only mark isLaunchRequest true when the user is asking to create, mint, deploy, or launch a token/coin.",
     "Ignore jokes, market commentary, support questions, replies that are not launch intent, and generic mentions.",
     "Extract launchpad only if explicitly named. Normalize Pump.fun/Pumfun/pumpfun to pumpfun.",
+    "Do not infer pumpfun from the @pumpr_fun account mention; if the tweet says Robinhood, Base, Ethereum, Monad, or PumpVerse, keep that launchpad.",
     "Extract name, ticker, and description even with typos such as anme for name.",
     "If there is prior draft data, merge it with the new tweet when the conversation is continuing.",
     "Return strict JSON only with keys: isLaunchRequest, confidence, launchpad, name, ticker, description, reason.",
@@ -694,10 +695,11 @@ async function classifyWithOpenAI(tweet, prior = {}) {
 
 function mergeClassification(aiResult, fallbackResult, prior = {}) {
   const source = aiResult && Number(aiResult.confidence || 0) >= 0.55 ? aiResult : fallbackResult;
+  const deterministicLaunchpad = fallbackResult.launchpad || "";
   const merged = {
     isLaunchRequest: Boolean(source.isLaunchRequest || fallbackResult.isLaunchRequest || prior.isLaunchRequest),
     confidence: Math.max(Number(source.confidence || 0), Number(fallbackResult.confidence || 0), Number(prior.confidence || 0)),
-    launchpad: source.launchpad || fallbackResult.launchpad || prior.launchpad || "",
+    launchpad: deterministicLaunchpad || source.launchpad || prior.launchpad || "",
     name: source.name || fallbackResult.name || prior.name || "",
     ticker: source.ticker || fallbackResult.ticker || prior.ticker || "",
     description: source.description || fallbackResult.description || prior.description || "",
@@ -899,6 +901,23 @@ function launchSuccessReply(tweet, request, result) {
   return reply.length <= 270 ? reply : `${mention} launched $${normalizeTicker(request.ticker)}\n${url}`;
 }
 
+function unsupportedLaunchpadReply(tweet, request) {
+  const handle = String(request.authorUsername || tweet.authorUsername || "").replace(/^@/, "").trim();
+  const mention = handle ? `@${handle}` : "Request";
+  const launchpadName = request.launchpad === "robinhood"
+    ? "Robinhood"
+    : request.launchpad === "ethereum"
+      ? "Ethereum"
+      : request.launchpad === "pumpverse"
+        ? "PumpVerse"
+        : request.launchpad || "that chain";
+  return [
+    `${mention} ${launchpadName} launch is queued, not converted to Pump.fun.`,
+    "X autopilot can only direct-fire Pump.fun right now.",
+    "Use Pump-r Create for wallet-signed chain launches."
+  ].join("\n");
+}
+
 async function handleLaunchRequest(tweet, classification, state) {
   const request = publicRequest(tweet, classification);
   if (classification.missingFields.length) {
@@ -916,7 +935,7 @@ async function handleLaunchRequest(tweet, classification, state) {
 
   if (!DIRECT_LAUNCHPADS.has(classification.launchpad)) {
     appendQueue(request, "queued_unsupported_direct_launchpad");
-    await postReply(tweet.id, `${classification.launchpad} launch intent is queued. Right now the X autopilot can directly fire Pump.fun launches only; use Pump-r Create for wallet-signed chain launches.`);
+    await postReply(tweet.id, unsupportedLaunchpadReply(tweet, request));
     return "queued_unsupported";
   }
 
@@ -1020,5 +1039,11 @@ if (require.main === module) {
 }
 
 module.exports = {
-  main
+  main,
+  _test: {
+    fallbackClassify,
+    inferLaunchpad,
+    mergeClassification,
+    unsupportedLaunchpadReply
+  }
 };
