@@ -11,6 +11,8 @@ const TWEX_NOTIFICATIONS_URL = "https://api.twexapi.io/twitter/notifications";
 const TWEX_ADVANCED_SEARCH_URL = "https://api.twexapi.io/twitter/advanced_search";
 const MAX_MENTIONS = Math.max(5, Math.min(100, Number(process.env.X_LAUNCH_MAX_MENTIONS || 20)));
 const MAX_STATE_IDS = 240;
+const EMPTY_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES || 15));
+const ACTIVE_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES || 0));
 
 const LAUNCHPAD_ALIASES = new Map([
   ["pumpfun", "pumpfun"],
@@ -53,20 +55,36 @@ function readState() {
   return {
     processedTweetIds: Array.isArray(parsed.processedTweetIds) ? parsed.processedTweetIds.slice(-MAX_STATE_IDS) : [],
     repliedTweetIds: Array.isArray(parsed.repliedTweetIds) ? parsed.repliedTweetIds.slice(-MAX_STATE_IDS) : [],
+    processedStatusByTweetId: parsed.processedStatusByTweetId && typeof parsed.processedStatusByTweetId === "object"
+      ? Object.fromEntries(Object.entries(parsed.processedStatusByTweetId).slice(-MAX_STATE_IDS))
+      : {},
     pendingByConversation: parsed.pendingByConversation && typeof parsed.pendingByConversation === "object"
       ? parsed.pendingByConversation
       : {},
     launches: Array.isArray(parsed.launches) ? parsed.launches.slice(-80) : [],
+    lastFetchAt: parsed.lastFetchAt || "",
+    lastFetchSource: parsed.lastFetchSource || "",
+    lastFetchMentionCount: Number(parsed.lastFetchMentionCount || 0),
+    emptyFetchStreak: Number(parsed.emptyFetchStreak || 0),
     updatedAt: parsed.updatedAt || ""
   };
 }
 
 function writeState(state) {
+  const processedIds = Array.from(new Set(state.processedTweetIds || [])).slice(-MAX_STATE_IDS);
+  const statusEntries = Object.entries(state.processedStatusByTweetId || {})
+    .filter(([id]) => processedIds.includes(id))
+    .slice(-MAX_STATE_IDS);
   writeJson(STATE_PATH, {
-    processedTweetIds: Array.from(new Set(state.processedTweetIds || [])).slice(-MAX_STATE_IDS),
+    processedTweetIds: processedIds,
     repliedTweetIds: Array.from(new Set(state.repliedTweetIds || [])).slice(-MAX_STATE_IDS),
+    processedStatusByTweetId: Object.fromEntries(statusEntries),
     pendingByConversation: state.pendingByConversation || {},
     launches: Array.isArray(state.launches) ? state.launches.slice(-80) : [],
+    lastFetchAt: state.lastFetchAt || "",
+    lastFetchSource: state.lastFetchSource || "",
+    lastFetchMentionCount: Number(state.lastFetchMentionCount || 0),
+    emptyFetchStreak: Number(state.emptyFetchStreak || 0),
     updatedAt: new Date().toISOString()
   });
 }
@@ -119,6 +137,49 @@ function normalizeLaunchpad(value = "") {
 
 function isTruthy(value) {
   return /^(1|true|yes|on)$/i.test(String(value || ""));
+}
+
+function hasPendingConversation(state = {}) {
+  return Object.keys(state.pendingByConversation || {}).length > 0;
+}
+
+function isScheduledRun() {
+  return String(process.env.GITHUB_EVENT_NAME || "").toLowerCase() === "schedule";
+}
+
+function minutesSince(value = "") {
+  const ts = Date.parse(value || "");
+  if (!Number.isFinite(ts)) return Infinity;
+  return (Date.now() - ts) / 60_000;
+}
+
+function shouldSkipScheduledFetch(state = {}) {
+  if (!isScheduledRun()) return false;
+  if (hasPendingConversation(state)) return false;
+  const lastCount = Number(state.lastFetchMentionCount || 0);
+  const backoffMinutes = lastCount > 0 ? ACTIVE_FETCH_BACKOFF_MINUTES : EMPTY_FETCH_BACKOFF_MINUTES;
+  if (backoffMinutes <= 0) return false;
+  return minutesSince(state.lastFetchAt) < backoffMinutes;
+}
+
+function recordFetchResult(state, source, mentionCount) {
+  state.lastFetchAt = new Date().toISOString();
+  state.lastFetchSource = source || "";
+  state.lastFetchMentionCount = Number(mentionCount || 0);
+  state.emptyFetchStreak = mentionCount > 0 ? 0 : Number(state.emptyFetchStreak || 0) + 1;
+}
+
+function rememberProcessed(state, tweetId, status) {
+  const id = String(tweetId || "").trim();
+  if (!id) return;
+  state.processedTweetIds = Array.from(new Set([...(state.processedTweetIds || []), id])).slice(-MAX_STATE_IDS);
+  state.processedStatusByTweetId = {
+    ...(state.processedStatusByTweetId || {}),
+    [id]: {
+      status: String(status || "processed"),
+      at: new Date().toISOString()
+    }
+  };
 }
 
 function fetchHeaders(extra = {}) {
@@ -293,18 +354,24 @@ function normalizeTwexTweet(tweet = {}, notification = null) {
   };
 }
 
-async function fetchMentionsWithTwexNotifications() {
+async function fetchMentionsWithTwexNotifications(state = {}) {
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_TWEX_X_COOKIE so TwexAPI can read @pumpr_fun mention notifications.");
+  const notificationType = hasPendingConversation(state) ? "All" : "Mentions";
   const payload = await fetchJson(TWEX_NOTIFICATIONS_URL, {
     method: "POST",
     headers: twexHeaders(),
-    body: JSON.stringify({ cookie, type: "Mentions" })
+    body: JSON.stringify({ cookie, type: notificationType })
   });
   const rows = Array.isArray(payload?.data) ? payload.data : [];
+  const pendingIds = new Set(Object.keys(state.pendingByConversation || {}));
   return rows
     .map((row) => normalizeTwexTweet(row?.tweet || row, row))
-    .filter((tweet) => tweet.id && tweet.text);
+    .filter((tweet) => {
+      if (!tweet.id || !tweet.text) return false;
+      if (notificationType !== "All") return true;
+      return pendingIds.has(tweet.conversationId) || /@pumpr_fun\b/i.test(tweet.text);
+    });
 }
 
 async function fetchMentionsWithTwexSearch() {
@@ -351,8 +418,9 @@ async function fetchMentionsFromConfiguredSource(state) {
   const errors = [];
   if (source === "twex" || source === "auto") {
     try {
-      const notifications = await fetchMentionsWithTwexNotifications();
-      log(`Twex notifications returned ${notifications.length} mention notification(s).`);
+      const notifications = await fetchMentionsWithTwexNotifications(state);
+      const label = hasPendingConversation(state) ? "all/pending-thread" : "mention";
+      log(`Twex notifications returned ${notifications.length} ${label} notification(s).`);
       const mentions = dedupeMentions(notifications, state);
       if (mentions.length || source === "twex") return mentions;
     } catch (error) {
@@ -538,6 +606,7 @@ function mergeClassification(aiResult, fallbackResult, prior = {}) {
 
 async function classifyLaunchRequest(tweet, prior = {}) {
   const fallbackResult = fallbackClassify(tweet, prior);
+  if (!prior.isLaunchRequest && !fallbackResult.isLaunchRequest) return mergeClassification(null, fallbackResult, prior);
   const aiResult = await classifyWithOpenAI(tweet, prior);
   return mergeClassification(aiResult, fallbackResult, prior);
 }
@@ -767,14 +836,14 @@ async function processTweet(tweet, state) {
   const classification = await classifyLaunchRequest(tweet, prior);
   if (!classification.isLaunchRequest || classification.confidence < 0.55) {
     log(`Ignoring ${tweet.id}: ${classification.reason || "not launch intent"}`);
-    state.processedTweetIds.push(tweet.id);
+    rememberProcessed(state, tweet.id, "ignored");
     return "ignored";
   }
   log(`Launch intent ${tweet.id}: ${classification.name || "?"} $${classification.ticker || "?"} on ${classification.launchpad || "missing launchpad"}`);
   try {
     const result = await handleLaunchRequest(tweet, classification, state);
     state.repliedTweetIds.push(tweet.id);
-    state.processedTweetIds.push(tweet.id);
+    rememberProcessed(state, tweet.id, result);
     return result;
   } catch (error) {
     appendQueue(publicRequest(tweet, classification), "error", { error: error.message || String(error) });
@@ -785,7 +854,7 @@ async function processTweet(tweet, state) {
       });
       state.repliedTweetIds.push(tweet.id);
     }
-    state.processedTweetIds.push(tweet.id);
+    rememberProcessed(state, tweet.id, "error");
     return "error";
   }
 }
@@ -794,9 +863,18 @@ async function main() {
   const state = readState();
   const mockPath = String(process.env.X_LAUNCH_MOCK_MENTIONS_PATH || "").trim();
   const mockPayload = mockPath ? readJson(mockPath, []) : null;
+  if (!mockPath && shouldSkipScheduledFetch(state)) {
+    const waitMinutes = Number(state.lastFetchMentionCount || 0) > 0 ? ACTIVE_FETCH_BACKOFF_MINUTES : EMPTY_FETCH_BACKOFF_MINUTES;
+    log(`Skipping Twex mention fetch; last check found ${state.lastFetchMentionCount || 0} new mention(s) ${minutesSince(state.lastFetchAt).toFixed(1)} minutes ago. Backoff is ${waitMinutes} minutes.`);
+    writeState(state);
+    return;
+  }
   const mentions = mockPath
     ? (Array.isArray(mockPayload) ? mockPayload : mockPayload && typeof mockPayload === "object" ? [mockPayload] : [])
     : await fetchMentionsFromConfiguredSource(state);
+  if (!mockPath) {
+    recordFetchResult(state, process.env.X_LAUNCH_MENTION_SOURCE || "twex", mentions.length);
+  }
   log(`Fetched ${mentions.length} mention(s).`);
   const results = {};
   for (const tweet of mentions) {
