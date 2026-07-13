@@ -376,12 +376,22 @@ async function fetchMentionsWithTwexNotifications(state = {}) {
 
 async function fetchMentionsWithTwexSearch() {
   const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim();
-  const searchTerm = String(process.env.X_LAUNCH_PUBLIC_SEARCH_TERM || `@${username} -from:${username}`).trim();
+  const configuredTerms = String(process.env.X_LAUNCH_PUBLIC_SEARCH_TERMS || process.env.X_LAUNCH_PUBLIC_SEARCH_TERM || "")
+    .split(/\r?\n|\|/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  const searchTerms = configuredTerms.length
+    ? configuredTerms
+    : [
+        `@${username} -from:${username}`,
+        `"@${username}" -from:${username}`,
+        `to:${username} -from:${username}`
+      ];
   const payload = await fetchJson(TWEX_ADVANCED_SEARCH_URL, {
     method: "POST",
     headers: twexHeaders(),
     body: JSON.stringify({
-      searchTerms: [searchTerm],
+      searchTerms,
       maxItems: MAX_MENTIONS,
       sortBy: "Latest"
     })
@@ -890,7 +900,13 @@ async function main() {
   log(`Done: ${JSON.stringify(results)}`);
 }
 
-main().catch((error) => {
-  console.error(`[x-launch] ${error?.message || error}`);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`[x-launch] ${error?.message || error}`);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  main
+};

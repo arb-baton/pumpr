@@ -18,6 +18,7 @@
     "deploy:usdc-factory:mainnet": "hardhat run scripts/deploy-usdc-factory.js --network mainnet",
     "deploy:prod": "node scripts/vercel-production-deploy.js",
     "x:launch-intake": "node scripts/x-launch-intake.js",
+    "x:launch-intake:loop": "node scripts/x-launch-intake-loop.js",
     "app": "node backend/server.js",
     "frontend": "node backend/server.js"
   },

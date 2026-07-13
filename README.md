@@ -173,6 +173,22 @@ PUMPFUN_BOUNTIES_URL=https://pump.fun/go
 PUMPFUN_LIVESTREAM_API_URL=https://livestream-api.pump.fun
 ```
 
+X mention launch intake:
+
+```env
+PUMPR_X_USERNAME=pumpr_fun
+TWEXAPI_BEARER_TOKEN=your-twexapi-token
+PUMPR_TWEX_X_COOKIE=your-pumpr-fun-x-cookie
+OPENAI_API_KEY=your-openai-api-key
+X_LAUNCH_SOLANA_PRIVATE_KEY=store-only-as-a-secret
+X_LAUNCH_AUTOPILOT_ENABLED=false
+X_LAUNCH_ALLOW_PUBLIC=false
+X_LAUNCH_ALLOWED_USERNAMES=pumpr_fun
+X_LAUNCH_LOOP_INTERVAL_SECONDS=30
+```
+
+GitHub Actions schedules can only start roughly every five minutes, so the scheduled `X launch intake` workflow runs a bounded loop and checks public mentions every 30 seconds while the job is active. For always-on intake, run `npm run x:launch-intake:loop` on a worker host with the same secrets; set `X_LAUNCH_LOOP_RUNS=0` for continuous polling.
+
 For a fuller list, see `.env.example`.
 
 ## Solana / Pump.fun Launch Flow
