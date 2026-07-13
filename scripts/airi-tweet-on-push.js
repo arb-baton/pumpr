@@ -98,6 +98,29 @@ function browserCookiesFromHeader(cookieHeader = "") {
   })));
 }
 
+async function clickXButton(page, locator, label) {
+  await locator.waitFor({ state: "visible", timeout: 20_000 });
+  await locator.scrollIntoViewIfNeeded().catch(() => {});
+  const attempts = [
+    async () => locator.click({ timeout: 5000 }),
+    async () => locator.click({ timeout: 5000, force: true }),
+    async () => locator.evaluate((button) => button.click()),
+    async () => page.keyboard.press("Control+Enter")
+  ];
+  let lastError = null;
+  for (let index = 0; index < attempts.length; index += 1) {
+    try {
+      await attempts[index]();
+      if (index > 0) console.log(`[airi-tweet] ${label} used fallback click path ${index + 1}.`);
+      return;
+    } catch (error) {
+      lastError = error;
+      console.log(`[airi-tweet] ${label} click path ${index + 1} failed: ${cleanText(error.message || error, 180)}`);
+    }
+  }
+  throw lastError || new Error(`Could not click ${label}.`);
+}
+
 function clipTweet(text) {
   const clean = String(text || "")
     .replace(/\n{3,}/g, "\n\n")
@@ -563,7 +586,7 @@ async function postTweet(tweet) {
       const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 240);
       throw new Error(`Airi browser could not find X post button. url=${page.url()} body="${bodyText}"`);
     });
-    await postButton.click();
+    await clickXButton(page, postButton, "post button");
     await page.waitForTimeout(4500);
 
     console.log("[airi-tweet] Tweet posted through browser.");

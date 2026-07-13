@@ -197,8 +197,18 @@ function processedStatus(state, tweetId) {
   return String(state.processedStatusByTweetId?.[String(tweetId || "")]?.status || "");
 }
 
+function latestLaunchForTweet(state, tweetId) {
+  const id = String(tweetId || "").trim();
+  return (Array.isArray(state.launches) ? state.launches : [])
+    .filter((row) => String(row?.tweetId || "") === id)
+    .slice(-1)[0] || null;
+}
+
 function shouldReprocessTweet(tweet, state) {
   const status = processedStatus(state, tweet.id);
+  if (["launched_reply_failed", "reply_failed", "error_no_reply", "error"].includes(status) && latestLaunchForTweet(state, tweet.id)) {
+    return true;
+  }
   if (status === "ignored") {
     const fallback = fallbackClassify(tweet, {});
     return Boolean(fallback.isLaunchRequest && fallback.launchpad && fallback.name && fallback.ticker);
@@ -756,8 +766,7 @@ async function replyWithBrowser(tweetId, text, mediaUrl = "") {
     }
 
     const replyButton = page.locator('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]').last();
-    await replyButton.waitFor({ state: "visible", timeout: 20_000 });
-    await replyButton.click();
+    await clickXButton(page, replyButton, "reply button", log);
     await page.waitForTimeout(4500);
     log(`Browser reply posted to ${tweetId}.`);
     return { ok: true, method: "browser" };
@@ -765,6 +774,29 @@ async function replyWithBrowser(tweetId, text, mediaUrl = "") {
     await browser.close().catch(() => {});
     if (mediaPath) fs.rmSync(mediaPath, { force: true });
   }
+}
+
+async function clickXButton(page, locator, label, logger = () => {}) {
+  await locator.waitFor({ state: "visible", timeout: 20_000 });
+  await locator.scrollIntoViewIfNeeded().catch(() => {});
+  const attempts = [
+    async () => locator.click({ timeout: 5000 }),
+    async () => locator.click({ timeout: 5000, force: true }),
+    async () => locator.evaluate((button) => button.click()),
+    async () => page.keyboard.press("Control+Enter")
+  ];
+  let lastError = null;
+  for (let index = 0; index < attempts.length; index += 1) {
+    try {
+      await attempts[index]();
+      if (index > 0) logger(`Browser ${label} used fallback click path ${index + 1}.`);
+      return;
+    } catch (error) {
+      lastError = error;
+      logger(`Browser ${label} click path ${index + 1} failed: ${cleanText(error.message || error, 180)}`);
+    }
+  }
+  throw lastError || new Error(`Could not click ${label}.`);
 }
 
 async function postReply(tweetId, text, mediaUrl = "") {
@@ -1041,6 +1073,23 @@ function unsupportedLaunchpadReply(tweet, request) {
 
 async function handleLaunchRequest(tweet, classification, state) {
   const request = publicRequest(tweet, classification);
+  if (["launched_reply_failed", "reply_failed", "error_no_reply", "error"].includes(processedStatus(state, tweet.id))) {
+    const existing = latestLaunchForTweet(state, tweet.id);
+    if (existing) {
+      await postReply(tweet.id, launchSuccessReply(tweet, request, existing), existing.replyImageUrl || request.imageUrl || "");
+      appendQueue(request, "launched_reply_sent", {
+        mint: existing.mint,
+        token: existing.token,
+        chainId: existing.chainId,
+        signature: existing.signature,
+        txHash: existing.txHash,
+        pumpfunUrl: existing.pumpfunUrl,
+        tokenUrl: existing.tokenUrl,
+        explorerUrl: existing.explorerUrl
+      });
+      return "launched";
+    }
+  }
   if (classification.missingFields.length) {
     state.pendingByConversation[tweet.conversationId] = {
       ...request,
@@ -1091,7 +1140,8 @@ async function handleLaunchRequest(tweet, classification, state) {
     txHash: result.txHash,
     pumpfunUrl: result.pumpfunUrl,
     tokenUrl: result.tokenUrl,
-    explorerUrl: result.explorerUrl
+    explorerUrl: result.explorerUrl,
+    replyImageUrl: result.replyImageUrl || request.imageUrl || ""
   });
   state.launches.push({
     tweetId: tweet.id,
@@ -1104,9 +1154,16 @@ async function handleLaunchRequest(tweet, classification, state) {
     pumpfunUrl: result.pumpfunUrl,
     tokenUrl: result.tokenUrl,
     explorerUrl: result.explorerUrl,
+    replyImageUrl: result.replyImageUrl || request.imageUrl || "",
     at: new Date().toISOString()
   });
-  await postReply(tweet.id, launchSuccessReply(tweet, request, result), result.replyImageUrl || request.imageUrl || "");
+  try {
+    await postReply(tweet.id, launchSuccessReply(tweet, request, result), result.replyImageUrl || request.imageUrl || "");
+  } catch (error) {
+    log(`Launch succeeded but reply failed for ${tweet.id}: ${error.message || error}`);
+    rememberProcessed(state, tweet.id, "launched_reply_failed");
+    return "launched_reply_failed";
+  }
   return "launched";
 }
 
@@ -1122,7 +1179,9 @@ async function processTweet(tweet, state) {
   log(`Launch intent ${tweet.id}: ${classification.name || "?"} $${classification.ticker || "?"} on ${classification.launchpad || "missing launchpad"}`);
   try {
     const result = await handleLaunchRequest(tweet, classification, state);
-    state.repliedTweetIds.push(tweet.id);
+    if (result !== "launched_reply_failed") {
+      state.repliedTweetIds.push(tweet.id);
+    }
     rememberProcessed(state, tweet.id, result);
     return result;
   } catch (error) {
