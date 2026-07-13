@@ -883,7 +883,7 @@ async function waitForPostedReply(page, tweetId, text) {
   if (!needle) throw new Error("Browser reply verification had no text to check.");
   await page.goto(`https://x.com/i/status/${encodeURIComponent(String(tweetId))}`, { waitUntil: "domcontentloaded", timeout: 45_000 });
   await page.waitForTimeout(3500);
-  for (let index = 0; index < 12; index += 1) {
+  for (let index = 0; index < 6; index += 1) {
     const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 6000);
     if (bodyText.includes(needle)) return;
     await page.mouse.wheel(0, 900).catch(() => {});
@@ -897,10 +897,39 @@ async function waitForPostedReply(page, tweetId, text) {
   throw new Error(`Browser clicked reply, but the reply was not visible in thread ${tweetId}. needle="${needle}" body="${bodyText}"`);
 }
 
+async function openReplyComposer(page, tweetId, text) {
+  const composerSelector = '[data-testid="tweetTextarea_0"], div[role="textbox"][contenteditable="true"]';
+  const replyIntentUrl = `https://x.com/intent/tweet?in_reply_to=${encodeURIComponent(String(tweetId))}&text=${encodeURIComponent(text)}`;
+  const urls = [
+    replyIntentUrl,
+    `https://x.com/i/status/${encodeURIComponent(String(tweetId))}`
+  ];
+  let lastBody = "";
+  for (const url of urls) {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.waitForTimeout(3000);
+    if (/\/i\/flow\/login|\/login/i.test(page.url())) {
+      throw new Error("PUMPR_X_COOKIE opened a login page. Refresh the @pumpr_fun cookie.");
+    }
+    const composer = page.locator(composerSelector).first();
+    if (await composer.count()) {
+      try {
+        await composer.waitFor({ state: "visible", timeout: 8000 });
+        return composer;
+      } catch {
+        // Try the next reply surface.
+      }
+    }
+    lastBody = cleanText(await page.locator("body").innerText().catch(() => ""), 260);
+  }
+  throw new Error(`Browser could not open X reply composer for ${tweetId}. body="${lastBody}"`);
+}
+
 async function replyWithBrowser(tweetId, text, mediaUrl = "") {
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser reply worker can open @pumpr_fun.");
-  if (!isTruthy(process.env.X_LAUNCH_REPLY_UI_FIRST)) {
+  const webFirst = isTruthy(process.env.X_LAUNCH_REPLY_WEB_FIRST);
+  if (webFirst) {
     try {
       const result = await postWithXWebCookie(cookie, text, tweetId);
       log(`Reply posted through ${result.method} to ${tweetId}.`);
@@ -922,11 +951,9 @@ async function replyWithBrowser(tweetId, text, mediaUrl = "") {
     });
     await context.addCookies(browserCookiesFromHeader(cookie));
     const page = await context.newPage();
-    await page.goto(`https://x.com/i/status/${encodeURIComponent(String(tweetId))}`, { waitUntil: "domcontentloaded", timeout: 45_000 });
-    await page.waitForTimeout(3500);
 
     try {
-      const composer = page.locator('[data-testid="tweetTextarea_0"]').first();
+      const composer = await openReplyComposer(page, tweetId, text);
       await fillXComposer(page, composer, text);
 
       if (mediaUrl) {
@@ -948,6 +975,7 @@ async function replyWithBrowser(tweetId, text, mediaUrl = "") {
       log(`Browser reply posted and verified to ${tweetId}.`);
       return { ok: true, method: "browser" };
     } catch (browserError) {
+      if (webFirst) throw browserError;
       log(`Browser UI reply failed, trying X web-cookie fallback: ${cleanText(browserError.message || browserError, 220)}`);
       const result = await postWithXWebCookie(cookie, text, tweetId);
       log(`Reply posted through ${result.method} to ${tweetId}.`);
