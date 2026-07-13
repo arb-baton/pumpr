@@ -408,10 +408,13 @@ async function fetchMentionsWithTwexSearch() {
   const searchTerms = configuredTerms.length
     ? configuredTerms
     : [
-        `@${username} -from:${username}`,
-        `"@${username}" -from:${username}`,
-        `to:${username} -from:${username}`
+        `@${username}`,
+        `"@${username}"`,
+        username,
+        `"${username}"`,
+        `to:${username}`
       ];
+  log(`Twex public search terms: ${searchTerms.join(" | ")}`);
   const payload = await withTwexRetry("public search", () => fetchJson(TWEX_ADVANCED_SEARCH_URL, {
     method: "POST",
     headers: twexHeaders(),
@@ -424,7 +427,8 @@ async function fetchMentionsWithTwexSearch() {
   const rows = Array.isArray(payload?.data) ? payload.data : [];
   return rows
     .map((row) => normalizeTwexTweet(row))
-    .filter((tweet) => tweet.id && tweet.text);
+    .filter((tweet) => tweet.id && tweet.text)
+    .filter((tweet) => tweet.authorUsername.toLowerCase() !== username.toLowerCase());
 }
 
 function sortTweetIdsAscending(a, b) {
