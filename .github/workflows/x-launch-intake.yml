@@ -33,6 +33,7 @@ jobs:
       X_LAUNCH_ALLOWED_USERNAMES: ${{ vars.X_LAUNCH_ALLOWED_USERNAMES || '' }}
       X_LAUNCH_ALLOWED_USER_IDS: ${{ vars.X_LAUNCH_ALLOWED_USER_IDS || '' }}
       X_LAUNCH_MAX_MENTIONS: ${{ vars.X_LAUNCH_MAX_MENTIONS || '20' }}
+      X_LAUNCH_MENTION_SOURCE: ${{ vars.X_LAUNCH_MENTION_SOURCE || 'twex' }}
       PUMPR_X_USERNAME: ${{ vars.PUMPR_X_USERNAME || 'pumpr_fun' }}
       PUMPR_X_USER_ID: ${{ vars.PUMPR_X_USER_ID || '' }}
       X_LAUNCH_INTAKE_STATE_PATH: cache/x-launch-intake-state.json

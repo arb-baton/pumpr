@@ -7,6 +7,8 @@ const QUEUE_PATH = process.env.X_LAUNCH_INTAKE_QUEUE_PATH || path.join(ROOT, "ca
 const APP_BASE_URL = String(process.env.APP_BASE_URL || process.env.PUBLIC_BASE_URL || "https://pump-r.fun").replace(/\/+$/, "");
 const X_API_BASE_URL = String(process.env.X_API_BASE_URL || "https://api.x.com").replace(/\/+$/, "");
 const TWEX_CREATE_URL = "https://api.twexapi.io/twitter/tweets/create";
+const TWEX_NOTIFICATIONS_URL = "https://api.twexapi.io/twitter/notifications";
+const TWEX_ADVANCED_SEARCH_URL = "https://api.twexapi.io/twitter/advanced_search";
 const MAX_MENTIONS = Math.max(5, Math.min(100, Number(process.env.X_LAUNCH_MAX_MENTIONS || 20)));
 const MAX_STATE_IDS = 240;
 
@@ -156,6 +158,26 @@ function bearerToken() {
   ).trim().replace(/^Bearer\s+/i, "");
 }
 
+function twexApiKey() {
+  return String(
+    process.env.TWEXAPI_BEARER_TOKEN ||
+      process.env.TWITTERX_API_KEY ||
+      process.env.TWEX_API_KEY ||
+      ""
+  ).trim().replace(/^Bearer\s+/i, "");
+}
+
+function pumprCookie() {
+  return String(
+    process.env.PUMPR_TWEX_X_COOKIE ||
+      process.env.TWEXAPI_PUMPR_X_COOKIE ||
+      process.env.X_PUMPR_COOKIE ||
+      process.env.PUMPR_X_COOKIE ||
+      process.env.TWEXAPI_X_COOKIE ||
+      ""
+  ).trim();
+}
+
 async function resolvePumprUserId() {
   const explicit = String(process.env.PUMPR_X_USER_ID || process.env.X_PUMPR_USER_ID || "").trim();
   if (explicit) return explicit;
@@ -210,6 +232,153 @@ async function fetchMentions(state) {
     })
     .filter((tweet) => tweet.id)
     .sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : 1);
+}
+
+function twexHeaders() {
+  const apiKey = twexApiKey();
+  if (!apiKey) throw new Error("Set TWEXAPI_BEARER_TOKEN so the worker can read mentions through TwexAPI.");
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json"
+  };
+}
+
+function twexTweetUser(tweet = {}) {
+  return tweet.user || tweet.author || tweet.core?.user_results?.result || tweet.legacy?.user || {};
+}
+
+function normalizeTwexMedia(media = []) {
+  return (Array.isArray(media) ? media : [])
+    .map((item) => ({
+      type: item?.type || item?.media_type || "photo",
+      url: item?.url || item?.media_url_https || item?.media_url || item?.expanded_url || "",
+      preview_image_url: item?.preview_image_url || item?.thumbnail_url || item?.media_url_https || ""
+    }))
+    .filter((item) => item.url || item.preview_image_url);
+}
+
+function twexTweetMedia(tweet = {}) {
+  return [
+    ...normalizeTwexMedia(tweet.media),
+    ...normalizeTwexMedia(tweet.entities?.media),
+    ...normalizeTwexMedia(tweet.extended_entities?.media),
+    ...normalizeTwexMedia(tweet.legacy?.entities?.media),
+    ...normalizeTwexMedia(tweet.legacy?.extended_entities?.media)
+  ];
+}
+
+function normalizeTwexTweet(tweet = {}, notification = null) {
+  const user = twexTweetUser(tweet);
+  const id = String(tweet.tweet_id || tweet.id || tweet.rest_id || tweet.legacy?.id_str || notification?.id || "").trim();
+  const text = String(tweet.full_text || tweet.text || tweet.legacy?.full_text || tweet.legacy?.text || notification?.message || "").trim();
+  const authorId = String(tweet.author_id || tweet.user_id || user.id || user.rest_id || user.id_str || notification?.from_user?.id || "").trim();
+  const authorUsername = String(
+    tweet.author_username ||
+      tweet.username ||
+      user.username ||
+      user.screen_name ||
+      user.legacy?.screen_name ||
+      notification?.from_user?.username ||
+      notification?.from_user?.screen_name ||
+      ""
+  ).replace(/^@/, "");
+  return {
+    id,
+    text,
+    authorId,
+    authorUsername,
+    conversationId: String(tweet.conversation_id || tweet.conversation_id_str || tweet.legacy?.conversation_id_str || id || ""),
+    createdAt: String(tweet.created_at_datetime || tweet.created_at || tweet.legacy?.created_at || notification?.timestamp_ms || ""),
+    media: twexTweetMedia(tweet)
+  };
+}
+
+async function fetchMentionsWithTwexNotifications() {
+  const cookie = pumprCookie();
+  if (!cookie) throw new Error("Set PUMPR_TWEX_X_COOKIE so TwexAPI can read @pumpr_fun mention notifications.");
+  const payload = await fetchJson(TWEX_NOTIFICATIONS_URL, {
+    method: "POST",
+    headers: twexHeaders(),
+    body: JSON.stringify({ cookie, type: "Mentions" })
+  });
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  return rows
+    .map((row) => normalizeTwexTweet(row?.tweet || row, row))
+    .filter((tweet) => tweet.id && tweet.text);
+}
+
+async function fetchMentionsWithTwexSearch() {
+  const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim();
+  const payload = await fetchJson(TWEX_ADVANCED_SEARCH_URL, {
+    method: "POST",
+    headers: twexHeaders(),
+    body: JSON.stringify({
+      searchTerms: [`@${username} -from:${username}`],
+      maxItems: MAX_MENTIONS,
+      sortBy: "Latest"
+    })
+  });
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  return rows
+    .map((row) => normalizeTwexTweet(row))
+    .filter((tweet) => tweet.id && tweet.text);
+}
+
+function sortTweetIdsAscending(a, b) {
+  try {
+    return BigInt(a.id) < BigInt(b.id) ? -1 : 1;
+  } catch {
+    return String(a.id).localeCompare(String(b.id));
+  }
+}
+
+function dedupeMentions(tweets = [], state = {}) {
+  const processed = new Set(state.processedTweetIds || []);
+  const seen = new Set();
+  return tweets
+    .filter((tweet) => {
+      if (!tweet.id || seen.has(tweet.id) || processed.has(tweet.id)) return false;
+      seen.add(tweet.id);
+      return true;
+    })
+    .sort(sortTweetIdsAscending);
+}
+
+async function fetchMentionsFromConfiguredSource(state) {
+  const source = cleanText(process.env.X_LAUNCH_MENTION_SOURCE || "twex", 20).toLowerCase();
+  if (source === "official") return fetchMentions(state);
+
+  const errors = [];
+  if (source === "twex" || source === "auto") {
+    try {
+      const notifications = await fetchMentionsWithTwexNotifications();
+      log(`Twex notifications returned ${notifications.length} mention notification(s).`);
+      const mentions = dedupeMentions(notifications, state);
+      if (mentions.length || source === "twex") return mentions;
+    } catch (error) {
+      errors.push(`notifications: ${error.message || error}`);
+      log(`Twex notifications unavailable: ${error.message || error}`);
+    }
+
+    try {
+      const search = await fetchMentionsWithTwexSearch();
+      log(`Twex search returned ${search.length} mention tweet(s).`);
+      return dedupeMentions(search, state);
+    } catch (error) {
+      errors.push(`search: ${error.message || error}`);
+      log(`Twex search unavailable: ${error.message || error}`);
+    }
+  }
+
+  if (source === "auto") {
+    try {
+      return fetchMentions(state);
+    } catch (error) {
+      errors.push(`official: ${error.message || error}`);
+    }
+  }
+
+  throw new Error(`Could not fetch X mentions. ${errors.join(" | ") || "No mention source configured."}`);
 }
 
 function firstImageUrl(tweet = {}) {
@@ -395,26 +564,6 @@ function replyTextForMissing(request) {
   return `I can prep this launch, but I still need: ${human}. Reply in the same thread and attach the image if needed.`;
 }
 
-function twexApiKey() {
-  return String(
-    process.env.TWEXAPI_BEARER_TOKEN ||
-      process.env.TWITTERX_API_KEY ||
-      process.env.TWEX_API_KEY ||
-      ""
-  ).trim();
-}
-
-function pumprCookie() {
-  return String(
-    process.env.PUMPR_TWEX_X_COOKIE ||
-      process.env.TWEXAPI_PUMPR_X_COOKIE ||
-      process.env.X_PUMPR_COOKIE ||
-      process.env.PUMPR_X_COOKIE ||
-      process.env.TWEXAPI_X_COOKIE ||
-      ""
-  ).trim();
-}
-
 async function replyWithTwex(tweetId, text) {
   const apiKey = twexApiKey();
   const cookie = pumprCookie();
@@ -428,6 +577,7 @@ async function replyWithTwex(tweetId, text) {
     body: JSON.stringify({
       tweet_content: text,
       cookie,
+      reply_tweet_id: tweetId,
       reply_to_tweet_id: tweetId,
       in_reply_to_tweet_id: tweetId
     })
@@ -646,7 +796,7 @@ async function main() {
   const mockPayload = mockPath ? readJson(mockPath, []) : null;
   const mentions = mockPath
     ? (Array.isArray(mockPayload) ? mockPayload : mockPayload && typeof mockPayload === "object" ? [mockPayload] : [])
-    : await fetchMentions(state);
+    : await fetchMentionsFromConfiguredSource(state);
   log(`Fetched ${mentions.length} mention(s).`);
   const results = {};
   for (const tweet of mentions) {
