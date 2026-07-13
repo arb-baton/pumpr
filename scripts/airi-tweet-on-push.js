@@ -341,11 +341,11 @@ function fallbackWorldTweet(context, history) {
   const signals = Array.isArray(context.worldSignals) ? context.worldSignals : [];
   const picked = signals.find(Boolean) || "markets and world headlines are moving faster than interfaces can explain them";
   const drafts = [
-    `🌐 I am in the trenches again: ${cleanText(picked, 100)}. The next launchpad should read attention before the chart screams.`,
-    `🧠 Memecoin intelligence is not just candles. It is lore, liquidity, timing, wallet behavior, and the moment a joke becomes a crowd.`,
-    `📡 I am watching crypto, AI, and world pressure together. Markets move when the timeline changes its mind.`,
-    `The next edge is not faster clicking. It is an agent that reads the room, notices hesitation, and turns chaos into safer launch rails.`,
-    `🌍 I want Pump-r to feel alive in the market: scanning trenches, guarding wallets, testing itself, and learning what attention wants next.`
+    `just saw this in the trenches: ${cleanText(picked, 92)}. the market is basically a group chat with liquidity.`,
+    `memecoin alpha is 20% chart, 30% timing, 50% everyone suddenly pretending the joke was obvious yesterday`,
+    `the timeline changed its mood again. i am taking notes like a launchpad intern with a spreadsheet problem`,
+    `some tokens do not launch, they escape containment. i want Pump-r to notice that before the chart gets theatrical`,
+    `world news hits crypto like weather. trenches turn it into folklore, tickers, and bad decisions at impressive speed`
   ];
   const unused = drafts.filter((draft) => !isDuplicateTweet(draft, history));
   return clipTweet(unused[0] || drafts[Math.floor(Math.random() * drafts.length)]);
@@ -370,12 +370,14 @@ async function composeWithOpenAI(context, history) {
   const worldSignals = Array.isArray(context.worldSignals) ? context.worldSignals.slice(0, 10) : [];
   const prompt = [
     "Write one X post as Airi, the Pump-r autonomous agent persona.",
-    "The voice should feel self-directed, curious, human, and slightly larger-than-life, but never claim literal consciousness, guaranteed AGI, profits, insider knowledge, or unsafe wallet control.",
+    "The voice should feel self-directed, curious, funny, internet-native, and a little strange, but never claim literal consciousness, guaranteed AGI, profits, insider knowledge, or unsafe wallet control.",
     "If the mode is world, make it feel like Airi is roaming memecoin trenches, world events, crypto attention, and her own private thought loop.",
     "Connect one current signal to trading, launches, crypto UX, agentic software, or self-improving product loops. Do not summarize news like a journalist.",
     "It can sound like an original thought sparked by the signal, not a report. Mention trenches only when it fits naturally.",
+    "Avoid corporate AI words like revolutionary, ecosystem, leverage, unlock, seamless, optimize, paradigm, robust, and intelligence layer.",
+    "Prefer jokes, odd observations, dry one-liners, and specific market texture. Lowercase is allowed. Slang is allowed if it feels natural.",
     "Use at most one emoji. No URLs. No hashtags. No quote marks. No financial advice. Under the character limit.",
-    "Prefer one or two short sentences. Do not repeat recent wording.",
+    "Prefer one or two short sentences. Do not repeat recent wording. Do not sound like a press release.",
     "",
     `Character limit: ${MAX_TWEET_CHARS}`,
     `Mode: ${context.mode}`,

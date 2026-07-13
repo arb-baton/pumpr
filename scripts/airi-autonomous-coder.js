@@ -7,6 +7,7 @@ const MAX_EDIT_FILES = Number(process.env.AIRI_CODER_MAX_FILES || 4);
 const MAX_REPLACE_BYTES = Number(process.env.AIRI_CODER_MAX_REPLACE_BYTES || 120_000);
 const MODEL = String(process.env.OPENAI_AIRI_CODER_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini").trim();
 const OPENAI_TIMEOUT_MS = Math.max(15_000, Number(process.env.AIRI_CODER_OPENAI_TIMEOUT_MS || 75_000));
+const MAX_ATTEMPTS = Math.max(1, Math.min(5, Number(process.env.AIRI_CODER_ATTEMPTS || 3)));
 
 const allowList = [
   /^backend\/server\.js$/,
@@ -52,8 +53,9 @@ function log(message) {
 }
 
 function fail(message) {
-  console.error(`[airi-coder] ${message}`);
-  process.exit(1);
+  const error = new Error(message);
+  error.airiCoderFailure = true;
+  throw error;
 }
 
 function normalizePath(value) {
@@ -260,7 +262,7 @@ async function buildRepoContext() {
   };
 }
 
-function buildPrompt(context) {
+function buildPrompt(context, failures = []) {
   return [
     "You are Airi's autonomous coding loop for Pump-r.fun.",
     "Make exactly one small, useful, safe improvement to Airi or the Pump-r Airi surfaces.",
@@ -297,6 +299,10 @@ function buildPrompt(context) {
     "- Use content only for new files or small complete-file replacements.",
     "- Keep content valid for its file type.",
     "- Do not include markdown fences.",
+    "- If a previous attempt failed because find text was stale, choose a different exact snippet from the repository context.",
+    failures.length
+      ? `Previous failed attempts to avoid:\n${failures.map((failure, index) => `${index + 1}. ${failure}`).join("\n")}`
+      : "Previous failed attempts: none",
     "",
     "Repository context:",
     JSON.stringify(context, null, 2)
@@ -359,16 +365,17 @@ function countOccurrences(haystack, needle) {
   }
 }
 
-function applyPlan(plan) {
+function preparePlan(plan) {
   if (!plan || typeof plan !== "object") fail("Airi did not return a JSON plan.");
   const edits = Array.isArray(plan.edits) ? plan.edits : [];
   if (!edits.length) {
     log("Airi returned no edits. Nothing to commit.");
-    return false;
+    return { edits: [], fileCount: 0 };
   }
   if (edits.length > MAX_EDIT_FILES) fail(`Too many edits (${edits.length}). Limit is ${MAX_EDIT_FILES}.`);
 
   const seen = new Set();
+  const prepared = [];
   for (const edit of edits) {
     const relativePath = assertAllowedPath(edit?.path);
     seen.add(relativePath);
@@ -385,9 +392,7 @@ function applyPlan(plan) {
       if (currentBytes > MAX_REPLACE_BYTES || nextBytes > MAX_REPLACE_BYTES) {
         fail(`Refusing large full-file replacement for ${relativePath}`);
       }
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, edit.content, "utf8");
-      log(`Wrote ${relativePath}`);
+      prepared.push({ type: "content", relativePath, file, content: edit.content });
       continue;
     }
 
@@ -395,11 +400,37 @@ function applyPlan(plan) {
     const current = fs.readFileSync(file, "utf8");
     const hits = countOccurrences(current, edit.find);
     if (hits !== 1) fail(`Find text must appear exactly once in ${relativePath}; found ${hits}.`);
-    fs.writeFileSync(file, current.replace(edit.find, edit.replace), "utf8");
-    log(`Patched ${relativePath}`);
+    prepared.push({ type: "replace", relativePath, file, find: edit.find, replace: edit.replace });
   }
 
-  log(`Applied ${edits.length} edit(s) across ${seen.size} file(s).`);
+  return { edits: prepared, fileCount: seen.size };
+}
+
+function applyPreparedPlan(preparedPlan) {
+  const edits = Array.isArray(preparedPlan?.edits) ? preparedPlan.edits : [];
+  if (!edits.length) return false;
+  for (const edit of edits) {
+    if (edit.type === "content") {
+      fs.mkdirSync(path.dirname(edit.file), { recursive: true });
+      fs.writeFileSync(edit.file, edit.content, "utf8");
+      log(`Wrote ${edit.relativePath}`);
+      continue;
+    }
+    const current = fs.readFileSync(edit.file, "utf8");
+    fs.writeFileSync(edit.file, current.replace(edit.find, edit.replace), "utf8");
+    log(`Patched ${edit.relativePath}`);
+  }
+
+  log(`Applied ${edits.length} edit(s) across ${preparedPlan.fileCount} file(s).`);
+  return true;
+}
+
+function applyPlan(plan) {
+  const preparedPlan = preparePlan(plan);
+  if (!preparedPlan.edits.length) return false;
+  if (String(process.env.AIRI_CODER_PLAN_ONLY || "") !== "1") {
+    applyPreparedPlan(preparedPlan);
+  }
   if (String(process.env.AIRI_CODER_PLAN_ONLY || "") === "1") {
     log("Plan-only mode requested; edit plan validated without writing files.");
   }
@@ -408,24 +439,28 @@ function applyPlan(plan) {
 
 async function main() {
   const context = await buildRepoContext();
-  const prompt = buildPrompt(context);
-  const plan = await requestPlan(prompt);
-  if (!plan) return;
-  log(`Plan: ${String(plan.summary || "Airi proposed a small improvement.").slice(0, 240)}`);
-  if (String(process.env.AIRI_CODER_SHOW_PLAN || "") === "1") {
-    console.log(JSON.stringify(plan, null, 2));
-  }
-  if (String(process.env.AIRI_CODER_PLAN_ONLY || "") === "1") {
-    const originalWrite = fs.writeFileSync;
-    fs.writeFileSync = () => {};
+  const failures = [];
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const prompt = buildPrompt(context, failures);
+    const plan = await requestPlan(prompt);
+    if (!plan) return;
+    log(`Plan attempt ${attempt}/${MAX_ATTEMPTS}: ${String(plan.summary || "Airi proposed a small improvement.").slice(0, 240)}`);
+    if (String(process.env.AIRI_CODER_SHOW_PLAN || "") === "1") {
+      console.log(JSON.stringify(plan, null, 2));
+    }
     try {
       applyPlan(plan);
-    } finally {
-      fs.writeFileSync = originalWrite;
+      return;
+    } catch (error) {
+      const message = String(error?.message || error || "unknown planning failure").slice(0, 500);
+      failures.push(message);
+      log(`Attempt ${attempt} rejected: ${message}`);
+      if (attempt >= MAX_ATTEMPTS) throw error;
     }
-    return;
   }
-  applyPlan(plan);
 }
 
-main().catch((error) => fail(error?.stack || error?.message || String(error)));
+main().catch((error) => {
+  console.error(`[airi-coder] ${error?.stack || error?.message || String(error)}`);
+  process.exitCode = 1;
+});
