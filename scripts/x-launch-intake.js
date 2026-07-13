@@ -207,6 +207,15 @@ function rememberProcessed(state, tweetId, status) {
   };
 }
 
+function processedStatus(state, tweetId) {
+  return String(state.processedStatusByTweetId?.[String(tweetId || "")]?.status || "");
+}
+
+function shouldReprocessTweet(tweet, state) {
+  const status = processedStatus(state, tweet.id);
+  return status === "queued_author_not_allowlisted" && isTruthy(process.env.X_LAUNCH_ALLOW_PUBLIC);
+}
+
 function fetchHeaders(extra = {}) {
   return {
     "User-Agent": "PumpR-X-Launch-Intake/1.0",
@@ -771,6 +780,12 @@ async function handleLaunchRequest(tweet, classification, state) {
     return "queued_autopilot_off";
   }
 
+  if (isTruthy(process.env.X_LAUNCH_DRY_RUN)) {
+    appendQueue(request, "dry_run_launch_ready");
+    await postReply(tweet.id, `Dry run: $${request.ticker} is ready to launch on Pump.fun.`);
+    return "dry_run_launch_ready";
+  }
+
   appendQueue(request, "launching");
   const result = await launchPumpFun(request);
   appendQueue(request, "launched", {
@@ -790,7 +805,7 @@ async function handleLaunchRequest(tweet, classification, state) {
 }
 
 async function processTweet(tweet, state) {
-  if (state.processedTweetIds.includes(tweet.id)) return "already_processed";
+  if (state.processedTweetIds.includes(tweet.id) && !shouldReprocessTweet(tweet, state)) return "already_processed";
   const prior = state.pendingByConversation[tweet.conversationId] || {};
   const classification = await classifyLaunchRequest(tweet, prior);
   if (!classification.isLaunchRequest || classification.confidence < 0.55) {

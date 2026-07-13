@@ -28,8 +28,8 @@ jobs:
       APP_BASE_URL: ${{ vars.APP_BASE_URL || vars.PUBLIC_BASE_URL || 'https://pump-r.fun' }}
       PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL || 'https://pump-r.fun' }}
       X_LAUNCH_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || vars.X_LAUNCH_DRY_RUN || 'false' }}
-      X_LAUNCH_AUTOPILOT_ENABLED: ${{ vars.X_LAUNCH_AUTOPILOT_ENABLED || 'false' }}
-      X_LAUNCH_ALLOW_PUBLIC: ${{ vars.X_LAUNCH_ALLOW_PUBLIC || 'false' }}
+      X_LAUNCH_AUTOPILOT_ENABLED: ${{ vars.X_LAUNCH_AUTOPILOT_ENABLED || 'true' }}
+      X_LAUNCH_ALLOW_PUBLIC: ${{ vars.X_LAUNCH_ALLOW_PUBLIC || 'true' }}
       X_LAUNCH_ALLOWED_USERNAMES: ${{ vars.X_LAUNCH_ALLOWED_USERNAMES || '' }}
       X_LAUNCH_ALLOWED_USER_IDS: ${{ vars.X_LAUNCH_ALLOWED_USER_IDS || '' }}
       X_LAUNCH_MAX_MENTIONS: ${{ vars.X_LAUNCH_MAX_MENTIONS || '20' }}
