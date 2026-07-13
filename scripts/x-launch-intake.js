@@ -10,6 +10,7 @@ const TWEX_CREATE_URL = "https://api.twexapi.io/twitter/tweets/create";
 const TWEX_NOTIFICATIONS_URL = "https://api.twexapi.io/twitter/notifications";
 const TWEX_ADVANCED_SEARCH_URL = "https://api.twexapi.io/twitter/advanced_search";
 const MAX_MENTIONS = Math.max(5, Math.min(100, Number(process.env.X_LAUNCH_MAX_MENTIONS || 20)));
+const BROWSER_MENTION_URL = "https://x.com/notifications/mentions";
 const MAX_STATE_IDS = 240;
 const EMPTY_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES || 0));
 const ACTIVE_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES || 0));
@@ -518,6 +519,80 @@ async function fetchMentionsWithTwexSearch() {
     .filter((tweet) => tweet.authorUsername.toLowerCase() !== username.toLowerCase());
 }
 
+async function fetchMentionsWithBrowser() {
+  const cookie = pumprCookie();
+  if (!cookie) throw new Error("Set PUMPR_TWEX_X_COOKIE so the browser mention watcher can open @pumpr_fun notifications.");
+  const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim().toLowerCase();
+  const { chromium } = loadPlaywright();
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--disable-dev-shm-usage", "--no-sandbox"]
+  });
+  try {
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    });
+    await context.addCookies(browserCookiesFromHeader(cookie));
+    const page = await context.newPage();
+    await page.goto(BROWSER_MENTION_URL, { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.waitForTimeout(3500);
+    for (let i = 0; i < 2; i += 1) {
+      await page.mouse.wheel(0, 900);
+      await page.waitForTimeout(1200);
+    }
+    const rows = await page.evaluate((targetUsername) => {
+      const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const articles = Array.from(document.querySelectorAll("article"));
+      return articles.map((article) => {
+        const links = Array.from(article.querySelectorAll("a[href]")).map((link) => {
+          try {
+            return new URL(link.getAttribute("href"), "https://x.com").toString();
+          } catch {
+            return "";
+          }
+        }).filter(Boolean);
+        const statusUrl = links.find((href) => /\/status\/\d+/i.test(href)) || "";
+        const statusMatch = statusUrl.match(/x\.com\/([^/?#]+)\/status\/(\d+)/i);
+        const tweetText = clean(article.querySelector('[data-testid="tweetText"]')?.innerText || "");
+        const fullText = clean(article.innerText || "");
+        const media = Array.from(article.querySelectorAll('img[src*="pbs.twimg.com/media"]'))
+          .map((image) => image.getAttribute("src") || "")
+          .filter(Boolean)
+          .map((url) => ({ type: "photo", url }));
+        const time = article.querySelector("time");
+        return {
+          id: statusMatch?.[2] || "",
+          text: tweetText || fullText,
+          authorUsername: statusMatch?.[1] || "",
+          authorId: "",
+          conversationId: statusMatch?.[2] || "",
+          createdAt: time?.getAttribute("datetime") || "",
+          media,
+          sourceUrl: statusUrl,
+          mentionsTarget: new RegExp(`@${targetUsername}\\b`, "i").test(tweetText || fullText)
+        };
+      }).filter((row) => {
+        if (!row.id || !row.text || !row.authorUsername) return false;
+        if (row.authorUsername.toLowerCase() === targetUsername) return false;
+        return row.mentionsTarget || /create|launch|deploy|mint/i.test(row.text);
+      });
+    }, username);
+    log(`Browser notifications returned ${rows.length} candidate mention tweet(s).`);
+    return rows.map((row) => ({
+      id: String(row.id || ""),
+      text: String(row.text || ""),
+      authorId: String(row.authorId || ""),
+      authorUsername: String(row.authorUsername || "").replace(/^@/, ""),
+      conversationId: String(row.conversationId || row.id || ""),
+      createdAt: String(row.createdAt || ""),
+      media: Array.isArray(row.media) ? row.media : []
+    })).filter((tweet) => tweet.id && tweet.text);
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
 function sortTweetIdsAscending(a, b) {
   try {
     return BigInt(a.id) < BigInt(b.id) ? -1 : 1;
@@ -543,6 +618,11 @@ async function fetchMentionsFromConfiguredSource(state) {
   const source = cleanText(process.env.X_LAUNCH_MENTION_SOURCE || "twex", 20).toLowerCase();
 
   const errors = [];
+  if (source === "browser") {
+    const mentions = await fetchMentionsWithBrowser();
+    return dedupeMentions(mentions, state);
+  }
+
   if (source === "twex") {
     const combined = [];
     const notificationMode = cleanText(process.env.X_LAUNCH_TWEX_NOTIFICATIONS_MODE || "always", 20).toLowerCase();
@@ -583,7 +663,7 @@ async function fetchMentionsFromConfiguredSource(state) {
     return dedupeMentions(combined, state);
   }
 
-  throw new Error(`Unsupported X_LAUNCH_MENTION_SOURCE=${source}. Use twex.`);
+  throw new Error(`Unsupported X_LAUNCH_MENTION_SOURCE=${source}. Use browser or twex.`);
 }
 
 function firstImageUrl(tweet = {}) {
@@ -600,6 +680,41 @@ function extractLabeled(text, labels, stopLabels) {
   const stopPattern = stopLabels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const regex = new RegExp(`\\b(?:${labelPattern})\\b\\s*(?:is|=|:|-)?\\s+(.+?)(?=\\s+(?:and\\s+)?\\b(?:${stopPattern})\\b\\s*(?:is|=|:|-)?|$)`, "i");
   return cleanText(text.match(regex)?.[1] || "", 280).replace(/^["']|["']$/g, "");
+}
+
+function loadPlaywright() {
+  try {
+    return require("playwright");
+  } catch {
+    throw new Error("Playwright is not installed. Install it with: npm install --no-save --package-lock=false playwright@1.49.1 && npx playwright install chromium");
+  }
+}
+
+function parseCookieHeader(cookieHeader = "") {
+  return String(cookieHeader || "")
+    .split(";")
+    .map((part) => {
+      const index = part.indexOf("=");
+      if (index <= 0) return null;
+      const name = part.slice(0, index).trim();
+      const value = part.slice(index + 1).trim();
+      if (!name || !value) return null;
+      return { name, value };
+    })
+    .filter(Boolean);
+}
+
+function browserCookiesFromHeader(cookieHeader = "") {
+  const parsed = parseCookieHeader(cookieHeader);
+  const domains = [".x.com", ".twitter.com"];
+  return parsed.flatMap((cookie) => domains.map((domain) => ({
+    name: cookie.name,
+    value: cookie.value,
+    domain,
+    path: "/",
+    secure: true,
+    sameSite: "Lax"
+  })));
 }
 
 function inferLaunchpad(text = "") {
