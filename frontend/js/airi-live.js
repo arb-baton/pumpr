@@ -145,8 +145,8 @@ if (dom.terminal) {
   dom.terminal.setAttribute("aria-atomic", "false");
   dom.terminal.style.outline = "none";
   dom.terminal.addEventListener("focus", () => {
-    dom.terminal.style.outline = "2px solid #67f2aa";
-    dom.terminal.style.outlineOffset = "2px";
+    dom.terminal.style.outline = "3px solid #67f2aa";
+    dom.terminal.style.outlineOffset = "3px";
   });
   dom.terminal.addEventListener("blur", () => {
     dom.terminal.style.outline = "none";
@@ -155,7 +155,7 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use smaller scroll increments for smoother experience
-    const lineHeight = 4; // reduced line height for even smoother scroll
+    const lineHeight = 2; // further reduced line height for even smoother scroll
     const pageScroll = Math.floor(el.clientHeight * 0.5);
     let handled = false;
     switch (event.key) {
