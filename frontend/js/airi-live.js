@@ -154,30 +154,32 @@ if (dom.terminal) {
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const scrollAmount = 40;
+    // Use smaller scroll increments for smoother experience
+    const lineHeight = 20;
+    const pageScroll = Math.floor(el.clientHeight * 0.8);
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
         if (el.scrollTop < el.scrollHeight - el.clientHeight) {
-          el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + scrollAmount);
+          el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + lineHeight);
           handled = true;
         }
         break;
       case "ArrowUp":
         if (el.scrollTop > 0) {
-          el.scrollTop = Math.max(0, el.scrollTop - scrollAmount);
+          el.scrollTop = Math.max(0, el.scrollTop - lineHeight);
           handled = true;
         }
         break;
       case "PageDown":
         if (el.scrollTop < el.scrollHeight - el.clientHeight) {
-          el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + Math.floor(el.clientHeight * 0.9));
+          el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + pageScroll);
           handled = true;
         }
         break;
       case "PageUp":
         if (el.scrollTop > 0) {
-          el.scrollTop = Math.max(0, el.scrollTop - Math.floor(el.clientHeight * 0.9));
+          el.scrollTop = Math.max(0, el.scrollTop - pageScroll);
           handled = true;
         }
         break;
@@ -197,12 +199,12 @@ if (dom.terminal) {
         // Spacebar scrolls down, Shift+Space scrolls up
         if (event.shiftKey) {
           if (el.scrollTop > 0) {
-            el.scrollTop = Math.max(0, el.scrollTop - Math.floor(el.clientHeight * 0.9));
+            el.scrollTop = Math.max(0, el.scrollTop - pageScroll);
             handled = true;
           }
         } else {
           if (el.scrollTop < el.scrollHeight - el.clientHeight) {
-            el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + Math.floor(el.clientHeight * 0.9));
+            el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + pageScroll);
             handled = true;
           }
         }
@@ -427,7 +429,7 @@ function appendStreamLine(text, kind = "signal") {
   line.innerHTML = `<span>${formatTime()}</span>${escapeHtml(text)}`;
   dom.terminal.appendChild(line);
   while (dom.terminal.children.length > 24) dom.terminal.removeChild(dom.terminal.firstElementChild);
-  // Always scroll to bottom after adding a new line
+  // Always scroll to bottom after adding a new line for better UX
   dom.terminal.scrollTop = dom.terminal.scrollHeight;
   saveTerminal();
 }
