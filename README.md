@@ -185,9 +185,12 @@ X_LAUNCH_AUTOPILOT_ENABLED=true
 X_LAUNCH_ALLOW_PUBLIC=true
 X_LAUNCH_ALLOWED_USERNAMES=
 X_LAUNCH_LOOP_INTERVAL_SECONDS=30
+X_LAUNCH_LOOP_RUNS=360
+X_LAUNCH_PUBLIC_SEARCH_TERMS=@pumpr_fun
+X_LAUNCH_SELF_DISPATCH=true
 ```
 
-GitHub Actions schedules can only start roughly every five minutes, so the scheduled `X launch intake` workflow runs a bounded loop and checks public mentions every 30 seconds while the job is active. For always-on intake, run `npm run x:launch-intake:loop` on a worker host with the same secrets; set `X_LAUNCH_LOOP_RUNS=0` for continuous polling.
+GitHub Actions cannot start a fresh cron job every 30 seconds, so the `X launch intake` workflow runs as a warm worker: a push, manual run, or scheduled fallback starts a bounded loop that checks public mentions every 30 seconds, and `X_LAUNCH_SELF_DISPATCH=true` asks GitHub to start the next worker when the current one finishes. For an external always-on host, run `npm run x:launch-intake:loop` with the same secrets; set `X_LAUNCH_LOOP_RUNS=0` for continuous polling.
 
 For a fuller list, see `.env.example`.
 

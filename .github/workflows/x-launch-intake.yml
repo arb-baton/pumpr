@@ -12,10 +12,18 @@ on:
           - "true"
           - "false"
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0 */5 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/x-launch-intake.yml"
+      - "scripts/x-launch-intake.js"
+      - "scripts/x-launch-intake-loop.js"
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: x-launch-intake
@@ -37,8 +45,9 @@ jobs:
       X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES: ${{ vars.X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES || '0' }}
       X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES: ${{ vars.X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES || '0' }}
       X_LAUNCH_LOOP_INTERVAL_SECONDS: ${{ vars.X_LAUNCH_LOOP_INTERVAL_SECONDS || '30' }}
-      X_LAUNCH_LOOP_RUNS: ${{ vars.X_LAUNCH_LOOP_RUNS || '9' }}
+      X_LAUNCH_LOOP_RUNS: ${{ vars.X_LAUNCH_LOOP_RUNS || '360' }}
       X_LAUNCH_TWEX_READ_DELAY_MS: ${{ vars.X_LAUNCH_TWEX_READ_DELAY_MS || '5500' }}
+      X_LAUNCH_PUBLIC_SEARCH_TERMS: ${{ vars.X_LAUNCH_PUBLIC_SEARCH_TERMS || '@pumpr_fun' }}
       PUMPR_X_USERNAME: ${{ vars.PUMPR_X_USERNAME || 'pumpr_fun' }}
       PUMPR_X_USER_ID: ${{ vars.PUMPR_X_USER_ID || '' }}
       X_LAUNCH_INTAKE_STATE_PATH: cache/x-launch-intake-state.json
@@ -70,13 +79,21 @@ jobs:
           restore-keys: |
             x-launch-intake-
 
-      - name: Process @pumpr_fun launch mentions
-        if: github.event_name == 'workflow_dispatch'
-        run: node scripts/x-launch-intake.js
-
       - name: Poll @pumpr_fun launch mentions every 30 seconds
-        if: github.event_name == 'schedule'
         run: node scripts/x-launch-intake-loop.js
+
+      - name: Keep X launch intake warm
+        if: ${{ always() && vars.X_LAUNCH_SELF_DISPATCH != 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsSL \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/x-launch-intake.yml/dispatches \
+            -d '{"ref":"main","inputs":{"dry_run":"false"}}'
 
       - name: Save X launch intake memory
         if: always()
