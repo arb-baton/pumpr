@@ -1,21 +1,17 @@
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
 const STATE_PATH = process.env.X_LAUNCH_INTAKE_STATE_PATH || path.join(ROOT, "cache", "x-launch-intake-state.json");
 const QUEUE_PATH = process.env.X_LAUNCH_INTAKE_QUEUE_PATH || path.join(ROOT, "cache", "x-launch-queue.json");
 const APP_BASE_URL = String(process.env.APP_BASE_URL || process.env.PUBLIC_BASE_URL || "https://pump-r.fun").replace(/\/+$/, "");
-const X_API_BASE_URL = String(process.env.X_API_BASE_URL || "https://api.x.com").replace(/\/+$/, "");
-const TWEX_CREATE_URL = "https://api.twexapi.io/twitter/tweets/create";
-const TWEX_NOTIFICATIONS_URL = "https://api.twexapi.io/twitter/notifications";
-const TWEX_ADVANCED_SEARCH_URL = "https://api.twexapi.io/twitter/advanced_search";
 const MAX_MENTIONS = Math.max(5, Math.min(100, Number(process.env.X_LAUNCH_MAX_MENTIONS || 20)));
 const BROWSER_MENTION_URL = "https://x.com/notifications/mentions";
 const BROWSER_SEARCH_BASE_URL = "https://x.com/search";
 const MAX_STATE_IDS = 240;
 const EMPTY_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES || 0));
 const ACTIVE_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES || 0));
-const TWEX_READ_DELAY_MS = Math.max(0, Math.min(1000, Number(process.env.X_LAUNCH_TWEX_READ_DELAY_MS || 1000)));
 const RH_CHAIN_ID = 4663;
 const RH_DEFAULT_RPC_URL = "https://rpc.mainnet.chain.robinhood.com";
 const RH_DEPLOYMENT_PATH = path.join(ROOT, "frontend", "deployments", "4663.json");
@@ -168,30 +164,6 @@ function minutesSince(value = "") {
   return (Date.now() - ts) / 60_000;
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function twexRetryDelayMs(error) {
-  const message = String(error?.message || error || "");
-  const waitMatch = message.match(/wait\s+([\d.]+)\s*seconds/i);
-  if (waitMatch) return Math.ceil(Number(waitMatch[1]) * 1000) + 750;
-  const code = Number(error?.status || error?.payload?.code || 0);
-  return code === 429 || /rate limit/i.test(message) ? 5750 : 0;
-}
-
-async function withTwexRetry(label, task) {
-  try {
-    return await task();
-  } catch (error) {
-    const delayMs = twexRetryDelayMs(error);
-    if (!delayMs) throw error;
-    log(`Twex ${label} rate-limited; retrying in ${Math.ceil(delayMs / 1000)}s.`);
-    await sleep(delayMs);
-    return task();
-  }
-}
-
 function shouldSkipScheduledFetch(state = {}) {
   if (!isScheduledRun()) return false;
   if (hasPendingConversation(state)) return false;
@@ -272,37 +244,15 @@ async function fetchJson(url, options = {}) {
   return payload;
 }
 
-function twexApiKey() {
-  return String(
-    process.env.TWEXAPI_BEARER_TOKEN ||
-      process.env.TWITTERX_API_KEY ||
-      process.env.TWEX_API_KEY ||
-      ""
-  ).trim().replace(/^Bearer\s+/i, "");
-}
-
 function pumprCookie() {
   return String(
-    process.env.PUMPR_TWEX_X_COOKIE ||
-      process.env.TWEXAPI_PUMPR_X_COOKIE ||
+    process.env.PUMPR_X_COOKIE ||
       process.env.X_PUMPR_COOKIE ||
-      process.env.PUMPR_X_COOKIE ||
+      process.env.PUMPR_TWEX_X_COOKIE ||
+      process.env.TWEXAPI_PUMPR_X_COOKIE ||
       process.env.TWEXAPI_X_COOKIE ||
       ""
   ).trim();
-}
-
-function twexHeaders() {
-  const apiKey = twexApiKey();
-  if (!apiKey) throw new Error("Set TWEXAPI_BEARER_TOKEN so the worker can read mentions through TwexAPI.");
-  return {
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json"
-  };
-}
-
-function twexTweetUser(tweet = {}) {
-  return tweet.user || tweet.author || tweet.core?.user_results?.result || tweet.legacy?.user || {};
 }
 
 function mediaCandidate(value = "") {
@@ -408,125 +358,9 @@ async function relayLaunchImage(imageUrl = "") {
   return direct;
 }
 
-function normalizeTwexMedia(media = []) {
-  return (Array.isArray(media) ? media : [])
-    .map((item) => {
-      const url = mediaCandidate(item?.media_url_https) ||
-        mediaCandidate(item?.media_url) ||
-        mediaCandidate(item?.url) ||
-        mediaCandidate(item?.secure_url) ||
-        mediaCandidate(item?.image_url) ||
-        mediaCandidate(item?.image?.url) ||
-        mediaCandidate(item?.original?.url) ||
-        mediaCandidate(item?.expanded_url);
-      const preview = mediaCandidate(item?.preview_image_url) ||
-        mediaCandidate(item?.thumbnail_url) ||
-        mediaCandidate(item?.thumb?.url) ||
-        mediaCandidate(item?.media_url_https) ||
-        mediaCandidate(item?.media_url);
-      return {
-        type: item?.type || item?.media_type || item?.kind || "photo",
-        url,
-        preview_image_url: preview
-      };
-    })
-    .filter((item) => item.url || item.preview_image_url);
-}
-
-function twexTweetMedia(tweet = {}) {
-  return [
-    ...normalizeTwexMedia(tweet.media),
-    ...normalizeTwexMedia(tweet.photos),
-    ...normalizeTwexMedia(tweet.attachments?.media),
-    ...normalizeTwexMedia(tweet.entities?.media),
-    ...normalizeTwexMedia(tweet.extended_entities?.media),
-    ...normalizeTwexMedia(tweet.legacy?.entities?.media),
-    ...normalizeTwexMedia(tweet.legacy?.extended_entities?.media)
-  ];
-}
-
-function normalizeTwexTweet(tweet = {}, notification = null) {
-  const user = twexTweetUser(tweet);
-  const id = String(tweet.tweet_id || tweet.id || tweet.rest_id || tweet.legacy?.id_str || notification?.id || "").trim();
-  const text = String(tweet.full_text || tweet.text || tweet.legacy?.full_text || tweet.legacy?.text || notification?.message || "").trim();
-  const authorId = String(tweet.author_id || tweet.user_id || user.id || user.rest_id || user.id_str || notification?.from_user?.id || "").trim();
-  const authorUsername = String(
-    tweet.author_username ||
-      tweet.username ||
-      user.username ||
-      user.screen_name ||
-      user.legacy?.screen_name ||
-      notification?.from_user?.username ||
-      notification?.from_user?.screen_name ||
-      ""
-  ).replace(/^@/, "");
-  return {
-    id,
-    text,
-    authorId,
-    authorUsername,
-    conversationId: String(tweet.conversation_id || tweet.conversation_id_str || tweet.legacy?.conversation_id_str || id || ""),
-    createdAt: String(tweet.created_at_datetime || tweet.created_at || tweet.legacy?.created_at || notification?.timestamp_ms || ""),
-    media: twexTweetMedia(tweet)
-  };
-}
-
-async function fetchMentionsWithTwexNotifications(state = {}) {
-  const cookie = pumprCookie();
-  if (!cookie) throw new Error("Set PUMPR_TWEX_X_COOKIE so TwexAPI can read @pumpr_fun mention notifications.");
-  const notificationType = hasPendingConversation(state) ? "All" : "Mentions";
-  const payload = await withTwexRetry("notifications", () => fetchJson(TWEX_NOTIFICATIONS_URL, {
-    method: "POST",
-    headers: twexHeaders(),
-    body: JSON.stringify({ cookie, type: notificationType })
-  }));
-  const rows = Array.isArray(payload?.data) ? payload.data : [];
-  const pendingIds = new Set(Object.keys(state.pendingByConversation || {}));
-  return rows
-    .map((row) => normalizeTwexTweet(row?.tweet || row, row))
-    .filter((tweet) => {
-      if (!tweet.id || !tweet.text) return false;
-      if (notificationType !== "All") return true;
-      return pendingIds.has(tweet.conversationId) || /@pumpr_fun\b/i.test(tweet.text);
-    });
-}
-
-async function fetchMentionsWithTwexSearch() {
-  const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim();
-  const configuredTerms = String(process.env.X_LAUNCH_PUBLIC_SEARCH_TERMS || process.env.X_LAUNCH_PUBLIC_SEARCH_TERM || "")
-    .split(/\r?\n|\|/)
-    .map((term) => term.trim())
-    .filter(Boolean);
-  const searchTerms = [...new Set([
-    ...configuredTerms,
-    `@${username}`,
-    `"@${username}"`,
-    `to:${username}`,
-    username,
-    `"${username}"`
-  ].filter(Boolean))];
-  log(`Twex public search terms: ${searchTerms.join(" | ")}`);
-  const terms = searchTerms.slice(0, 5);
-  const payload = await withTwexRetry(`public search ${terms.join(" | ")}`, () => fetchJson(TWEX_ADVANCED_SEARCH_URL, {
-    method: "POST",
-    headers: twexHeaders(),
-    body: JSON.stringify({
-      searchTerms: terms,
-      maxItems: MAX_MENTIONS,
-      sortBy: "Latest"
-    })
-  }));
-  const rows = Array.isArray(payload?.data) ? payload.data : [];
-  log(`Twex public search returned ${rows.length} raw tweet(s) for ${terms.length} term(s).`);
-  return rows
-    .map((row) => normalizeTwexTweet(row))
-    .filter((tweet) => tweet.id && tweet.text)
-    .filter((tweet) => tweet.authorUsername.toLowerCase() !== username.toLowerCase());
-}
-
 async function fetchMentionsWithBrowser() {
   const cookie = pumprCookie();
-  if (!cookie) throw new Error("Set PUMPR_TWEX_X_COOKIE so the browser mention watcher can open @pumpr_fun notifications.");
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser mention watcher can open @pumpr_fun notifications.");
   const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim().toLowerCase();
   const searchUrl = `${BROWSER_SEARCH_BASE_URL}?q=${encodeURIComponent(`@${username} (create OR launch OR deploy OR mint)`)}&src=typed_query&f=live`;
   const { chromium } = loadPlaywright();
@@ -628,55 +462,12 @@ function dedupeMentions(tweets = [], state = {}) {
 }
 
 async function fetchMentionsFromConfiguredSource(state) {
-  const source = cleanText(process.env.X_LAUNCH_MENTION_SOURCE || "twex", 20).toLowerCase();
-
-  const errors = [];
+  const source = cleanText(process.env.X_LAUNCH_MENTION_SOURCE || "browser", 20).toLowerCase();
   if (source === "browser") {
     const mentions = await fetchMentionsWithBrowser();
     return dedupeMentions(mentions, state);
   }
-
-  if (source === "twex") {
-    const combined = [];
-    const notificationMode = cleanText(process.env.X_LAUNCH_TWEX_NOTIFICATIONS_MODE || "always", 20).toLowerCase();
-    const searchMode = cleanText(process.env.X_LAUNCH_TWEX_SEARCH_MODE || "off", 20).toLowerCase();
-    const shouldFetchNotifications = notificationMode === "always" || (notificationMode !== "off" && hasPendingConversation(state));
-    if (shouldFetchNotifications) {
-      try {
-        const notifications = await fetchMentionsWithTwexNotifications(state);
-        const label = hasPendingConversation(state) ? "all/pending-thread" : "mention";
-        log(`Twex notifications returned ${notifications.length} ${label} notification(s).`);
-        combined.push(...notifications);
-      } catch (error) {
-        errors.push(`notifications: ${error.message || error}`);
-        log(`Twex notifications unavailable: ${error.message || error}`);
-      }
-    } else {
-      log(`Twex notifications skipped (${notificationMode}); public search handles fresh mentions.`);
-    }
-
-    if (shouldFetchNotifications && TWEX_READ_DELAY_MS > 0) {
-      await sleep(TWEX_READ_DELAY_MS);
-    }
-
-    const shouldFetchSearch = searchMode === "always" || (searchMode === "fallback" && combined.length === 0);
-    if (shouldFetchSearch) {
-      try {
-        const search = await fetchMentionsWithTwexSearch();
-        log(`Twex public search returned ${search.length} mention tweet(s).`);
-        combined.push(...search);
-      } catch (error) {
-        errors.push(`search: ${error.message || error}`);
-        log(`Twex search unavailable: ${error.message || error}`);
-      }
-    } else {
-      log(`Twex public search skipped (${searchMode}); notification mentions are the low-credit source.`);
-    }
-
-    return dedupeMentions(combined, state);
-  }
-
-  throw new Error(`Unsupported X_LAUNCH_MENTION_SOURCE=${source}. Use browser or twex.`);
+  throw new Error(`Unsupported X_LAUNCH_MENTION_SOURCE=${source}. Use browser.`);
 }
 
 function firstImageUrl(tweet = {}) {
@@ -901,37 +692,87 @@ function replyTextForMissing(request) {
   return `I can prep this launch, but I still need: ${human}. Reply in the same thread and attach the image if needed.`;
 }
 
-async function replyWithTwex(tweetId, text) {
-  const apiKey = twexApiKey();
-  const cookie = pumprCookie();
-  if (!apiKey || !cookie) return { skipped: true, reason: "missing_twex_credentials" };
-  const response = await fetch(TWEX_CREATE_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      tweet_content: text,
-      cookie,
-      reply_tweet_id: tweetId,
-      reply_to_tweet_id: tweetId,
-      in_reply_to_tweet_id: tweetId
-    })
-  });
-  const payload = await response.json().catch(async () => ({ raw: await response.text().catch(() => "") }));
-  if (!response.ok || Number(payload?.code || response.status) >= 400) {
-    throw new Error(payload?.msg || payload?.message || payload?.raw || `Twex reply failed: ${response.status}`);
-  }
-  return payload;
+function extensionForMime(mime = "") {
+  const clean = String(mime || "").split(";")[0].trim().toLowerCase();
+  if (clean === "image/png") return ".png";
+  if (clean === "image/webp") return ".webp";
+  if (clean === "image/gif") return ".gif";
+  return ".jpg";
 }
 
-async function postReply(tweetId, text) {
+async function downloadReplyMedia(mediaUrl = "") {
+  const direct = mediaCandidate(mediaUrl);
+  if (!direct) return "";
+  const response = await fetch(direct, {
+    headers: {
+      Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      "User-Agent": "Pump-r-X-Launch/1.0"
+    }
+  });
+  if (!response.ok) throw new Error(`Reply image fetch failed: ${response.status}`);
+  const contentType = String(response.headers.get("content-type") || imageMimeFromUrl(direct)).split(";")[0].trim().toLowerCase();
+  if (!contentType.startsWith("image/")) throw new Error(`Reply image is ${contentType || "not an image"}`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!buffer.length) throw new Error("Reply image was empty.");
+  if (buffer.length > 5 * 1024 * 1024) throw new Error("Reply image is larger than 5 MB.");
+  const filePath = path.join(os.tmpdir(), `pumpr-x-reply-${Date.now()}-${Math.random().toString(16).slice(2)}${extensionForMime(contentType)}`);
+  fs.writeFileSync(filePath, buffer);
+  return filePath;
+}
+
+async function replyWithBrowser(tweetId, text, mediaUrl = "") {
+  const cookie = pumprCookie();
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser reply worker can open @pumpr_fun.");
+  const { chromium } = loadPlaywright();
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--disable-dev-shm-usage", "--no-sandbox"]
+  });
+  let mediaPath = "";
+  try {
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    });
+    await context.addCookies(browserCookiesFromHeader(cookie));
+    const page = await context.newPage();
+    await page.goto(`https://x.com/i/status/${encodeURIComponent(String(tweetId))}`, { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.waitForTimeout(3500);
+
+    const composer = page.locator('[data-testid="tweetTextarea_0"]').first();
+    await composer.waitFor({ state: "visible", timeout: 25_000 });
+    await composer.click();
+    await composer.fill(text);
+
+    if (mediaUrl) {
+      try {
+        mediaPath = await downloadReplyMedia(mediaUrl);
+        const fileInput = page.locator('input[data-testid="fileInput"][type="file"], input[type="file"]').first();
+        await fileInput.setInputFiles(mediaPath);
+        await page.waitForTimeout(2500);
+      } catch (error) {
+        log(`Browser reply image attach skipped: ${error.message || error}`);
+      }
+    }
+
+    const replyButton = page.locator('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]').last();
+    await replyButton.waitFor({ state: "visible", timeout: 20_000 });
+    await replyButton.click();
+    await page.waitForTimeout(4500);
+    log(`Browser reply posted to ${tweetId}.`);
+    return { ok: true, method: "browser" };
+  } finally {
+    await browser.close().catch(() => {});
+    if (mediaPath) fs.rmSync(mediaPath, { force: true });
+  }
+}
+
+async function postReply(tweetId, text, mediaUrl = "") {
   if (isTruthy(process.env.X_LAUNCH_DRY_RUN)) {
     log(`Dry run reply to ${tweetId}: ${text}`);
     return { skipped: true, reason: "dry_run" };
   }
-  return replyWithTwex(tweetId, text);
+  return replyWithBrowser(tweetId, text, mediaUrl);
 }
 
 function appendQueue(request, status, extra = {}) {
@@ -1007,7 +848,10 @@ async function launchPumpFun(request) {
       versionedTransaction: Boolean(launchPayload.versionedTransaction)
     })
   });
-  return finalized;
+  return {
+    ...finalized,
+    replyImageUrl: imageUri || request.imageUrl || ""
+  };
 }
 
 function robinhoodRpcUrl() {
@@ -1121,6 +965,7 @@ async function launchRobinhood(request) {
     signature: receipt?.hash || tx.hash,
     txHash: receipt?.hash || tx.hash,
     tokenUrl,
+    replyImageUrl: imageUri || request.imageUrl || "",
     explorerUrl: `${String(deployment.blockExplorerUrl || "https://robinhoodchain.blockscout.com").replace(/\/+$/, "")}/tx/${receipt?.hash || tx.hash}`,
     creator: signer.address
   };
@@ -1261,7 +1106,7 @@ async function handleLaunchRequest(tweet, classification, state) {
     explorerUrl: result.explorerUrl,
     at: new Date().toISOString()
   });
-  await postReply(tweet.id, launchSuccessReply(tweet, request, result));
+  await postReply(tweet.id, launchSuccessReply(tweet, request, result), result.replyImageUrl || request.imageUrl || "");
   return "launched";
 }
 
@@ -1305,7 +1150,7 @@ async function main() {
   const mockPayload = mockPath ? readJson(mockPath, []) : null;
   if (!mockPath && shouldSkipScheduledFetch(state)) {
     const waitMinutes = Number(state.lastFetchMentionCount || 0) > 0 ? ACTIVE_FETCH_BACKOFF_MINUTES : EMPTY_FETCH_BACKOFF_MINUTES;
-    log(`Skipping Twex mention fetch; last check found ${state.lastFetchMentionCount || 0} new mention(s) ${minutesSince(state.lastFetchAt).toFixed(1)} minutes ago. Backoff is ${waitMinutes} minutes.`);
+    log(`Skipping browser mention fetch; last check found ${state.lastFetchMentionCount || 0} new mention(s) ${minutesSince(state.lastFetchAt).toFixed(1)} minutes ago. Backoff is ${waitMinutes} minutes.`);
     writeState(state);
     return;
   }
@@ -1313,7 +1158,7 @@ async function main() {
     ? (Array.isArray(mockPayload) ? mockPayload : mockPayload && typeof mockPayload === "object" ? [mockPayload] : [])
     : await fetchMentionsFromConfiguredSource(state);
   if (!mockPath) {
-    recordFetchResult(state, process.env.X_LAUNCH_MENTION_SOURCE || "twex", mentions.length);
+    recordFetchResult(state, process.env.X_LAUNCH_MENTION_SOURCE || "browser", mentions.length);
   }
   log(`Fetched ${mentions.length} mention(s).`);
   const results = {};
