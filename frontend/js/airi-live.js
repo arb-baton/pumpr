@@ -141,6 +141,8 @@ const dom = {
 if (dom.terminal) {
   dom.terminal.setAttribute("tabindex", "0");
   dom.terminal.setAttribute("role", "log");
+  dom.terminal.setAttribute("aria-live", "polite");
+  dom.terminal.setAttribute("aria-atomic", "false");
   dom.terminal.style.outline = "none";
   dom.terminal.addEventListener("focus", () => {
     dom.terminal.style.outline = "2px solid #67f2aa";
