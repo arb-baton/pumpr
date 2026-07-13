@@ -8,7 +8,7 @@ on:
         required: false
         default: ""
   schedule:
-    - cron: "17 */2 * * *"
+    - cron: "*/30 * * * *"
 
 permissions:
   contents: read
@@ -28,8 +28,8 @@ jobs:
       AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
       AIRI_TWEET_REQUIRE_POST: ${{ vars.AIRI_TWEET_REQUIRE_POST || 'true' }}
       AIRI_TWEET_MAX_CHARS: ${{ vars.AIRI_TWEET_MAX_CHARS || '180' }}
-      AIRI_WORLD_POST_CHANCE: ${{ vars.AIRI_WORLD_POST_CHANCE || '0.7' }}
-      AIRI_WORLD_MIN_HOURS: ${{ vars.AIRI_WORLD_MIN_HOURS || '3' }}
+      AIRI_WORLD_POST_CHANCE: ${{ vars.AIRI_WORLD_POST_CHANCE || '0.9' }}
+      AIRI_WORLD_MIN_HOURS: ${{ vars.AIRI_WORLD_MIN_HOURS || '1' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_AIRI_TWEET_MODEL: ${{ vars.OPENAI_AIRI_TWEET_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
       TWEXAPI_ALLOW_AUTO_COOKIE: ${{ vars.TWEXAPI_ALLOW_AUTO_COOKIE || 'false' }}

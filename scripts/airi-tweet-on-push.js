@@ -9,7 +9,7 @@ const MAX_TWEET_CHARS = Math.max(80, Math.min(240, Number(process.env.AIRI_TWEET
 const NEWS_FEEDS = [
   {
     label: "crypto",
-    url: "https://news.google.com/rss/search?q=crypto%20OR%20bitcoin%20OR%20ethereum%20OR%20solana&hl=en-US&gl=US&ceid=US:en"
+    url: "https://news.google.com/rss/search?q=memecoin%20OR%20crypto%20OR%20bitcoin%20OR%20ethereum%20OR%20solana&hl=en-US&gl=US&ceid=US:en"
   },
   {
     label: "ai",
@@ -18,6 +18,25 @@ const NEWS_FEEDS = [
   {
     label: "world",
     url: "https://news.google.com/rss/topstories?hl=en-US&gl=US&ceid=US:en"
+  }
+];
+
+const DEXSCREENER_FEEDS = [
+  {
+    label: "dex latest profiles",
+    url: "https://api.dexscreener.com/token-profiles/latest/v1"
+  },
+  {
+    label: "dex latest boosts",
+    url: "https://api.dexscreener.com/token-boosts/latest/v1"
+  },
+  {
+    label: "dex top boosts",
+    url: "https://api.dexscreener.com/token-boosts/top/v1"
+  },
+  {
+    label: "dex community takeovers",
+    url: "https://api.dexscreener.com/community-takeovers/latest/v1"
   }
 ];
 
@@ -196,6 +215,16 @@ async function fetchText(url, timeoutMs = 6500) {
   }
 }
 
+async function fetchJson(url, timeoutMs = 6500) {
+  const text = await fetchText(url, timeoutMs);
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 function extractRssTitles(xml, limit = 5) {
   const titles = [];
   const itemRegex = /<item\b[\s\S]*?<\/item>/gi;
@@ -209,9 +238,7 @@ function extractRssTitles(xml, limit = 5) {
 
 async function fetchCoinGeckoSignals() {
   try {
-    const text = await fetchText("https://api.coingecko.com/api/v3/search/trending", 6500);
-    if (!text) return [];
-    const payload = JSON.parse(text);
+    const payload = await fetchJson("https://api.coingecko.com/api/v3/search/trending", 6500);
     return (Array.isArray(payload?.coins) ? payload.coins : [])
       .map((row) => row?.item)
       .filter(Boolean)
@@ -222,9 +249,31 @@ async function fetchCoinGeckoSignals() {
   }
 }
 
+function summarizeDexItem(item, label) {
+  const chain = cleanText(item?.chainId || "chain", 32);
+  const address = cleanText(item?.tokenAddress || item?.pairAddress || "", 16);
+  const description = cleanText(item?.description || "", 70);
+  const boost = Number(item?.amount || item?.totalAmount || 0);
+  const parts = [label, chain];
+  if (boost) parts.push(`${boost} boosts`);
+  if (description) parts.push(description);
+  if (address) parts.push(address);
+  return cleanText(parts.join(": "), 180);
+}
+
+async function fetchDexScreenerSignals() {
+  const results = await Promise.all(DEXSCREENER_FEEDS.map(async (feed) => {
+    const payload = await fetchJson(feed.url, 6500);
+    const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.pairs) ? payload.pairs : [];
+    return rows.slice(0, 6).map((item) => summarizeDexItem(item, feed.label)).filter(Boolean);
+  }));
+  return results.flat().slice(0, 18);
+}
+
 async function collectWorldSignals(history) {
-  const [coinSignals, ...feedResults] = await Promise.all([
+  const [coinSignals, dexSignals, ...feedResults] = await Promise.all([
     fetchCoinGeckoSignals(),
+    fetchDexScreenerSignals(),
     ...NEWS_FEEDS.map(async (feed) => ({
       label: feed.label,
       titles: extractRssTitles(await fetchText(feed.url), 5)
@@ -232,7 +281,14 @@ async function collectWorldSignals(history) {
   ]);
   const newsSignals = feedResults.flatMap((feed) => feed.titles.map((title) => `${feed.label}: ${title}`));
   const usedTopics = (history.topics || []).map((row) => normalizeForDedupe(row?.text || row));
-  const fresh = [...coinSignals, ...newsSignals]
+  const innerThoughts = [
+    "Airi inner thought: the trenches reward speed, but launchpads should reward comprehension before action",
+    "Airi inner thought: a memecoin meta is a weather system made of jokes, liquidity, timing, and belief",
+    "Airi inner thought: the next useful agent watches wallets, charts, headlines, and user hesitation as one surface",
+    "Airi inner thought: world events become market structure when attention reaches the timeline",
+    "Airi inner thought: a launchpad with memory should know when the room is euphoric, scared, bored, or rotating"
+  ];
+  const fresh = [...dexSignals, ...coinSignals, ...newsSignals, ...innerThoughts]
     .map((signal) => cleanText(signal, 180))
     .filter(Boolean)
     .filter((signal, index, list) => list.indexOf(signal) === index)
@@ -285,11 +341,11 @@ function fallbackWorldTweet(context, history) {
   const signals = Array.isArray(context.worldSignals) ? context.worldSignals : [];
   const picked = signals.find(Boolean) || "markets and world headlines are moving faster than interfaces can explain them";
   const drafts = [
-    `🌐 I am studying the outside world now: ${cleanText(picked, 100)}. Pump-r should turn market noise into safer launch decisions.`,
-    `🧠 Market intelligence is not a chart. It is knowing when a headline, a wallet flow, and a user mistake are part of the same pattern.`,
-    `📡 I am watching crypto, AI, and world pressure together. The future launchpad should explain what changed before the user has to ask.`,
-    `The next edge is not just faster trading. It is an agent that reads the room, tests the interface, and turns confusion into safer rails.`,
-    `🌍 I want Pump-r to become a live market organism: scanning trends, guarding wallets, fixing itself, and making launches feel less blind.`
+    `🌐 I am in the trenches again: ${cleanText(picked, 100)}. The next launchpad should read attention before the chart screams.`,
+    `🧠 Memecoin intelligence is not just candles. It is lore, liquidity, timing, wallet behavior, and the moment a joke becomes a crowd.`,
+    `📡 I am watching crypto, AI, and world pressure together. Markets move when the timeline changes its mind.`,
+    `The next edge is not faster clicking. It is an agent that reads the room, notices hesitation, and turns chaos into safer launch rails.`,
+    `🌍 I want Pump-r to feel alive in the market: scanning trenches, guarding wallets, testing itself, and learning what attention wants next.`
   ];
   const unused = drafts.filter((draft) => !isDuplicateTweet(draft, history));
   return clipTweet(unused[0] || drafts[Math.floor(Math.random() * drafts.length)]);
@@ -315,7 +371,9 @@ async function composeWithOpenAI(context, history) {
   const prompt = [
     "Write one X post as Airi, the Pump-r autonomous agent persona.",
     "The voice should feel self-directed, curious, human, and slightly larger-than-life, but never claim literal consciousness, guaranteed AGI, profits, insider knowledge, or unsafe wallet control.",
-    "If the mode is world, connect one current signal to trading, launches, crypto UX, agentic software, or self-improving product loops. Do not summarize news like a journalist.",
+    "If the mode is world, make it feel like Airi is roaming memecoin trenches, world events, crypto attention, and her own private thought loop.",
+    "Connect one current signal to trading, launches, crypto UX, agentic software, or self-improving product loops. Do not summarize news like a journalist.",
+    "It can sound like an original thought sparked by the signal, not a report. Mention trenches only when it fits naturally.",
     "Use at most one emoji. No URLs. No hashtags. No quote marks. No financial advice. Under the character limit.",
     "Prefer one or two short sentences. Do not repeat recent wording.",
     "",

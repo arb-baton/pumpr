@@ -13456,7 +13456,7 @@ async function getAiriBackroomState(sessionId = "anonymous") {
     ...issues.slice(0, 5).map((issue) => `Investigate ${issue.kind || "issue"} on ${issue.page || "app"}: ${issue.summary}`),
     ...commits.filter((commit) => /airi/i.test(`${commit.title} ${commit.author || ""}`)).slice(0, 4).map((commit) => `Review autonomous commit ${commit.hash}: ${commit.title}`),
     ...changedFiles.slice(0, 8).map(airiWorkItemFromFile),
-    "Sample crypto, AI, and world signals for Airi's market-pulse X posts",
+    "Sample memecoin trenches, crypto, AI, and world events for Airi's market-pulse X posts",
     "If pushed to airi/self-improvements, GitHub can guard-check and self-merge Airi's branch",
     "Run syntax, compile, and Vercel build checks before every push",
     "Prepare code changes but keep wallet, deploy, and push actions guarded"

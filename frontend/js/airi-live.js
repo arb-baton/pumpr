@@ -31,7 +31,7 @@ const fallbackTasks = [
   },
   {
     title: "Reading the outside world",
-    body: "Sampling crypto, AI, and world signals so public posts can connect market pressure back to safer launch decisions.",
+    body: "Sampling memecoin trenches, crypto attention, AI shifts, and world events so public posts feel like live market thought.",
     signal: "world"
   },
   {
@@ -75,14 +75,14 @@ const fallbackMemories = [
   "Robinhood Chain launches should feel live, clean, and Uniswap-native.",
   "Airi should speak with symbols, voice, memory, and presence.",
   "Wallet actions, spending, posting, and launches still need approval.",
-  "Airi is watching crypto, AI, and world signals for public market-pulse posts."
+  "Airi is watching memecoin trenches, crypto, AI, and world events for public market-pulse posts."
 ];
 
 const fallbackQueue = [
   "Wake on GitHub schedule, write one safe code patch, and push airi/self-improvements.",
   "Watch Pump-r pages for broken flows and stalled launch states.",
   "Draft Airi's public X voice without leaking implementation details.",
-  "Gather live crypto, AI, and world signals for Airi's next market-pulse post.",
+  "Gather live memecoin trench, crypto, AI, and world-event signals for Airi's next market-pulse thought.",
   "Map repeated user asks into durable preferences.",
   "Keep livestream motion active without depending on chat input.",
   "Prepare the next interface compression."
