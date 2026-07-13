@@ -155,8 +155,8 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use smaller scroll increments for smoother experience
-    const lineHeight = 2;
-    const pageScroll = Math.floor(el.clientHeight * 0.5);
+    const lineHeight = 8;
+    const pageScroll = Math.floor(el.clientHeight * 0.7);
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
