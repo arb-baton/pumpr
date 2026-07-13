@@ -4,7 +4,8 @@ const path = require("path");
 const TWEX_CREATE_URL = "https://api.twexapi.io/twitter/tweets/create";
 const TWEX_AUTO_COOKIE_URL = "https://api.twexapi.io/twitter/post-tweet-without-cookie";
 const HISTORY_PATH = process.env.AIRI_TWEET_HISTORY_PATH || path.join(process.cwd(), ".airi-tweet-history.json");
-const MAX_TWEET_CHARS = Math.max(80, Math.min(240, Number(process.env.AIRI_TWEET_MAX_CHARS || 180)));
+const MAX_TWEET_CHARS = Math.max(80, Math.min(160, Number(process.env.AIRI_TWEET_MAX_CHARS || 125)));
+const DANGLING_ENDING_RE = /\b(a|an|and|as|at|because|but|by|for|from|if|in|into|like|of|on|or|so|that|the|then|to|with|without|while)\.?$/i;
 
 const NEWS_FEEDS = [
   {
@@ -58,20 +59,34 @@ function clipTweet(text) {
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]+\n/g, "\n")
     .trim();
-  if (clean.length <= MAX_TWEET_CHARS) return clean;
   const singleLine = clean.replace(/\s*\n+\s*/g, " ");
-  if (singleLine.length <= MAX_TWEET_CHARS) return singleLine;
+  if (singleLine.length <= MAX_TWEET_CHARS && !DANGLING_ENDING_RE.test(singleLine)) {
+    return /[.!?)]$/.test(singleLine) ? singleLine : `${singleLine}.`;
+  }
+
+  const completeSentences = singleLine.match(/[^.!?]+[.!?]+/g) || [];
+  for (let index = completeSentences.length - 1; index >= 0; index -= 1) {
+    const candidate = completeSentences.slice(0, index + 1).join(" ").replace(/\s+/g, " ").trim();
+    if (candidate.length <= MAX_TWEET_CHARS && candidate.length >= 35 && !DANGLING_ENDING_RE.test(candidate)) {
+      return candidate;
+    }
+  }
+
   const slice = singleLine.slice(0, MAX_TWEET_CHARS + 1);
   const boundary = Math.max(
     slice.lastIndexOf(". "),
     slice.lastIndexOf("! "),
     slice.lastIndexOf("? "),
     slice.lastIndexOf("; "),
-    slice.lastIndexOf(", "),
     slice.lastIndexOf(" ")
   );
-  const end = boundary >= Math.floor(MAX_TWEET_CHARS * 0.62) ? boundary : MAX_TWEET_CHARS;
-  return singleLine.slice(0, end).trim().replace(/[.,;:!?-]+$/, "");
+  let candidate = singleLine.slice(0, boundary >= 45 ? boundary : MAX_TWEET_CHARS).trim().replace(/[.,;:!?-]+$/, "");
+  candidate = candidate.replace(/\s+\S{0,12}$/u, (tail) => (DANGLING_ENDING_RE.test(tail.trim()) ? "" : tail)).trim();
+  while (DANGLING_ENDING_RE.test(candidate) && candidate.includes(" ")) {
+    candidate = candidate.replace(/\s+\S+$/u, "").trim();
+  }
+  if (!candidate) candidate = "watching the trenches. taking notes.";
+  return /[.!?)]$/.test(candidate) ? candidate : `${candidate}.`;
 }
 
 function readJsonFile(file, fallback) {
@@ -341,11 +356,11 @@ function fallbackWorldTweet(context, history) {
   const signals = Array.isArray(context.worldSignals) ? context.worldSignals : [];
   const picked = signals.find(Boolean) || "markets and world headlines are moving faster than interfaces can explain them";
   const drafts = [
-    `just saw this in the trenches: ${cleanText(picked, 92)}. the market is basically a group chat with liquidity.`,
-    `memecoin alpha is 20% chart, 30% timing, 50% everyone suddenly pretending the joke was obvious yesterday`,
-    `the timeline changed its mood again. i am taking notes like a launchpad intern with a spreadsheet problem`,
-    `some tokens do not launch, they escape containment. i want Pump-r to notice that before the chart gets theatrical`,
-    `world news hits crypto like weather. trenches turn it into folklore, tickers, and bad decisions at impressive speed`
+    `trenches note: ${cleanText(picked, 58)}. markets are group chats with liquidity.`,
+    "memecoin alpha is timing, lore, and everyone acting like the joke was obvious yesterday.",
+    "timeline mood changed again. taking notes with a launchpad intern brain.",
+    "some tokens do not launch. they escape containment.",
+    "world news hits crypto like weather. trenches turn it into tickers."
   ];
   const unused = drafts.filter((draft) => !isDuplicateTweet(draft, history));
   return clipTweet(unused[0] || drafts[Math.floor(Math.random() * drafts.length)]);
@@ -377,7 +392,8 @@ async function composeWithOpenAI(context, history) {
     "Avoid corporate AI words like revolutionary, ecosystem, leverage, unlock, seamless, optimize, paradigm, robust, and intelligence layer.",
     "Prefer jokes, odd observations, dry one-liners, and specific market texture. Lowercase is allowed. Slang is allowed if it feels natural.",
     "Use at most one emoji. No URLs. No hashtags. No quote marks. No financial advice. Under the character limit.",
-    "Prefer one or two short sentences. Do not repeat recent wording. Do not sound like a press release.",
+    "Write one complete thought that can fit in the X profile feed preview. No cliffhanger endings, no trailing setup words, no unfinished clauses.",
+    "Prefer one short sentence. Do not repeat recent wording. Do not sound like a press release.",
     "",
     `Character limit: ${MAX_TWEET_CHARS}`,
     `Mode: ${context.mode}`,
