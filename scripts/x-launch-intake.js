@@ -153,7 +153,7 @@ function bearerToken() {
       process.env.X_BEARER_TOKEN ||
       process.env.TWITTER_BEARER_TOKEN ||
       ""
-  ).trim();
+  ).trim().replace(/^Bearer\s+/i, "");
 }
 
 async function resolvePumprUserId() {
