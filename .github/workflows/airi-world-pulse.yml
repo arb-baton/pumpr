@@ -32,10 +32,7 @@ jobs:
       AIRI_WORLD_MIN_HOURS: ${{ vars.AIRI_WORLD_MIN_HOURS || '1' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_AIRI_TWEET_MODEL: ${{ vars.OPENAI_AIRI_TWEET_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
-      TWEXAPI_ALLOW_AUTO_COOKIE: ${{ vars.TWEXAPI_ALLOW_AUTO_COOKIE || 'false' }}
-      TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN || secrets.TWITTERX_API_KEY || secrets.TWEX_API_KEY || secrets.AIRI_TWEX_API_KEY || secrets.AIRI_TWITTERX_API_KEY }}
-      TWEXAPI_X_COOKIE: ${{ secrets.TWEXAPI_X_COOKIE || secrets.TWITTER_X_COOKIE || secrets.X_COOKIE || secrets.AIRI_X_COOKIE || secrets.AIRI_TWITTER_COOKIE }}
-      TWEXAPI_PROXY: ${{ secrets.TWEXAPI_PROXY }}
+      AIRI_X_COOKIE: ${{ secrets.AIRI_X_COOKIE || secrets.AIRI_TWITTER_COOKIE || secrets.TWITTER_X_COOKIE || secrets.X_COOKIE || secrets.TWEXAPI_X_COOKIE }}
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -44,6 +41,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      - name: Install browser poster
+        run: |
+          npm install --no-save --package-lock=false playwright@1.49.1
+          npx playwright install chromium
 
       - name: Restore Airi tweet memory
         uses: actions/cache/restore@v4

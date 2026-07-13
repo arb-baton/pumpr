@@ -1,8 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 
-const TWEX_CREATE_URL = "https://api.twexapi.io/twitter/tweets/create";
-const TWEX_AUTO_COOKIE_URL = "https://api.twexapi.io/twitter/post-tweet-without-cookie";
 const HISTORY_PATH = process.env.AIRI_TWEET_HISTORY_PATH || path.join(process.cwd(), ".airi-tweet-history.json");
 const MAX_TWEET_CHARS = Math.max(80, Math.min(160, Number(process.env.AIRI_TWEET_MAX_CHARS || 125)));
 const DANGLING_ENDING_RE = /\b(a|an|and|as|at|because|but|by|for|from|if|in|into|like|of|on|or|so|that|the|then|to|with|without|while)\.?$/i;
@@ -52,6 +50,52 @@ function cleanText(value, max = 240) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, max);
+}
+
+function airiCookie() {
+  return String(
+    process.env.AIRI_X_COOKIE ||
+      process.env.AIRI_TWITTER_COOKIE ||
+      process.env.TWITTER_X_COOKIE ||
+      process.env.X_COOKIE ||
+      process.env.TWEXAPI_X_COOKIE ||
+      ""
+  ).trim();
+}
+
+function loadPlaywright() {
+  try {
+    return require("playwright");
+  } catch (error) {
+    throw new Error("Playwright is required for browser posting. Install playwright before running Airi tweet jobs.");
+  }
+}
+
+function parseCookieHeader(cookieHeader = "") {
+  return String(cookieHeader || "")
+    .split(";")
+    .map((part) => {
+      const index = part.indexOf("=");
+      if (index <= 0) return null;
+      const name = part.slice(0, index).trim();
+      const value = part.slice(index + 1).trim();
+      return name && value ? { name, value } : null;
+    })
+    .filter(Boolean);
+}
+
+function browserCookiesFromHeader(cookieHeader = "") {
+  const parsed = parseCookieHeader(cookieHeader);
+  const domains = [".x.com", ".twitter.com"];
+  return parsed.flatMap((cookie) => domains.map((domain) => ({
+    name: cookie.name,
+    value: cookie.value,
+    domain,
+    path: "/",
+    httpOnly: false,
+    secure: true,
+    sameSite: "Lax"
+  })));
 }
 
 function clipTweet(text) {
@@ -434,22 +478,7 @@ async function composeTweet(context, history) {
 }
 
 async function postTweet(tweet) {
-  const apiKey =
-    process.env.TWEXAPI_BEARER_TOKEN ||
-    process.env.TWITTERX_API_KEY ||
-    process.env.TWEX_API_KEY ||
-    process.env.AIRI_TWEX_API_KEY ||
-    process.env.AIRI_TWITTERX_API_KEY ||
-    "";
-  const cookie =
-    process.env.TWEXAPI_X_COOKIE ||
-    process.env.TWITTER_X_COOKIE ||
-    process.env.X_COOKIE ||
-    process.env.AIRI_X_COOKIE ||
-    process.env.AIRI_TWITTER_COOKIE ||
-    "";
-  const proxy = process.env.TWEXAPI_PROXY || "";
-  const allowAutoCookie = /^true$/i.test(process.env.TWEXAPI_ALLOW_AUTO_COOKIE || "");
+  const cookie = airiCookie();
   const dryRun = /^true$/i.test(process.env.AIRI_TWEET_DRY_RUN || "");
   const requirePost = !/^false$/i.test(process.env.AIRI_TWEET_REQUIRE_POST || "true");
 
@@ -459,46 +488,43 @@ async function postTweet(tweet) {
     return { skipped: true, reason: "dry_run" };
   }
 
-  if (!apiKey) {
-    const message = "[airi-tweet] Twex API key is missing. Set TWEXAPI_BEARER_TOKEN or TWITTERX_API_KEY.";
-    if (requirePost) throw new Error(message);
-    console.log(message);
-    return { skipped: true, reason: "missing_api_key" };
-  }
-
-  if (!cookie && !allowAutoCookie) {
-    const message = "[airi-tweet] Airi X cookie is missing. Set TWEXAPI_X_COOKIE so the post comes from @Pumpr_Intern.";
+  if (!cookie) {
+    const message = "[airi-tweet] Airi X cookie is missing. Set AIRI_X_COOKIE so the browser post comes from Airi's X account.";
     if (requirePost) throw new Error(message);
     console.log(message);
     return { skipped: true, reason: "missing_airi_cookie" };
   }
 
-  const url = cookie ? TWEX_CREATE_URL : TWEX_AUTO_COOKIE_URL;
-  const body = cookie
-    ? { tweet_content: tweet, cookie, ...(proxy ? { proxy } : {}) }
-    : { tweet_content: tweet };
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
+  const { chromium } = loadPlaywright();
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--disable-dev-shm-usage", "--no-sandbox"]
   });
-  const text = await response.text();
-  let payload = null;
   try {
-    payload = JSON.parse(text);
-  } catch {
-    payload = { raw: text };
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    });
+    await context.addCookies(browserCookiesFromHeader(cookie));
+    const page = await context.newPage();
+    await page.goto("https://x.com/compose/post", { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.waitForTimeout(3500);
+
+    const composer = page.locator('[data-testid="tweetTextarea_0"]').first();
+    await composer.waitFor({ state: "visible", timeout: 25_000 });
+    await composer.click();
+    await composer.fill(tweet);
+
+    const postButton = page.locator('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]').last();
+    await postButton.waitFor({ state: "visible", timeout: 20_000 });
+    await postButton.click();
+    await page.waitForTimeout(4500);
+
+    console.log("[airi-tweet] Tweet posted through browser.");
+    return { ok: true, method: "browser" };
+  } finally {
+    await browser.close().catch(() => {});
   }
-  if (!response.ok || Number(payload?.code || response.status) >= 400) {
-    const message = payload?.msg || payload?.message || text || `TwexAPI returned ${response.status}`;
-    throw new Error(message);
-  }
-  console.log(`[airi-tweet] Tweet posted: ${payload?.data?.tweet_id || "ok"}`);
-  return payload;
 }
 
 async function main() {
