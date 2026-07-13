@@ -1,6 +1,6 @@
 const { main } = require("./x-launch-intake");
 
-const DEFAULT_INTERVAL_SECONDS = 30;
+const DEFAULT_INTERVAL_SECONDS = 15;
 
 function log(message) {
   console.log(`[x-launch-loop] ${message}`);
@@ -16,7 +16,7 @@ function sleep(ms) {
 }
 
 async function runLoop() {
-  const intervalSeconds = Math.max(10, numberEnv("X_LAUNCH_LOOP_INTERVAL_SECONDS", DEFAULT_INTERVAL_SECONDS));
+  const intervalSeconds = Math.max(10, Math.min(30, numberEnv("X_LAUNCH_LOOP_INTERVAL_SECONDS", DEFAULT_INTERVAL_SECONDS)));
   const maxRuns = Math.max(0, Math.floor(numberEnv("X_LAUNCH_LOOP_RUNS", 0)));
   let runCount = 0;
   let successCount = 0;

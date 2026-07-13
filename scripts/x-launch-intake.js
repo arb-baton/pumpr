@@ -13,7 +13,19 @@ const MAX_MENTIONS = Math.max(5, Math.min(100, Number(process.env.X_LAUNCH_MAX_M
 const MAX_STATE_IDS = 240;
 const EMPTY_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES || 0));
 const ACTIVE_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES || 0));
-const TWEX_READ_DELAY_MS = Math.max(0, Number(process.env.X_LAUNCH_TWEX_READ_DELAY_MS || 5500));
+const TWEX_READ_DELAY_MS = Math.max(0, Math.min(1000, Number(process.env.X_LAUNCH_TWEX_READ_DELAY_MS || 1000)));
+const RH_CHAIN_ID = 4663;
+const RH_DEFAULT_RPC_URL = "https://rpc.mainnet.chain.robinhood.com";
+const RH_DEPLOYMENT_PATH = path.join(ROOT, "frontend", "deployments", "4663.json");
+const FIXED_TOTAL_SUPPLY_WEI = "1000000000000000000000000000";
+const DEFAULT_ROBINHOOD_TRADE_FEE_BPS = 50;
+const DEFAULT_CREATOR_ALLOCATION_BPS = 0;
+const FACTORY_ABI = [
+  "event LaunchCreated(uint256 indexed launchId,address indexed creator,address indexed token,address pool,uint256 totalSupply,uint256 creatorAllocation,uint256 feeBps,uint256 graduationTargetEth,address dexRouter,address lpRecipient,address v3PositionManager,uint24 v3Fee)",
+  "function createLaunchLiveDexCurveWithTax(string name,string symbol,string imageURI,string description,uint256 totalSupply,uint256 creatorAllocationBps,uint256 tokenTradeFeeBps) payable returns (uint256 launchId,address tokenAddress,address poolAddress)",
+  "function defaultV3PositionManager() view returns (address)",
+  "function launchFeeWei() view returns (uint256)"
+];
 
 const LAUNCHPAD_ALIASES = new Map([
   ["pumpfun", "pumpfun"],
@@ -32,7 +44,7 @@ const LAUNCHPAD_ALIASES = new Map([
   ["pumpverse", "pumpverse"]
 ]);
 
-const DIRECT_LAUNCHPADS = new Set(["pumpfun"]);
+const DIRECT_LAUNCHPADS = new Set(["pumpfun", "robinhood"]);
 
 function log(message) {
   console.log(`[x-launch] ${message}`);
@@ -214,6 +226,10 @@ function processedStatus(state, tweetId) {
 function shouldReprocessTweet(tweet, state) {
   const status = processedStatus(state, tweet.id);
   if (status === "queued_author_not_allowlisted" && isTruthy(process.env.X_LAUNCH_ALLOW_PUBLIC)) return true;
+  if (status === "queued_unsupported") {
+    const fallback = fallbackClassify(tweet, {});
+    return Boolean(fallback.isLaunchRequest && fallback.launchpad && DIRECT_LAUNCHPADS.has(fallback.launchpad));
+  }
   if (status === "reply_failed" || status === "error_no_reply") return true;
   if (status === "error") {
     const fallback = fallbackClassify(tweet, {});
@@ -484,24 +500,18 @@ async function fetchMentionsWithTwexSearch() {
     `"${username}"`
   ].filter(Boolean))];
   log(`Twex public search terms: ${searchTerms.join(" | ")}`);
-  const rows = [];
-  for (const term of searchTerms.slice(0, 5)) {
-    const payload = await withTwexRetry(`public search ${term}`, () => fetchJson(TWEX_ADVANCED_SEARCH_URL, {
-      method: "POST",
-      headers: twexHeaders(),
-      body: JSON.stringify({
-        searchTerms: [term],
-        maxItems: MAX_MENTIONS,
-        sortBy: "Latest"
-      })
-    }));
-    const termRows = Array.isArray(payload?.data) ? payload.data : [];
-    log(`Twex public search term "${term}" returned ${termRows.length} raw tweet(s).`);
-    rows.push(...termRows);
-    if (TWEX_READ_DELAY_MS > 0) {
-      await sleep(TWEX_READ_DELAY_MS);
-    }
-  }
+  const terms = searchTerms.slice(0, 5);
+  const payload = await withTwexRetry(`public search ${terms.join(" | ")}`, () => fetchJson(TWEX_ADVANCED_SEARCH_URL, {
+    method: "POST",
+    headers: twexHeaders(),
+    body: JSON.stringify({
+      searchTerms: terms,
+      maxItems: MAX_MENTIONS,
+      sortBy: "Latest"
+    })
+  }));
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  log(`Twex public search returned ${rows.length} raw tweet(s) for ${terms.length} term(s).`);
   return rows
     .map((row) => normalizeTwexTweet(row))
     .filter((tweet) => tweet.id && tweet.text)
@@ -860,6 +870,122 @@ async function launchPumpFun(request) {
   return finalized;
 }
 
+function robinhoodRpcUrl() {
+  return String(
+    process.env.X_LAUNCH_ROBINHOOD_RPC_URL ||
+      process.env.ROBINHOOD_RPC_URL ||
+      process.env.RH_RPC_URL ||
+      RH_DEFAULT_RPC_URL
+  ).trim();
+}
+
+function decodeRobinhoodWallet(provider) {
+  const raw = String(
+    process.env.X_LAUNCH_ROBINHOOD_PRIVATE_KEY ||
+      process.env.X_LAUNCH_ROBINHOOD_MNEMONIC ||
+      process.env.PUMPR_X_LAUNCH_ROBINHOOD_PRIVATE_KEY ||
+      process.env.PUMPR_X_LAUNCH_ROBINHOOD_MNEMONIC ||
+      ""
+  ).trim();
+  if (!raw) {
+    throw new Error("Set X_LAUNCH_ROBINHOOD_MNEMONIC or X_LAUNCH_ROBINHOOD_PRIVATE_KEY as a GitHub secret before Robinhood X launches.");
+  }
+  const { ethers } = require("ethers");
+  if (/^0x[0-9a-fA-F]{64}$/.test(raw) || /^[0-9a-fA-F]{64}$/.test(raw)) {
+    return new ethers.Wallet(raw.startsWith("0x") ? raw : `0x${raw}`, provider);
+  }
+  return ethers.Wallet.fromPhrase(raw).connect(provider);
+}
+
+function extractLaunchCreatedFromReceipt(receipt) {
+  const { ethers } = require("ethers");
+  const iface = new ethers.Interface(FACTORY_ABI);
+  for (const logRow of receipt?.logs || []) {
+    try {
+      const parsed = iface.parseLog(logRow);
+      if (parsed?.name === "LaunchCreated") {
+        return {
+          launchId: String(parsed.args.launchId),
+          token: String(parsed.args.token || ""),
+          pool: String(parsed.args.pool || "")
+        };
+      }
+    } catch {
+      // Ignore unrelated logs.
+    }
+  }
+  return null;
+}
+
+async function launchRobinhood(request) {
+  const { ethers } = require("ethers");
+  const deployment = readJson(RH_DEPLOYMENT_PATH, {});
+  const factoryAddress = String(deployment.memeLaunchFactory || "").trim();
+  if (!ethers.isAddress(factoryAddress)) {
+    throw new Error("Robinhood factory is not configured in frontend/deployments/4663.json.");
+  }
+  const rpcUrl = robinhoodRpcUrl();
+  if (!rpcUrl) throw new Error("Robinhood RPC URL is not configured.");
+  const provider = new ethers.JsonRpcProvider(rpcUrl, RH_CHAIN_ID);
+  const network = await provider.getNetwork();
+  if (Number(network.chainId) !== RH_CHAIN_ID) {
+    throw new Error(`Robinhood RPC returned chain ${network.chainId}; expected ${RH_CHAIN_ID}.`);
+  }
+  const signer = decodeRobinhoodWallet(provider);
+  const factory = new ethers.Contract(factoryAddress, FACTORY_ABI, signer);
+  const v3PositionManager = String(deployment.v3PositionManager || "").trim();
+  if (!ethers.isAddress(v3PositionManager) || v3PositionManager === ethers.ZeroAddress) {
+    throw new Error("Robinhood Uniswap V3 position manager is not configured.");
+  }
+  const configuredManager = await factory.defaultV3PositionManager().catch(() => "");
+  if (!ethers.isAddress(configuredManager) || configuredManager === ethers.ZeroAddress) {
+    throw new Error("Robinhood factory does not have a Uniswap V3 position manager configured.");
+  }
+  const launchFeeWei = BigInt(String(deployment.launchFeeWei || await factory.launchFeeWei()));
+  const imageUri = await relayLaunchImage(request.imageUrl) || `${APP_BASE_URL}/assets/pump-r-logo.png`;
+  const creatorBps = BigInt(String(process.env.X_LAUNCH_ROBINHOOD_CREATOR_BPS || DEFAULT_CREATOR_ALLOCATION_BPS));
+  const tradeFeeBps = BigInt(String(process.env.X_LAUNCH_ROBINHOOD_TRADE_FEE_BPS || DEFAULT_ROBINHOOD_TRADE_FEE_BPS));
+  const args = [
+    request.name,
+    normalizeTicker(request.ticker),
+    imageUri,
+    request.description,
+    BigInt(FIXED_TOTAL_SUPPLY_WEI),
+    creatorBps,
+    tradeFeeBps
+  ];
+
+  const balance = await provider.getBalance(signer.address);
+  if (balance < launchFeeWei) {
+    throw new Error(`Robinhood launch wallet needs ETH on chain 4663. Have ${Number(ethers.formatEther(balance)).toFixed(6)} ETH; launch fee is ${Number(ethers.formatEther(launchFeeWei)).toFixed(6)} ETH before gas.`);
+  }
+
+  const simulated = await factory.createLaunchLiveDexCurveWithTax.staticCall(...args, { value: launchFeeWei });
+  const tx = await factory.createLaunchLiveDexCurveWithTax(...args, { value: launchFeeWei });
+  const receipt = await tx.wait();
+  const launchInfo = extractLaunchCreatedFromReceipt(receipt) || {
+    launchId: String(simulated?.[0] ?? ""),
+    token: String(simulated?.[1] || ""),
+    pool: String(simulated?.[2] || "")
+  };
+  const token = String(launchInfo.token || "");
+  const tokenUrl = token ? `${APP_BASE_URL}/token?token=${encodeURIComponent(token)}&chainId=${RH_CHAIN_ID}` : `${APP_BASE_URL}/create`;
+  return {
+    ok: true,
+    launchpad: "robinhood",
+    chainId: RH_CHAIN_ID,
+    token,
+    tokenAddress: token,
+    pool: String(launchInfo.pool || ""),
+    launchId: String(launchInfo.launchId || ""),
+    signature: receipt?.hash || tx.hash,
+    txHash: receipt?.hash || tx.hash,
+    tokenUrl,
+    explorerUrl: `${String(deployment.blockExplorerUrl || "https://robinhoodchain.blockscout.com").replace(/\/+$/, "")}/tx/${receipt?.hash || tx.hash}`,
+    creator: signer.address
+  };
+}
+
 function publicRequest(tweet, classification) {
   return {
     tweetId: tweet.id,
@@ -887,24 +1013,28 @@ function pumpFunCoinUrl(result = {}) {
 function launchSuccessReply(tweet, request, result) {
   const handle = String(request.authorUsername || tweet.authorUsername || "").replace(/^@/, "").trim();
   const mention = handle ? `@${handle}` : "Request";
-  const url = pumpFunCoinUrl(result);
+  const isRobinhood = request.launchpad === "robinhood" || result?.launchpad === "robinhood" || Number(result?.chainId || 0) === RH_CHAIN_ID;
+  const url = isRobinhood ? String(result.tokenUrl || `${APP_BASE_URL}/token?token=${encodeURIComponent(String(result.token || result.tokenAddress || ""))}&chainId=${RH_CHAIN_ID}`) : pumpFunCoinUrl(result);
+  const txUrl = isRobinhood ? String(result.explorerUrl || "").trim() : "";
+  const launchLabel = isRobinhood ? "Robinhood Chain" : "Pump.fun";
   const baseLines = [
-    `${mention} launched on Pump.fun`,
+    `${mention} launched on ${launchLabel}`,
     `Name: ${cleanText(request.name, 32)}`,
     `Ticker: $${normalizeTicker(request.ticker)}`,
     `Desc: ${cleanText(request.description, 72)}`,
-    url
+    url,
+    txUrl ? `Tx: ${txUrl}` : ""
   ].filter((line) => line && !/:\s*$/.test(line));
   let reply = baseLines.join("\n");
   if (reply.length <= 270) return reply;
   const shortLines = [
-    `${mention} launched on Pump.fun`,
+    `${mention} launched on ${launchLabel}`,
     `Name: ${cleanText(request.name, 32)}`,
     `Ticker: $${normalizeTicker(request.ticker)}`,
     url
   ];
   reply = shortLines.join("\n");
-  return reply.length <= 270 ? reply : `${mention} launched $${normalizeTicker(request.ticker)}\n${url}`;
+  return reply.length <= 270 ? reply : `${mention} launched $${normalizeTicker(request.ticker)} on ${launchLabel}\n${url}`;
 }
 
 function unsupportedLaunchpadReply(tweet, request) {
@@ -959,22 +1089,36 @@ async function handleLaunchRequest(tweet, classification, state) {
 
   if (isTruthy(process.env.X_LAUNCH_DRY_RUN)) {
     appendQueue(request, "dry_run_launch_ready");
-    await postReply(tweet.id, `Dry run: $${request.ticker} is ready to launch on Pump.fun.`);
+    const launchLabel = classification.launchpad === "robinhood" ? "Robinhood Chain" : "Pump.fun";
+    await postReply(tweet.id, `Dry run: $${request.ticker} is ready to launch on ${launchLabel}.`);
     return "dry_run_launch_ready";
   }
 
   appendQueue(request, "launching");
-  const result = await launchPumpFun(request);
+  const result = classification.launchpad === "robinhood"
+    ? await launchRobinhood(request)
+    : await launchPumpFun(request);
   appendQueue(request, "launched", {
-    mint: result.mint || result.tokenAddress,
+    mint: result.mint || result.tokenAddress || result.token,
+    token: result.token || result.tokenAddress || result.mint,
+    chainId: result.chainId || (classification.launchpad === "robinhood" ? RH_CHAIN_ID : 101),
     signature: result.signature,
-    pumpfunUrl: result.pumpfunUrl
+    txHash: result.txHash,
+    pumpfunUrl: result.pumpfunUrl,
+    tokenUrl: result.tokenUrl,
+    explorerUrl: result.explorerUrl
   });
   state.launches.push({
     tweetId: tweet.id,
-    mint: result.mint || result.tokenAddress,
+    launchpad: classification.launchpad,
+    mint: result.mint || result.tokenAddress || result.token,
+    token: result.token || result.tokenAddress || result.mint,
+    chainId: result.chainId || (classification.launchpad === "robinhood" ? RH_CHAIN_ID : 101),
     signature: result.signature,
+    txHash: result.txHash,
     pumpfunUrl: result.pumpfunUrl,
+    tokenUrl: result.tokenUrl,
+    explorerUrl: result.explorerUrl,
     at: new Date().toISOString()
   });
   await postReply(tweet.id, launchSuccessReply(tweet, request, result));
