@@ -458,11 +458,13 @@ async function fetchMentionsFromConfiguredSource(state) {
   const errors = [];
   if (source === "twex" || source === "auto") {
     const combined = [];
+    let twexReadOk = false;
     try {
       const notifications = await fetchMentionsWithTwexNotifications(state);
       const label = hasPendingConversation(state) ? "all/pending-thread" : "mention";
       log(`Twex notifications returned ${notifications.length} ${label} notification(s).`);
       combined.push(...notifications);
+      twexReadOk = true;
     } catch (error) {
       errors.push(`notifications: ${error.message || error}`);
       log(`Twex notifications unavailable: ${error.message || error}`);
@@ -476,6 +478,7 @@ async function fetchMentionsFromConfiguredSource(state) {
       const search = await fetchMentionsWithTwexSearch();
       log(`Twex public search returned ${search.length} mention tweet(s).`);
       combined.push(...search);
+      twexReadOk = true;
     } catch (error) {
       errors.push(`search: ${error.message || error}`);
       log(`Twex search unavailable: ${error.message || error}`);
@@ -483,6 +486,7 @@ async function fetchMentionsFromConfiguredSource(state) {
 
     const mentions = dedupeMentions(combined, state);
     if (mentions.length || source === "twex") return mentions;
+    if (source === "auto" && !bearerToken() && twexReadOk) return mentions;
   }
 
   if (source === "auto") {
