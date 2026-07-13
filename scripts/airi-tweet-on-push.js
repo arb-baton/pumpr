@@ -39,6 +39,12 @@ const DEXSCREENER_FEEDS = [
   }
 ];
 
+const X_WEB_HOME = "https://x.com/home";
+const X_WEB_ASSET_BASE = "https://abs.twimg.com/responsive-web/client-web/";
+const X_WEB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+let cachedCreateTweetOperation = null;
+
 function cleanText(value, max = 240) {
   return String(value || "")
     .replace(/<!\[CDATA\[|\]\]>/g, "")
@@ -84,6 +90,10 @@ function parseCookieHeader(cookieHeader = "") {
     .filter(Boolean);
 }
 
+function ct0FromCookie(cookieHeader = "") {
+  return parseCookieHeader(cookieHeader).find((cookie) => cookie.name === "ct0")?.value || "";
+}
+
 function browserCookiesFromHeader(cookieHeader = "") {
   const parsed = parseCookieHeader(cookieHeader);
   const domains = [".x.com", ".twitter.com"];
@@ -106,6 +116,94 @@ function airiUsername() {
   return String(process.env.AIRI_X_USERNAME || process.env.AIRI_TWITTER_USERNAME || "airi_agi")
     .replace(/^@/, "")
     .trim();
+}
+
+async function discoverCreateTweetOperation(cookieHeader = "") {
+  if (cachedCreateTweetOperation) return cachedCreateTweetOperation;
+  const headers = {
+    "user-agent": X_WEB_USER_AGENT,
+    cookie: cookieHeader
+  };
+  const homeResponse = await fetch(X_WEB_HOME, { headers });
+  const homeHtml = await homeResponse.text();
+  const scriptUrls = Array.from(homeHtml.matchAll(/<script[^>]+src="([^"]+)"/g))
+    .map((match) => new URL(match[1], X_WEB_HOME).toString())
+    .filter((url) => url.includes("/responsive-web/client-web/"));
+  const urls = scriptUrls.length ? scriptUrls : [`${X_WEB_ASSET_BASE}main.js`];
+
+  let bearer = "";
+  for (const url of urls) {
+    const response = await fetch(url, { headers: { "user-agent": X_WEB_USER_AGENT } }).catch(() => null);
+    if (!response?.ok) continue;
+    const source = await response.text();
+    bearer ||= source.match(/Bearer ([A-Za-z0-9%._-]+)/)?.[1] || "";
+    const operation = source.match(/queryId:"([^"]+)",operationName:"CreateTweet",operationType:"mutation",metadata:{featureSwitches:\[([^\]]*)\],fieldToggles:\[([^\]]*)\]/);
+    if (operation) {
+      const quoted = (value) => Array.from(String(value || "").matchAll(/"([^"]+)"/g)).map((match) => match[1]);
+      cachedCreateTweetOperation = {
+        queryId: operation[1],
+        bearer,
+        features: Object.fromEntries(quoted(operation[2]).map((feature) => [feature, true])),
+        fieldToggles: Object.fromEntries(quoted(operation[3]).map((toggle) => [toggle, true]))
+      };
+      return cachedCreateTweetOperation;
+    }
+  }
+  throw new Error("Could not discover X CreateTweet operation from the web bundle.");
+}
+
+async function postTweetWithXWebCookie(cookieHeader, text, replyToTweetId = "") {
+  const ct0 = ct0FromCookie(cookieHeader);
+  if (!ct0) throw new Error("X cookie is missing ct0, so browser-cookie posting cannot pass CSRF.");
+  const operation = await discoverCreateTweetOperation(cookieHeader);
+  if (!operation.bearer) throw new Error("Could not discover X web bearer token.");
+  const variables = {
+    tweet_text: text,
+    dark_request: false,
+    media: {
+      media_entities: [],
+      possibly_sensitive: false
+    },
+    semantic_annotation_ids: []
+  };
+  if (replyToTweetId) {
+    variables.reply = {
+      in_reply_to_tweet_id: String(replyToTweetId),
+      exclude_reply_user_ids: []
+    };
+  }
+  const response = await fetch(`https://x.com/i/api/graphql/${operation.queryId}/CreateTweet`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${operation.bearer}`,
+      "content-type": "application/json",
+      cookie: cookieHeader,
+      referer: "https://x.com/compose/post",
+      "user-agent": X_WEB_USER_AGENT,
+      "x-csrf-token": ct0,
+      "x-twitter-active-user": "yes",
+      "x-twitter-auth-type": "OAuth2Session",
+      "x-twitter-client-language": "en"
+    },
+    body: JSON.stringify({
+      variables,
+      features: operation.features,
+      fieldToggles: operation.fieldToggles,
+      queryId: operation.queryId
+    })
+  });
+  const payload = await response.json().catch(async () => ({ raw: await response.text().catch(() => "") }));
+  const errors = Array.isArray(payload?.errors) ? payload.errors : [];
+  const duplicate = errors.some((error) => /duplicate|already|same/i.test(String(error?.message || "")) || Number(error?.code) === 187);
+  if (!response.ok || (errors.length && !duplicate)) {
+    const detail = errors.map((error) => error.message || error.code).filter(Boolean).join("; ") || payload?.raw || `HTTP ${response.status}`;
+    throw new Error(`X web CreateTweet failed: ${detail}`);
+  }
+  return {
+    ok: true,
+    method: duplicate ? "x_web_cookie_duplicate" : "x_web_cookie",
+    tweetId: payload?.data?.create_tweet?.tweet_results?.result?.rest_id || ""
+  };
 }
 
 async function fillXComposer(page, composer, text, label) {
@@ -596,7 +694,7 @@ async function postTweet(tweet) {
   try {
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+      userAgent: X_WEB_USER_AGENT
     });
     await context.addCookies(browserCookiesFromHeader(cookie));
     const page = await context.newPage();
@@ -645,20 +743,27 @@ async function postTweet(tweet) {
       });
     }
 
-    await fillXComposer(page, composer, tweet, "composer");
+    try {
+      await fillXComposer(page, composer, tweet, "composer");
 
-    const postButton = page.locator('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]').last();
-    await postButton.waitFor({ state: "visible", timeout: 20_000 }).catch(async () => {
-      const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 240);
-      throw new Error(`Airi browser could not find X post button. url=${page.url()} body="${bodyText}"`);
-    });
-    await waitForXButtonEnabled(page, postButton, "post button");
-    await clickXButton(page, postButton, "post button");
-    await page.waitForTimeout(4500);
-    await waitForPostedTweet(page, tweet);
+      const postButton = page.locator('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]').last();
+      await postButton.waitFor({ state: "visible", timeout: 20_000 }).catch(async () => {
+        const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 240);
+        throw new Error(`Airi browser could not find X post button. url=${page.url()} body="${bodyText}"`);
+      });
+      await waitForXButtonEnabled(page, postButton, "post button");
+      await clickXButton(page, postButton, "post button");
+      await page.waitForTimeout(4500);
+      await waitForPostedTweet(page, tweet);
 
-    console.log("[airi-tweet] Tweet posted and verified through browser.");
-    return { ok: true, method: "browser" };
+      console.log("[airi-tweet] Tweet posted and verified through browser.");
+      return { ok: true, method: "browser" };
+    } catch (browserError) {
+      console.log(`[airi-tweet] Browser UI post failed, trying X web-cookie fallback: ${cleanText(browserError.message || browserError, 220)}`);
+      const result = await postTweetWithXWebCookie(cookie, tweet);
+      console.log(`[airi-tweet] Tweet posted through ${result.method}.`);
+      return result;
+    }
   } finally {
     await browser.close().catch(() => {});
   }

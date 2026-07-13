@@ -9,6 +9,9 @@ const APP_BASE_URL = String(process.env.APP_BASE_URL || process.env.PUBLIC_BASE_
 const MAX_MENTIONS = Math.max(5, Math.min(100, Number(process.env.X_LAUNCH_MAX_MENTIONS || 20)));
 const BROWSER_MENTION_URL = "https://x.com/notifications/mentions";
 const BROWSER_SEARCH_BASE_URL = "https://x.com/search";
+const X_WEB_HOME = "https://x.com/home";
+const X_WEB_ASSET_BASE = "https://abs.twimg.com/responsive-web/client-web/";
+const X_WEB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const MAX_STATE_IDS = 240;
 const EMPTY_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES || 0));
 const ACTIVE_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES || 0));
@@ -43,6 +46,8 @@ const LAUNCHPAD_ALIASES = new Map([
 ]);
 
 const DIRECT_LAUNCHPADS = new Set(["pumpfun", "robinhood"]);
+
+let cachedCreateTweetOperation = null;
 
 function log(message) {
   console.log(`[x-launch] ${message}`);
@@ -381,7 +386,7 @@ async function fetchMentionsWithBrowser() {
   try {
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+      userAgent: X_WEB_USER_AGENT
     });
     await context.addCookies(browserCookiesFromHeader(cookie));
     const page = await context.newPage();
@@ -516,6 +521,10 @@ function parseCookieHeader(cookieHeader = "") {
       return { name, value };
     })
     .filter(Boolean);
+}
+
+function ct0FromCookie(cookieHeader = "") {
+  return parseCookieHeader(cookieHeader).find((cookie) => cookie.name === "ct0")?.value || "";
 }
 
 function browserCookiesFromHeader(cookieHeader = "") {
@@ -730,6 +739,94 @@ async function downloadReplyMedia(mediaUrl = "") {
   return filePath;
 }
 
+async function discoverCreateTweetOperation(cookieHeader = "") {
+  if (cachedCreateTweetOperation) return cachedCreateTweetOperation;
+  const headers = {
+    "user-agent": X_WEB_USER_AGENT,
+    cookie: cookieHeader
+  };
+  const homeResponse = await fetch(X_WEB_HOME, { headers });
+  const homeHtml = await homeResponse.text();
+  const scriptUrls = Array.from(homeHtml.matchAll(/<script[^>]+src="([^"]+)"/g))
+    .map((match) => new URL(match[1], X_WEB_HOME).toString())
+    .filter((url) => url.includes("/responsive-web/client-web/"));
+  const urls = scriptUrls.length ? scriptUrls : [`${X_WEB_ASSET_BASE}main.js`];
+
+  let bearer = "";
+  for (const url of urls) {
+    const response = await fetch(url, { headers: { "user-agent": X_WEB_USER_AGENT } }).catch(() => null);
+    if (!response?.ok) continue;
+    const source = await response.text();
+    bearer ||= source.match(/Bearer ([A-Za-z0-9%._-]+)/)?.[1] || "";
+    const operation = source.match(/queryId:"([^"]+)",operationName:"CreateTweet",operationType:"mutation",metadata:{featureSwitches:\[([^\]]*)\],fieldToggles:\[([^\]]*)\]/);
+    if (operation) {
+      const quoted = (value) => Array.from(String(value || "").matchAll(/"([^"]+)"/g)).map((match) => match[1]);
+      cachedCreateTweetOperation = {
+        queryId: operation[1],
+        bearer,
+        features: Object.fromEntries(quoted(operation[2]).map((feature) => [feature, true])),
+        fieldToggles: Object.fromEntries(quoted(operation[3]).map((toggle) => [toggle, true]))
+      };
+      return cachedCreateTweetOperation;
+    }
+  }
+  throw new Error("Could not discover X CreateTweet operation from the web bundle.");
+}
+
+async function postWithXWebCookie(cookieHeader, text, replyToTweetId = "") {
+  const ct0 = ct0FromCookie(cookieHeader);
+  if (!ct0) throw new Error("X cookie is missing ct0, so browser-cookie posting cannot pass CSRF.");
+  const operation = await discoverCreateTweetOperation(cookieHeader);
+  if (!operation.bearer) throw new Error("Could not discover X web bearer token.");
+  const variables = {
+    tweet_text: text,
+    dark_request: false,
+    media: {
+      media_entities: [],
+      possibly_sensitive: false
+    },
+    semantic_annotation_ids: []
+  };
+  if (replyToTweetId) {
+    variables.reply = {
+      in_reply_to_tweet_id: String(replyToTweetId),
+      exclude_reply_user_ids: []
+    };
+  }
+  const response = await fetch(`https://x.com/i/api/graphql/${operation.queryId}/CreateTweet`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${operation.bearer}`,
+      "content-type": "application/json",
+      cookie: cookieHeader,
+      referer: replyToTweetId ? `https://x.com/i/status/${encodeURIComponent(String(replyToTweetId))}` : "https://x.com/compose/post",
+      "user-agent": X_WEB_USER_AGENT,
+      "x-csrf-token": ct0,
+      "x-twitter-active-user": "yes",
+      "x-twitter-auth-type": "OAuth2Session",
+      "x-twitter-client-language": "en"
+    },
+    body: JSON.stringify({
+      variables,
+      features: operation.features,
+      fieldToggles: operation.fieldToggles,
+      queryId: operation.queryId
+    })
+  });
+  const payload = await response.json().catch(async () => ({ raw: await response.text().catch(() => "") }));
+  const errors = Array.isArray(payload?.errors) ? payload.errors : [];
+  const duplicate = errors.some((error) => /duplicate|already|same/i.test(String(error?.message || "")) || Number(error?.code) === 187);
+  if (!response.ok || (errors.length && !duplicate)) {
+    const detail = errors.map((error) => error.message || error.code).filter(Boolean).join("; ") || payload?.raw || `HTTP ${response.status}`;
+    throw new Error(`X web CreateTweet failed: ${detail}`);
+  }
+  return {
+    ok: true,
+    method: duplicate ? "x_web_cookie_duplicate" : "x_web_cookie",
+    tweetId: payload?.data?.create_tweet?.tweet_results?.result?.rest_id || ""
+  };
+}
+
 async function fillXComposer(page, composer, text) {
   await composer.waitFor({ state: "visible", timeout: 25_000 });
   await composer.click();
@@ -812,34 +909,41 @@ async function replyWithBrowser(tweetId, text, mediaUrl = "") {
   try {
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+      userAgent: X_WEB_USER_AGENT
     });
     await context.addCookies(browserCookiesFromHeader(cookie));
     const page = await context.newPage();
     await page.goto(`https://x.com/i/status/${encodeURIComponent(String(tweetId))}`, { waitUntil: "domcontentloaded", timeout: 45_000 });
     await page.waitForTimeout(3500);
 
-    const composer = page.locator('[data-testid="tweetTextarea_0"]').first();
-    await fillXComposer(page, composer, text);
+    try {
+      const composer = page.locator('[data-testid="tweetTextarea_0"]').first();
+      await fillXComposer(page, composer, text);
 
-    if (mediaUrl) {
-      try {
-        mediaPath = await downloadReplyMedia(mediaUrl);
-        const fileInput = page.locator('input[data-testid="fileInput"][type="file"], input[type="file"]').first();
-        await fileInput.setInputFiles(mediaPath);
-        await page.waitForTimeout(2500);
-      } catch (error) {
-        log(`Browser reply image attach skipped: ${error.message || error}`);
+      if (mediaUrl) {
+        try {
+          mediaPath = await downloadReplyMedia(mediaUrl);
+          const fileInput = page.locator('input[data-testid="fileInput"][type="file"], input[type="file"]').first();
+          await fileInput.setInputFiles(mediaPath);
+          await page.waitForTimeout(2500);
+        } catch (error) {
+          log(`Browser reply image attach skipped: ${error.message || error}`);
+        }
       }
-    }
 
-    const replyButton = page.locator('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]').last();
-    await waitForXButtonEnabled(page, replyButton, "reply button", log);
-    await clickXButton(page, replyButton, "reply button", log);
-    await page.waitForTimeout(4500);
-    await waitForPostedReply(page, tweetId, text);
-    log(`Browser reply posted and verified to ${tweetId}.`);
-    return { ok: true, method: "browser" };
+      const replyButton = page.locator('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]').last();
+      await waitForXButtonEnabled(page, replyButton, "reply button", log);
+      await clickXButton(page, replyButton, "reply button", log);
+      await page.waitForTimeout(4500);
+      await waitForPostedReply(page, tweetId, text);
+      log(`Browser reply posted and verified to ${tweetId}.`);
+      return { ok: true, method: "browser" };
+    } catch (browserError) {
+      log(`Browser UI reply failed, trying X web-cookie fallback: ${cleanText(browserError.message || browserError, 220)}`);
+      const result = await postWithXWebCookie(cookie, text, tweetId);
+      log(`Reply posted through ${result.method} to ${tweetId}.`);
+      return result;
+    }
   } finally {
     await browser.close().catch(() => {});
     if (mediaPath) fs.rmSync(mediaPath, { force: true });
