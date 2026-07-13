@@ -158,37 +158,54 @@ if (dom.terminal) {
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
-        el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + scrollAmount);
-        handled = true;
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + scrollAmount);
+          handled = true;
+        }
         break;
       case "ArrowUp":
-        el.scrollTop = Math.max(0, el.scrollTop - scrollAmount);
-        handled = true;
+        if (el.scrollTop > 0) {
+          el.scrollTop = Math.max(0, el.scrollTop - scrollAmount);
+          handled = true;
+        }
         break;
       case "PageDown":
-        el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + Math.floor(el.clientHeight * 0.9));
-        handled = true;
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + Math.floor(el.clientHeight * 0.9));
+          handled = true;
+        }
         break;
       case "PageUp":
-        el.scrollTop = Math.max(0, el.scrollTop - Math.floor(el.clientHeight * 0.9));
-        handled = true;
+        if (el.scrollTop > 0) {
+          el.scrollTop = Math.max(0, el.scrollTop - Math.floor(el.clientHeight * 0.9));
+          handled = true;
+        }
         break;
       case "Home":
-        el.scrollTop = 0;
-        handled = true;
+        if (el.scrollTop > 0) {
+          el.scrollTop = 0;
+          handled = true;
+        }
         break;
       case "End":
-        el.scrollTop = el.scrollHeight;
-        handled = true;
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = el.scrollHeight;
+          handled = true;
+        }
         break;
       case " ":
         // Spacebar scrolls down, Shift+Space scrolls up
         if (event.shiftKey) {
-          el.scrollTop = Math.max(0, el.scrollTop - Math.floor(el.clientHeight * 0.9));
+          if (el.scrollTop > 0) {
+            el.scrollTop = Math.max(0, el.scrollTop - Math.floor(el.clientHeight * 0.9));
+            handled = true;
+          }
         } else {
-          el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + Math.floor(el.clientHeight * 0.9));
+          if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+            el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + Math.floor(el.clientHeight * 0.9));
+            handled = true;
+          }
         }
-        handled = true;
         break;
     }
     if (handled) {
