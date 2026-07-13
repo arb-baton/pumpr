@@ -209,6 +209,11 @@ if (dom.terminal) {
           }
         }
         break;
+      case "Tab":
+        // Allow tab to move focus out of terminal
+        break;
+      default:
+        return; // Ignore other keys
     }
     if (handled) {
       event.preventDefault();
