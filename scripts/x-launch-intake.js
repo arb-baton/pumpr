@@ -235,15 +235,6 @@ async function fetchJson(url, options = {}) {
   return payload;
 }
 
-function bearerToken() {
-  return String(
-    process.env.PUMPR_X_BEARER_TOKEN ||
-      process.env.X_BEARER_TOKEN ||
-      process.env.TWITTER_BEARER_TOKEN ||
-      ""
-  ).trim().replace(/^Bearer\s+/i, "");
-}
-
 function twexApiKey() {
   return String(
     process.env.TWEXAPI_BEARER_TOKEN ||
@@ -262,62 +253,6 @@ function pumprCookie() {
       process.env.TWEXAPI_X_COOKIE ||
       ""
   ).trim();
-}
-
-async function resolvePumprUserId() {
-  const explicit = String(process.env.PUMPR_X_USER_ID || process.env.X_PUMPR_USER_ID || "").trim();
-  if (explicit) return explicit;
-  const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim();
-  const token = bearerToken();
-  if (!token) throw new Error("Set PUMPR_X_BEARER_TOKEN or X_BEARER_TOKEN so the worker can read @pumpr_fun mentions.");
-  const payload = await fetchJson(`${X_API_BASE_URL}/2/users/by/username/${encodeURIComponent(username)}`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  const id = String(payload?.data?.id || "").trim();
-  if (!id) throw new Error(`Could not resolve X user id for @${username}. Set PUMPR_X_USER_ID directly.`);
-  return id;
-}
-
-function buildMentionUrl(userId, state) {
-  const params = new URLSearchParams({
-    max_results: String(MAX_MENTIONS),
-    "tweet.fields": "attachments,author_id,conversation_id,created_at,entities,referenced_tweets",
-    expansions: "author_id,attachments.media_keys,referenced_tweets.id",
-    "user.fields": "username,name",
-    "media.fields": "url,preview_image_url,type,alt_text"
-  });
-  const latest = [...(state.processedTweetIds || [])].reverse().find(Boolean);
-  if (latest && /^\d+$/.test(latest)) params.set("since_id", latest);
-  return `${X_API_BASE_URL}/2/users/${encodeURIComponent(userId)}/mentions?${params.toString()}`;
-}
-
-async function fetchMentions(state) {
-  const token = bearerToken();
-  if (!token) throw new Error("Set PUMPR_X_BEARER_TOKEN or X_BEARER_TOKEN so the worker can read @pumpr_fun mentions.");
-  const userId = await resolvePumprUserId();
-  const payload = await fetchJson(buildMentionUrl(userId, state), {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  const mediaByKey = new Map((payload?.includes?.media || []).map((media) => [media.media_key, media]));
-  const userById = new Map((payload?.includes?.users || []).map((user) => [user.id, user]));
-  const tweets = Array.isArray(payload?.data) ? payload.data : [];
-  return tweets
-    .map((tweet) => {
-      const mediaKeys = Array.isArray(tweet?.attachments?.media_keys) ? tweet.attachments.media_keys : [];
-      const media = mediaKeys.map((key) => mediaByKey.get(key)).filter(Boolean);
-      const author = userById.get(tweet.author_id) || {};
-      return {
-        id: String(tweet.id || ""),
-        text: String(tweet.text || ""),
-        authorId: String(tweet.author_id || ""),
-        authorUsername: String(author.username || ""),
-        conversationId: String(tweet.conversation_id || tweet.id || ""),
-        createdAt: String(tweet.created_at || ""),
-        media
-      };
-    })
-    .filter((tweet) => tweet.id)
-    .sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : 1);
 }
 
 function twexHeaders() {
@@ -415,16 +350,24 @@ async function fetchMentionsWithTwexSearch() {
         `to:${username}`
       ];
   log(`Twex public search terms: ${searchTerms.join(" | ")}`);
-  const payload = await withTwexRetry("public search", () => fetchJson(TWEX_ADVANCED_SEARCH_URL, {
-    method: "POST",
-    headers: twexHeaders(),
-    body: JSON.stringify({
-      searchTerms,
-      maxItems: MAX_MENTIONS,
-      sortBy: "Latest"
-    })
-  }));
-  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  const rows = [];
+  for (const term of searchTerms.slice(0, 5)) {
+    const payload = await withTwexRetry(`public search ${term}`, () => fetchJson(TWEX_ADVANCED_SEARCH_URL, {
+      method: "POST",
+      headers: twexHeaders(),
+      body: JSON.stringify({
+        searchTerms: [term],
+        maxItems: MAX_MENTIONS,
+        sortBy: "Latest"
+      })
+    }));
+    const termRows = Array.isArray(payload?.data) ? payload.data : [];
+    log(`Twex public search term "${term}" returned ${termRows.length} raw tweet(s).`);
+    rows.push(...termRows);
+    if (TWEX_READ_DELAY_MS > 0) {
+      await sleep(TWEX_READ_DELAY_MS);
+    }
+  }
   return rows
     .map((row) => normalizeTwexTweet(row))
     .filter((tweet) => tweet.id && tweet.text)
@@ -453,19 +396,15 @@ function dedupeMentions(tweets = [], state = {}) {
 
 async function fetchMentionsFromConfiguredSource(state) {
   const source = cleanText(process.env.X_LAUNCH_MENTION_SOURCE || "twex", 20).toLowerCase();
-  if (source === "official") return fetchMentions(state);
 
   const errors = [];
-  let autoTwexMentions = null;
-  if (source === "twex" || source === "auto") {
+  if (source === "twex") {
     const combined = [];
-    let twexReadOk = false;
     try {
       const notifications = await fetchMentionsWithTwexNotifications(state);
       const label = hasPendingConversation(state) ? "all/pending-thread" : "mention";
       log(`Twex notifications returned ${notifications.length} ${label} notification(s).`);
       combined.push(...notifications);
-      twexReadOk = true;
     } catch (error) {
       errors.push(`notifications: ${error.message || error}`);
       log(`Twex notifications unavailable: ${error.message || error}`);
@@ -479,29 +418,15 @@ async function fetchMentionsFromConfiguredSource(state) {
       const search = await fetchMentionsWithTwexSearch();
       log(`Twex public search returned ${search.length} mention tweet(s).`);
       combined.push(...search);
-      twexReadOk = true;
     } catch (error) {
       errors.push(`search: ${error.message || error}`);
       log(`Twex search unavailable: ${error.message || error}`);
     }
 
-    const mentions = dedupeMentions(combined, state);
-    if (mentions.length || source === "twex") return mentions;
-    if (source === "auto" && twexReadOk) autoTwexMentions = mentions;
-    if (source === "auto" && !bearerToken() && twexReadOk) return mentions;
+    return dedupeMentions(combined, state);
   }
 
-  if (source === "auto") {
-    try {
-      return await fetchMentions(state);
-    } catch (error) {
-      errors.push(`official: ${error.message || error}`);
-      log(`Official X mention fetch unavailable: ${error.message || error}`);
-      if (autoTwexMentions) return autoTwexMentions;
-    }
-  }
-
-  throw new Error(`Could not fetch X mentions. ${errors.join(" | ") || "No mention source configured."}`);
+  throw new Error(`Unsupported X_LAUNCH_MENTION_SOURCE=${source}. Use twex.`);
 }
 
 function firstImageUrl(tweet = {}) {
@@ -713,33 +638,12 @@ async function replyWithTwex(tweetId, text) {
   return payload;
 }
 
-async function replyWithOfficialX(tweetId, text) {
-  const token = String(process.env.PUMPR_X_USER_ACCESS_TOKEN || process.env.X_USER_ACCESS_TOKEN || "").trim();
-  if (!token) return { skipped: true, reason: "missing_x_user_access_token" };
-  return fetchJson(`${X_API_BASE_URL}/2/tweets`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      text,
-      reply: { in_reply_to_tweet_id: tweetId }
-    })
-  });
-}
-
 async function postReply(tweetId, text) {
   if (isTruthy(process.env.X_LAUNCH_DRY_RUN)) {
     log(`Dry run reply to ${tweetId}: ${text}`);
     return { skipped: true, reason: "dry_run" };
   }
-  try {
-    return await replyWithTwex(tweetId, text);
-  } catch (twexError) {
-    log(`Twex reply failed, trying official X if configured: ${twexError.message}`);
-    return replyWithOfficialX(tweetId, text);
-  }
+  return replyWithTwex(tweetId, text);
 }
 
 function appendQueue(request, status, extra = {}) {
