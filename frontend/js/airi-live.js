@@ -161,19 +161,19 @@ if (dom.terminal) {
     switch (event.key) {
       case "ArrowDown":
         if (el.scrollTop < el.scrollHeight - el.clientHeight) {
-          el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + lineHeight);
+          el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + lineHeight * 8);
           handled = true;
         }
         break;
       case "ArrowUp":
         if (el.scrollTop > 0) {
-          el.scrollTop = Math.max(0, el.scrollTop - lineHeight);
+          el.scrollTop = Math.max(0, el.scrollTop - lineHeight * 8);
           handled = true;
         }
         break;
       case "PageDown":
         if (el.scrollTop < el.scrollHeight - el.clientHeight) {
-          el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + pageScroll);
+          el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + pageScroll);
           handled = true;
         }
         break;
@@ -204,7 +204,7 @@ if (dom.terminal) {
           }
         } else {
           if (el.scrollTop < el.scrollHeight - el.clientHeight) {
-            el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + pageScroll);
+            el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + pageScroll);
             handled = true;
           }
         }
