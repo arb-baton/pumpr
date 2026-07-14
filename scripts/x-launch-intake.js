@@ -439,8 +439,8 @@ function launchReplyMediaUrl(request = {}, result = {}) {
 
 async function fetchMentionsWithBrowser() {
   const cookie = pumprCookie();
-  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser mention watcher can open @pumpr_fun notifications.");
-  const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim().toLowerCase();
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser mention watcher can open @pumpr_launch notifications.");
+  const username = String(process.env.PUMPR_X_USERNAME || "pumpr_launch").replace(/^@/, "").trim().toLowerCase();
   const searchUrl = `${BROWSER_SEARCH_BASE_URL}?q=${encodeURIComponent(`@${username} (create OR launch OR deploy OR mint)`)}&src=typed_query&f=live`;
   const { chromium } = loadPlaywright();
   const browser = await chromium.launch({
@@ -680,7 +680,7 @@ async function classifyWithOpenAI(tweet, prior = {}) {
     "Only mark isLaunchRequest true when the user is asking to create, mint, deploy, or launch a token/coin.",
     "Ignore jokes, market commentary, support questions, replies that are not launch intent, and generic mentions.",
     "Extract launchpad only if explicitly named. Normalize Pump.fun/Pumfun/pumpfun to pumpfun.",
-    "Do not infer pumpfun from the @pumpr_fun account mention; if the tweet says Robinhood, Base, Ethereum, Monad, or PumpVerse, keep that launchpad.",
+    "Do not infer pumpfun from the launch account mention; if the tweet says Robinhood, Base, Ethereum, Monad, or PumpVerse, keep that launchpad.",
     "Extract name, ticker, and description even with typos such as anme for name.",
     "If the user asks for a signed bill, bill token, treasury note, certificate token, or to print/issue a bill, set visualMode to signed_bill.",
     "If there is prior draft data, merge it with the new tweet when the conversation is continuing.",
@@ -968,7 +968,7 @@ async function waitForPostedReply(page, tweetId, text) {
 
 async function replyWithBrowser(tweetId, text, mediaUrl = "") {
   const cookie = pumprCookie();
-  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser reply worker can open @pumpr_fun.");
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser reply worker can open @pumpr_launch.");
   if (!isTruthy(process.env.X_LAUNCH_REPLY_UI_FIRST)) {
     try {
       const result = await postWithXWebCookie(cookie, text, tweetId);
@@ -1055,7 +1055,7 @@ async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
   const token = twexApiToken();
   if (!token) throw new Error("Set TWEXAPI_BEARER_TOKEN before using TwexAPI replies.");
   const cookie = pumprCookie();
-  if (!cookie) throw new Error("Set PUMPR_X_COOKIE or PUMPR_TWEX_X_COOKIE so TwexAPI can post from @pumpr_fun.");
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE or PUMPR_TWEX_X_COOKIE so TwexAPI can post from @pumpr_launch.");
   const payload = {
     tweet_content: text,
     cookie,
