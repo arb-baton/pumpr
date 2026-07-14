@@ -92,7 +92,6 @@ function buildSignedBillSvg(options = {}) {
   const ticker = cleanText(options.ticker || "BILL", 13).replace(/^\$/, "").toUpperCase();
   const description = cleanText(options.description || "On-chain signed issue", 92);
   const launchpad = cleanText(options.launchpad || "pumpfun", 30).toLowerCase();
-  const palette = chainPalette(launchpad);
   const creatorHandle = cleanText(options.creatorHandle || options.authorUsername || "unknown", 32).replace(/^@/, "");
   const creatorId = cleanText(options.creatorId || "", 40);
   const signer = creatorHandle ? `@${creatorHandle}` : "X requester";
@@ -105,75 +104,144 @@ function buildSignedBillSvg(options = {}) {
   const hasPortrait = /^https?:\/\//i.test(sourceImageUrl);
   const caLine = tokenAddress ? `CA ${tokenAddress}` : "CA pending issuance";
   const xIdLine = creatorId ? `X ID ${creatorId}` : `X ID @${creatorHandle || "unknown"}`;
+  const denomination = ticker.slice(0, 4) || "MEME";
+  const leftSerial = serial.replace(/-/g, "").slice(0, 10) || "PUMPR0001";
+  const rightSerial = `${leftSerial.slice(0, 6)}${ticker.slice(0, 4)}`.slice(0, 12);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1600" viewBox="0 0 1600 1600">
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
   <defs>
-    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0" stop-color="${palette.bgA}"/>
-      <stop offset="1" stop-color="${palette.bgB}"/>
+    <linearGradient id="paper" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#eee7cb"/>
+      <stop offset="0.48" stop-color="#d8d0ae"/>
+      <stop offset="1" stop-color="#f3efd9"/>
     </linearGradient>
-    <radialGradient id="seal" cx="50%" cy="42%" r="62%">
-      <stop offset="0" stop-color="${palette.sealB}" stop-opacity="0.42"/>
-      <stop offset="0.52" stop-color="${palette.sealA}" stop-opacity="0.86"/>
-      <stop offset="1" stop-color="${palette.bgA}" stop-opacity="1"/>
+    <radialGradient id="centerGlow" cx="50%" cy="48%" r="64%">
+      <stop offset="0" stop-color="#fbf8e7" stop-opacity="0.96"/>
+      <stop offset="0.55" stop-color="#d6cfaa" stop-opacity="0.72"/>
+      <stop offset="1" stop-color="#aeb891" stop-opacity="0.35"/>
     </radialGradient>
-    <pattern id="micro" width="28" height="28" patternUnits="userSpaceOnUse">
-      <path d="M0 14H28M14 0V28" stroke="${palette.line}" stroke-opacity="0.08" stroke-width="1"/>
+    <pattern id="fineLines" width="18" height="18" patternUnits="userSpaceOnUse">
+      <path d="M0 3H18M0 9H18M0 15H18" stroke="#183c25" stroke-opacity="0.09" stroke-width="0.8"/>
     </pattern>
-    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#000" flood-opacity="0.35"/>
+    <pattern id="microText" width="170" height="24" patternUnits="userSpaceOnUse">
+      <text x="0" y="16" fill="#315f3b" fill-opacity="0.13" font-family="Georgia, serif" font-size="13" letter-spacing="2">PUMP-R MEME NOTE</text>
+    </pattern>
+    <filter id="paperNoise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="4" seed="8"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.075"/>
+      </feComponentTransfer>
+      <feBlend mode="multiply" in2="SourceGraphic"/>
     </filter>
-    <clipPath id="portraitClip"><circle cx="800" cy="652" r="254"/></clipPath>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#071209" flood-opacity="0.32"/>
+    </filter>
+    <clipPath id="portraitClip"><ellipse cx="800" cy="452" rx="150" ry="204"/></clipPath>
+    <path id="topArc" d="M430 150C590 92 1010 92 1170 150"/>
+    <path id="bottomArc" d="M430 834C590 892 1010 892 1170 834"/>
   </defs>
-  <rect width="1600" height="1600" fill="url(#bg)"/>
-  <rect x="0" y="0" width="1600" height="1600" fill="url(#micro)"/>
-  <rect x="74" y="92" width="1452" height="1416" rx="42" fill="none" stroke="${palette.line}" stroke-opacity="0.75" stroke-width="8"/>
-  <rect x="118" y="136" width="1364" height="1328" rx="28" fill="#ffffff" fill-opacity="0.018" stroke="${palette.accent2}" stroke-opacity="0.32" stroke-width="3"/>
-  <path d="M160 302H1440M160 1298H1440" stroke="${palette.line}" stroke-opacity="0.65" stroke-width="3"/>
-  <path d="M188 248C412 188 596 188 800 248C1004 188 1188 188 1412 248" fill="none" stroke="${palette.accent}" stroke-opacity="0.22" stroke-width="3"/>
-  <path d="M188 1352C412 1412 596 1412 800 1352C1004 1412 1188 1412 1412 1352" fill="none" stroke="${palette.accent}" stroke-opacity="0.22" stroke-width="3"/>
 
-  <text x="800" y="228" text-anchor="middle" fill="${palette.accent2}" font-family="Georgia, 'Times New Roman', serif" font-size="42" font-weight="700" letter-spacing="7">PUMP-R SIGNED ISSUE</text>
-  <text x="800" y="292" text-anchor="middle" fill="${palette.muted}" font-family="Arial, sans-serif" font-size="26" letter-spacing="5">NEGOTIABLE MEME NOTE</text>
-
+  <rect width="1600" height="1000" fill="#0a140d"/>
   <g filter="url(#softShadow)">
-    <circle cx="800" cy="652" r="318" fill="url(#seal)" stroke="${palette.line}" stroke-width="8" stroke-opacity="0.92"/>
-    <circle cx="800" cy="652" r="282" fill="none" stroke="${palette.accent2}" stroke-width="3" stroke-dasharray="16 18" stroke-opacity="0.52"/>
-    ${hasPortrait ? `<image href="${escapeXml(sourceImageUrl)}" x="546" y="398" width="508" height="508" preserveAspectRatio="xMidYMid slice" clip-path="url(#portraitClip)"/>` : `
-      <circle cx="800" cy="652" r="210" fill="${palette.bgA}" stroke="${palette.line}" stroke-width="4" stroke-opacity="0.55"/>
-      <text x="800" y="626" text-anchor="middle" fill="${palette.accent}" font-family="Arial Black, Arial, sans-serif" font-size="108" font-weight="900" letter-spacing="2">${escapeXml(mono)}</text>
-      <text x="800" y="700" text-anchor="middle" fill="${palette.muted}" font-family="Arial, sans-serif" font-size="28" letter-spacing="6">SIGNED BILL</text>
+    <rect x="74" y="70" width="1452" height="860" rx="10" fill="url(#paper)"/>
+    <rect x="74" y="70" width="1452" height="860" rx="10" fill="url(#fineLines)"/>
+    <rect x="74" y="70" width="1452" height="860" rx="10" fill="url(#microText)"/>
+    <rect x="74" y="70" width="1452" height="860" rx="10" fill="url(#centerGlow)" opacity="0.48"/>
+    <rect x="74" y="70" width="1452" height="860" rx="10" fill="transparent" filter="url(#paperNoise)"/>
+  </g>
+
+  <rect x="108" y="104" width="1384" height="792" rx="6" fill="none" stroke="#163820" stroke-width="8"/>
+  <rect x="132" y="128" width="1336" height="744" rx="4" fill="none" stroke="#4f7547" stroke-width="3"/>
+  <rect x="154" y="150" width="1292" height="700" rx="3" fill="none" stroke="#17361f" stroke-width="2"/>
+  <path d="M184 184H1416M184 816H1416" stroke="#17361f" stroke-width="3"/>
+  <path d="M226 218C426 120 602 198 800 158C998 198 1174 120 1374 218" fill="none" stroke="#294f32" stroke-width="2.5" opacity="0.72"/>
+  <path d="M226 782C426 880 602 802 800 842C998 802 1174 880 1374 782" fill="none" stroke="#294f32" stroke-width="2.5" opacity="0.72"/>
+  <path d="M242 248C378 184 482 262 612 226C506 314 386 298 242 248Z" fill="none" stroke="#315f3b" stroke-width="2" opacity="0.68"/>
+  <path d="M1358 248C1222 184 1118 262 988 226C1094 314 1214 298 1358 248Z" fill="none" stroke="#315f3b" stroke-width="2" opacity="0.68"/>
+  <path d="M242 752C378 816 482 738 612 774C506 686 386 702 242 752Z" fill="none" stroke="#315f3b" stroke-width="2" opacity="0.68"/>
+  <path d="M1358 752C1222 816 1118 738 988 774C1094 686 1214 702 1358 752Z" fill="none" stroke="#315f3b" stroke-width="2" opacity="0.68"/>
+
+  <g fill="#17361f" font-family="Georgia, 'Times New Roman', serif">
+    <text x="800" y="170" text-anchor="middle" font-size="48" font-weight="800" letter-spacing="2">PUMP-R RESERVE NOTE</text>
+    <text x="800" y="214" text-anchor="middle" font-size="17" font-weight="700" letter-spacing="1.8">THIS NOTE IS MEMETIC TENDER FOR ON-CHAIN CULTURE AND PUBLIC LAUNCHES</text>
+    <text x="800" y="842" text-anchor="middle" font-size="54" font-weight="900" letter-spacing="2">ONE MEME DOLLAR</text>
+  </g>
+
+  <g fill="#17361f" font-family="Georgia, 'Times New Roman', serif" font-weight="900">
+    <text x="202" y="190" font-size="86">1</text>
+    <text x="1398" y="190" text-anchor="end" font-size="86">1</text>
+    <text x="202" y="840" font-size="86">1</text>
+    <text x="1398" y="840" text-anchor="end" font-size="86">1</text>
+  </g>
+  <g fill="#315f3b" font-family="Courier New, monospace" font-size="29" font-weight="800">
+    <text x="472" y="262" letter-spacing="3">${escapeXml(leftSerial)}</text>
+    <text x="1128" y="262" text-anchor="end" letter-spacing="3">${escapeXml(rightSerial)}</text>
+  </g>
+
+  <g transform="translate(268 318)">
+    <circle cx="0" cy="0" r="82" fill="none" stroke="#17361f" stroke-width="8"/>
+    <circle cx="0" cy="0" r="62" fill="none" stroke="#4f7547" stroke-width="3"/>
+    <text x="0" y="-10" text-anchor="middle" fill="#17361f" font-family="Georgia, serif" font-size="38" font-weight="900">P</text>
+    <text x="0" y="32" text-anchor="middle" fill="#17361f" font-family="Arial, sans-serif" font-size="15" font-weight="800">PUMP-R</text>
+  </g>
+
+  <g transform="translate(1332 318)">
+    <circle cx="0" cy="0" r="82" fill="none" stroke="#17361f" stroke-width="8"/>
+    <circle cx="0" cy="0" r="62" fill="none" stroke="#4f7547" stroke-width="3"/>
+    <text x="0" y="-8" text-anchor="middle" fill="#17361f" font-family="Georgia, serif" font-size="34" font-weight="900">${escapeXml(denomination)}</text>
+    <text x="0" y="32" text-anchor="middle" fill="#17361f" font-family="Arial, sans-serif" font-size="14" font-weight="800">SERIES ${escapeXml(issuedAt.slice(0, 4))}</text>
+  </g>
+
+  <g>
+    <ellipse cx="800" cy="452" rx="214" ry="274" fill="#efe9cf" stroke="#17361f" stroke-width="8"/>
+    <ellipse cx="800" cy="452" rx="192" ry="248" fill="none" stroke="#4f7547" stroke-width="3" stroke-dasharray="12 12"/>
+    <ellipse cx="800" cy="452" rx="158" ry="214" fill="#0b120d" opacity="0.92"/>
+    ${hasPortrait ? `<image href="${escapeXml(sourceImageUrl)}" x="650" y="248" width="300" height="408" preserveAspectRatio="xMidYMid slice" clip-path="url(#portraitClip)" opacity="0.96"/>` : `
+      <ellipse cx="800" cy="452" rx="144" ry="198" fill="#d7d0ad" stroke="#17361f" stroke-width="3"/>
+      <text x="800" y="428" text-anchor="middle" fill="#17361f" font-family="Georgia, serif" font-size="96" font-weight="900">${escapeXml(mono)}</text>
+      <text x="800" y="496" text-anchor="middle" fill="#315f3b" font-family="Arial, sans-serif" font-size="22" font-weight="800" letter-spacing="4">SIGNED BILL</text>
     `}
   </g>
 
-  <text x="800" y="1016" text-anchor="middle" fill="${palette.ink}" font-family="Arial Black, Arial, sans-serif" font-size="86" font-weight="900">${escapeXml(name)}</text>
-  <text x="800" y="1104" text-anchor="middle" fill="${palette.accent}" font-family="Arial Black, Arial, sans-serif" font-size="68" font-weight="900">$${escapeXml(ticker)}</text>
-  <text x="800" y="1164" text-anchor="middle" fill="${palette.muted}" font-family="Arial, sans-serif" font-size="28">${escapeXml(description)}</text>
-
-  <g font-family="Arial, sans-serif" font-size="30" fill="${palette.ink}">
-    <text x="184" y="382" fill="${palette.muted}" letter-spacing="3">CHAIN</text>
-    <text x="184" y="430" font-weight="800">${escapeXml(chain)}</text>
-    <text x="184" y="506" fill="${palette.muted}" letter-spacing="3">SERIAL</text>
-    <text x="184" y="554" font-weight="800">${escapeXml(serial)}</text>
-    <text x="184" y="630" fill="${palette.muted}" letter-spacing="3">ISSUED</text>
-    <text x="184" y="678" font-weight="800">${escapeXml(issuedAt)}</text>
-
-    <text x="1416" y="382" text-anchor="end" fill="${palette.muted}" letter-spacing="3">SIGNER</text>
-    <text x="1416" y="430" text-anchor="end" font-weight="800">${escapeXml(signer)}</text>
-    <text x="1416" y="506" text-anchor="end" fill="${palette.muted}" letter-spacing="3">IDENTITY</text>
-    <text x="1416" y="554" text-anchor="end" font-weight="800">${escapeXml(xIdLine)}</text>
-    <text x="1416" y="630" text-anchor="end" fill="${palette.muted}" letter-spacing="3">CONTRACT</text>
-    <text x="1416" y="678" text-anchor="end" font-weight="800">${escapeXml(caLine)}</text>
+  <g fill="#17361f">
+    <rect x="552" y="646" width="496" height="112" rx="18" fill="#eee7cb" fill-opacity="0.78" stroke="#17361f" stroke-width="3"/>
+    <text x="800" y="690" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="42" font-weight="900">${escapeXml(name)}</text>
+    <text x="800" y="732" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="35" font-weight="900">$${escapeXml(ticker)}</text>
+    <text x="800" y="756" text-anchor="middle" font-family="Georgia, serif" font-size="18" font-style="italic">${escapeXml(description)}</text>
   </g>
 
-  <path d="M274 1252C392 1196 508 1194 628 1252" fill="none" stroke="${palette.accent}" stroke-opacity="0.75" stroke-width="4"/>
-  <text x="451" y="1308" text-anchor="middle" fill="${palette.ink}" font-family="Brush Script MT, Segoe Script, cursive" font-size="54">${escapeXml(signer)}</text>
-  <text x="451" y="1356" text-anchor="middle" fill="${palette.muted}" font-family="Arial, sans-serif" font-size="24" letter-spacing="4">CREATOR SIGNATURE</text>
+  <g font-family="Arial, sans-serif" font-size="21" fill="#17361f" font-weight="800">
+    <text x="210" y="468">CHAIN</text>
+    <text x="210" y="500" font-size="27">${escapeXml(chain)}</text>
+    <text x="210" y="566">ISSUED</text>
+    <text x="210" y="598" font-size="27">${escapeXml(issuedAt)}</text>
+    <text x="210" y="664">IDENTITY</text>
+    <text x="210" y="696" font-size="25">${escapeXml(xIdLine)}</text>
 
-  <path d="M972 1252C1090 1196 1206 1194 1326 1252" fill="none" stroke="${palette.accent}" stroke-opacity="0.75" stroke-width="4"/>
-  <text x="1149" y="1308" text-anchor="middle" fill="${palette.ink}" font-family="Arial Black, Arial, sans-serif" font-size="38">PUMP-R</text>
-  <text x="1149" y="1356" text-anchor="middle" fill="${palette.muted}" font-family="Arial, sans-serif" font-size="24" letter-spacing="4">ISSUANCE DESK</text>
+    <text x="1390" y="468" text-anchor="end">SIGNER</text>
+    <text x="1390" y="500" text-anchor="end" font-size="27">${escapeXml(signer)}</text>
+    <text x="1390" y="566" text-anchor="end">SERIAL</text>
+    <text x="1390" y="598" text-anchor="end" font-size="27">${escapeXml(serial)}</text>
+    <text x="1390" y="664" text-anchor="end">CONTRACT</text>
+    <text x="1390" y="696" text-anchor="end" font-size="25">${escapeXml(caLine)}</text>
+  </g>
+
+  <g fill="#17361f">
+    <path d="M266 762C356 722 448 722 538 762" fill="none" stroke="#17361f" stroke-width="3"/>
+    <text x="402" y="786" text-anchor="middle" font-family="Brush Script MT, Segoe Script, cursive" font-size="43">${escapeXml(signer)}</text>
+    <text x="402" y="820" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" letter-spacing="3">CREATOR SIGNATURE</text>
+
+    <path d="M1062 762C1152 722 1244 722 1334 762" fill="none" stroke="#17361f" stroke-width="3"/>
+    <text x="1198" y="786" text-anchor="middle" font-family="Brush Script MT, Segoe Script, cursive" font-size="43">Pump-r Reserve</text>
+    <text x="1198" y="820" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" letter-spacing="3">ISSUANCE DESK</text>
+  </g>
+
+  <g opacity="0.28" fill="none" stroke="#17361f" stroke-width="1.4">
+    <path d="M156 500C250 442 344 558 438 500C532 442 626 558 720 500C814 442 908 558 1002 500C1096 442 1190 558 1284 500C1378 442 1472 558 1566 500"/>
+    <path d="M156 532C250 474 344 590 438 532C532 474 626 590 720 532C814 474 908 590 1002 532C1096 474 1190 590 1284 532C1378 474 1472 590 1566 532"/>
+  </g>
 </svg>`;
 }
 
@@ -190,13 +258,13 @@ async function renderSvgToJpegDataUrl(svg) {
     args: ["--disable-dev-shm-usage", "--no-sandbox"]
   });
   try {
-    const page = await browser.newPage({ viewport: { width: 1400, height: 1400 }, deviceScaleFactor: 1 });
+    const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 });
     await page.setContent(`<html><body style="margin:0;background:#05090d">${svg}</body></html>`, { waitUntil: "networkidle", timeout: 45_000 });
     for (const quality of [92, 84, 76]) {
       const buffer = await page.screenshot({
         type: "jpeg",
         quality,
-        clip: { x: 0, y: 0, width: 1400, height: 1400 }
+        clip: { x: 0, y: 0, width: 1600, height: 1000 }
       });
       if (buffer.length <= 980 * 1024 || quality === 76) {
         return `data:image/jpeg;base64,${buffer.toString("base64")}`;
