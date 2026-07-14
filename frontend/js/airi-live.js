@@ -221,6 +221,90 @@ if (dom.terminal) {
   });
 }
 
+// Make terminal focusable and add keyboard scroll support
+if (dom.terminal) {
+  dom.terminal.setAttribute("tabindex", "0");
+  dom.terminal.setAttribute("role", "log");
+  dom.terminal.setAttribute("aria-live", "polite");
+  dom.terminal.setAttribute("aria-atomic", "false");
+  dom.terminal.style.outline = "none";
+  dom.terminal.addEventListener("focus", () => {
+    dom.terminal.style.outline = "4px solid #67f2aa";
+    dom.terminal.style.outlineOffset = "4px";
+  });
+  dom.terminal.addEventListener("blur", () => {
+    dom.terminal.style.outline = "none";
+  });
+  dom.terminal.addEventListener("keydown", (event) => {
+    const el = dom.terminal;
+    if (!el) return;
+    // Use slightly larger scroll increments for smoother keyboard scroll
+    const lineHeight = 28; // slightly reduced for better fine control while maintaining accessibility
+    const pageScroll = Math.floor(el.clientHeight * 0.9); // slightly smaller page scroll for smoother navigation
+    let handled = false;
+    switch (event.key) {
+      case "ArrowDown":
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + lineHeight);
+          handled = true;
+        }
+        break;
+      case "ArrowUp":
+        if (el.scrollTop > 0) {
+          el.scrollTop = Math.max(0, el.scrollTop - lineHeight);
+          handled = true;
+        }
+        break;
+      case "PageDown":
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + pageScroll);
+          handled = true;
+        }
+        break;
+      case "PageUp":
+        if (el.scrollTop > 0) {
+          el.scrollTop = Math.max(0, el.scrollTop - pageScroll);
+          handled = true;
+        }
+        break;
+      case "Home":
+        if (el.scrollTop > 0) {
+          el.scrollTop = 0;
+          handled = true;
+        }
+        break;
+      case "End":
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = el.scrollHeight - el.clientHeight;
+          handled = true;
+        }
+        break;
+      case " ":
+        // Spacebar scrolls down, Shift+Space scrolls up
+        if (event.shiftKey) {
+          if (el.scrollTop > 0) {
+            el.scrollTop = Math.max(0, el.scrollTop - pageScroll);
+            handled = true;
+          }
+        } else {
+          if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+            el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + pageScroll);
+            handled = true;
+          }
+        }
+        break;
+      case "Tab":
+        // Allow tab to move focus out of terminal
+        break;
+      default:
+        return; // Ignore other keys
+    }
+    if (handled) {
+      event.preventDefault();
+    }
+  });
+}
+
 function safeParse(value, fallback) {
   try {
     return JSON.parse(String(value || ""));
