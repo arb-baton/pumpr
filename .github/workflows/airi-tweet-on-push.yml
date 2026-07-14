@@ -47,6 +47,7 @@ jobs:
       AIRI_TWEET_FORCE: ${{ github.event.inputs.force || 'false' }}
       AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
       AIRI_TWEET_REQUIRE_POST: ${{ vars.AIRI_TWEET_REQUIRE_POST || 'true' }}
+      AIRI_TWEET_UI_FIRST: ${{ vars.AIRI_TWEET_UI_FIRST || 'true' }}
       AIRI_THOUGHT_TWEET_CHANCE: ${{ vars.AIRI_THOUGHT_TWEET_CHANCE || '0.35' }}
       AIRI_X_USERNAME: ${{ vars.AIRI_X_USERNAME || 'airi_agi' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

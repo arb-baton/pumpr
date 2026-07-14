@@ -686,7 +686,8 @@ async function postTweet(tweet) {
     return { skipped: true, reason: "missing_airi_cookie" };
   }
 
-  if (!isTruthy(process.env.AIRI_TWEET_UI_FIRST)) {
+  const uiFirst = !/^false$/i.test(process.env.AIRI_TWEET_UI_FIRST || "true");
+  if (!uiFirst) {
     try {
       const result = await postTweetWithXWebCookie(cookie, tweet);
       console.log(`[airi-tweet] Tweet posted through ${result.method}.`);

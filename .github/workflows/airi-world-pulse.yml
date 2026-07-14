@@ -27,6 +27,7 @@ jobs:
       AIRI_TWEET_CONTEXT: ${{ github.event.inputs.context || '' }}
       AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
       AIRI_TWEET_REQUIRE_POST: ${{ vars.AIRI_TWEET_REQUIRE_POST || 'true' }}
+      AIRI_TWEET_UI_FIRST: ${{ vars.AIRI_TWEET_UI_FIRST || 'true' }}
       AIRI_TWEET_MAX_CHARS: ${{ vars.AIRI_TWEET_MAX_CHARS || '125' }}
       AIRI_WORLD_POST_CHANCE: ${{ vars.AIRI_WORLD_POST_CHANCE || '0.9' }}
       AIRI_WORLD_MIN_HOURS: ${{ vars.AIRI_WORLD_MIN_HOURS || '1' }}

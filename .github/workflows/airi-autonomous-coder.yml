@@ -187,6 +187,8 @@ jobs:
         env:
           AIRI_TWEET_MODE: push
           AIRI_TWEET_CONTEXT: "Airi shipped and merged a tested self-improvement into Pump-r."
+          AIRI_TWEET_FORCE: "true"
+          AIRI_TWEET_UI_FIRST: ${{ vars.AIRI_TWEET_UI_FIRST || 'true' }}
           AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
         run: node scripts/airi-tweet-on-push.js
 
