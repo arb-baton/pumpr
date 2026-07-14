@@ -1,5 +1,6 @@
 const { main } = require("./x-launch-intake");
 
+// Keep this file in the workflow path filter so cookie refresh retries can be kicked from a code push.
 const DEFAULT_INTERVAL_SECONDS = 30;
 
 function log(message) {
