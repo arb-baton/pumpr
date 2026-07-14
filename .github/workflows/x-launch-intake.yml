@@ -21,6 +21,7 @@ on:
       - "scripts/x-launch-intake.js"
       - "scripts/x-launch-intake-loop.js"
       - "scripts/signed-bill-image.js"
+      - "scripts/assets/pumpr-parody-bill-template.png"
 
 permissions:
   contents: read

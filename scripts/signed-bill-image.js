@@ -1,6 +1,11 @@
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 
 const SIGNED_BILL_KEYWORDS = /\b(signed\s+bill|bill\s+token|signed\s+note|treasury\s+note|treasury\s+bill|bond\s+note|note\s+token|bill\s+style|certificate\s+token|print\s+(?:a\s+)?(?:signed\s+)?bill|issue\s+(?:a\s+)?(?:signed\s+)?bill)\b/i;
+const BILL_TEMPLATE_PATH = path.join(__dirname, "assets", "pumpr-parody-bill-template.png");
+const BILL_TEMPLATE_WIDTH = 1774;
+const BILL_TEMPLATE_HEIGHT = 887;
 
 function cleanText(value, max = 120) {
   return String(value || "")
@@ -87,6 +92,36 @@ function formatDate(value = "") {
   return date.toISOString().slice(0, 10);
 }
 
+function billTemplateDataUri() {
+  try {
+    return `data:image/png;base64,${fs.readFileSync(BILL_TEMPLATE_PATH).toString("base64")}`;
+  } catch {
+    return "";
+  }
+}
+
+function fitFontSize(value = "", base = 42, min = 24, maxChars = 18) {
+  const length = String(value || "").length;
+  if (length <= maxChars) return base;
+  return Math.max(min, Math.floor(base * (maxChars / length)));
+}
+
+function fieldBackplate(x, y, width, height, opacity = 0.84) {
+  return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="10" fill="#efe5c6" fill-opacity="${opacity}" stroke="#d4c7a5" stroke-opacity="0.38" stroke-width="1"/>`;
+}
+
+function sealOverlay({ x, y, ticker }) {
+  const mono = monogramFor("", ticker).slice(0, 4);
+  return `
+    <g transform="translate(${x} ${y})">
+      <circle cx="0" cy="0" r="98" fill="#efe5c6" fill-opacity="0.96" stroke="#12692b" stroke-width="8"/>
+      <circle cx="0" cy="0" r="80" fill="none" stroke="#12692b" stroke-width="3" stroke-dasharray="5 5"/>
+      <text x="0" y="-10" text-anchor="middle" fill="#12692b" font-family="Georgia, serif" font-size="${fitFontSize(mono, 46, 30, 4)}" font-weight="900">${escapeXml(mono)}</text>
+      <text x="0" y="28" text-anchor="middle" fill="#12692b" font-family="Georgia, serif" font-size="22" font-weight="800">SERIES</text>
+      <text x="0" y="58" text-anchor="middle" fill="#12692b" font-family="Georgia, serif" font-size="26" font-weight="900">2026</text>
+    </g>`;
+}
+
 function buildSignedBillSvg(options = {}) {
   const name = cleanText(options.name || "Untitled Bill", 32);
   const ticker = cleanText(options.ticker || "BILL", 13).replace(/^\$/, "").toUpperCase();
@@ -96,151 +131,58 @@ function buildSignedBillSvg(options = {}) {
   const creatorId = cleanText(options.creatorId || "", 40);
   const signer = creatorHandle ? `@${creatorHandle}` : "X requester";
   const serial = cleanText(options.serial || serialForBill(options), 24);
-  const issuedAt = formatDate(options.issuedAt);
   const tokenAddress = shortAddress(options.tokenAddress || options.contractAddress || "");
   const sourceImageUrl = cleanText(options.sourceImageUrl || "", 500);
-  const mono = monogramFor(name, ticker);
   const chain = chainLabel(launchpad);
   const hasPortrait = /^https?:\/\//i.test(sourceImageUrl);
   const caLine = tokenAddress ? `CA ${tokenAddress}` : "CA pending issuance";
   const xIdLine = creatorId ? `X ID ${creatorId}` : `X ID @${creatorHandle || "unknown"}`;
-  const denomination = ticker.slice(0, 4) || "MEME";
   const leftSerial = serial.replace(/-/g, "").slice(0, 10) || "PUMPR0001";
   const rightSerial = `${leftSerial.slice(0, 6)}${ticker.slice(0, 4)}`.slice(0, 12);
+  const template = billTemplateDataUri();
+  const nameSize = fitFontSize(name, 42, 25, 17);
+  const tickerSize = fitFontSize(`$${ticker}`, 44, 27, 10);
+  const signatureSize = fitFontSize(signer, 42, 26, 15);
+  const caSize = fitFontSize(caLine, 24, 14, 24);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+<svg xmlns="http://www.w3.org/2000/svg" width="${BILL_TEMPLATE_WIDTH}" height="${BILL_TEMPLATE_HEIGHT}" viewBox="0 0 ${BILL_TEMPLATE_WIDTH} ${BILL_TEMPLATE_HEIGHT}">
   <defs>
-    <linearGradient id="paper" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0" stop-color="#eee7cb"/>
-      <stop offset="0.48" stop-color="#d8d0ae"/>
-      <stop offset="1" stop-color="#f3efd9"/>
-    </linearGradient>
-    <radialGradient id="centerGlow" cx="50%" cy="48%" r="64%">
-      <stop offset="0" stop-color="#fbf8e7" stop-opacity="0.96"/>
-      <stop offset="0.55" stop-color="#d6cfaa" stop-opacity="0.72"/>
-      <stop offset="1" stop-color="#aeb891" stop-opacity="0.35"/>
-    </radialGradient>
-    <pattern id="fineLines" width="18" height="18" patternUnits="userSpaceOnUse">
-      <path d="M0 3H18M0 9H18M0 15H18" stroke="#183c25" stroke-opacity="0.09" stroke-width="0.8"/>
-    </pattern>
-    <pattern id="microText" width="170" height="24" patternUnits="userSpaceOnUse">
-      <text x="0" y="16" fill="#315f3b" fill-opacity="0.13" font-family="Georgia, serif" font-size="13" letter-spacing="2">PUMP-R MEME NOTE</text>
-    </pattern>
-    <filter id="paperNoise">
-      <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="4" seed="8"/>
-      <feColorMatrix type="saturate" values="0"/>
-      <feComponentTransfer>
-        <feFuncA type="table" tableValues="0 0.075"/>
-      </feComponentTransfer>
-      <feBlend mode="multiply" in2="SourceGraphic"/>
+    <clipPath id="portraitClip"><ellipse cx="887" cy="442" rx="184" ry="260"/></clipPath>
+    <filter id="inkShadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="1" stdDeviation="0.55" flood-color="#efe5c6" flood-opacity="0.55"/>
     </filter>
-    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#071209" flood-opacity="0.32"/>
-    </filter>
-    <clipPath id="portraitClip"><ellipse cx="800" cy="452" rx="150" ry="204"/></clipPath>
-    <path id="topArc" d="M430 150C590 92 1010 92 1170 150"/>
-    <path id="bottomArc" d="M430 834C590 892 1010 892 1170 834"/>
   </defs>
 
-  <rect width="1600" height="1000" fill="#0a140d"/>
-  <g filter="url(#softShadow)">
-    <rect x="74" y="70" width="1452" height="860" rx="10" fill="url(#paper)"/>
-    <rect x="74" y="70" width="1452" height="860" rx="10" fill="url(#fineLines)"/>
-    <rect x="74" y="70" width="1452" height="860" rx="10" fill="url(#microText)"/>
-    <rect x="74" y="70" width="1452" height="860" rx="10" fill="url(#centerGlow)" opacity="0.48"/>
-    <rect x="74" y="70" width="1452" height="860" rx="10" fill="transparent" filter="url(#paperNoise)"/>
-  </g>
+  ${template ? `<image href="${template}" x="0" y="0" width="${BILL_TEMPLATE_WIDTH}" height="${BILL_TEMPLATE_HEIGHT}" preserveAspectRatio="none"/>` : `<rect width="${BILL_TEMPLATE_WIDTH}" height="${BILL_TEMPLATE_HEIGHT}" fill="#efe5c6"/>`}
+  ${hasPortrait ? `<image href="${escapeXml(sourceImageUrl)}" x="703" y="257" width="368" height="520" preserveAspectRatio="xMidYMid slice" clip-path="url(#portraitClip)"/>` : ""}
 
-  <rect x="108" y="104" width="1384" height="792" rx="6" fill="none" stroke="#163820" stroke-width="8"/>
-  <rect x="132" y="128" width="1336" height="744" rx="4" fill="none" stroke="#4f7547" stroke-width="3"/>
-  <rect x="154" y="150" width="1292" height="700" rx="3" fill="none" stroke="#17361f" stroke-width="2"/>
-  <path d="M184 184H1416M184 816H1416" stroke="#17361f" stroke-width="3"/>
-  <path d="M226 218C426 120 602 198 800 158C998 198 1174 120 1374 218" fill="none" stroke="#294f32" stroke-width="2.5" opacity="0.72"/>
-  <path d="M226 782C426 880 602 802 800 842C998 802 1174 880 1374 782" fill="none" stroke="#294f32" stroke-width="2.5" opacity="0.72"/>
-  <path d="M242 248C378 184 482 262 612 226C506 314 386 298 242 248Z" fill="none" stroke="#315f3b" stroke-width="2" opacity="0.68"/>
-  <path d="M1358 248C1222 184 1118 262 988 226C1094 314 1214 298 1358 248Z" fill="none" stroke="#315f3b" stroke-width="2" opacity="0.68"/>
-  <path d="M242 752C378 816 482 738 612 774C506 686 386 702 242 752Z" fill="none" stroke="#315f3b" stroke-width="2" opacity="0.68"/>
-  <path d="M1358 752C1222 816 1118 738 988 774C1094 686 1214 702 1358 752Z" fill="none" stroke="#315f3b" stroke-width="2" opacity="0.68"/>
+  <g font-family="Georgia, 'Times New Roman', serif" filter="url(#inkShadow)">
+    ${fieldBackplate(296, 222, 360, 70, 0.72)}
+    <text x="476" y="273" text-anchor="middle" fill="#146b2d" font-family="Courier New, monospace" font-size="46" font-weight="800" letter-spacing="4">${escapeXml(leftSerial)}</text>
 
-  <g fill="#17361f" font-family="Georgia, 'Times New Roman', serif">
-    <text x="800" y="170" text-anchor="middle" font-size="48" font-weight="800" letter-spacing="2">PUMP-R RESERVE NOTE</text>
-    <text x="800" y="214" text-anchor="middle" font-size="17" font-weight="700" letter-spacing="1.8">THIS NOTE IS MEMETIC TENDER FOR ON-CHAIN CULTURE AND PUBLIC LAUNCHES</text>
-    <text x="800" y="842" text-anchor="middle" font-size="54" font-weight="900" letter-spacing="2">ONE MEME DOLLAR</text>
-  </g>
+    ${fieldBackplate(1118, 222, 388, 70, 0.72)}
+    <text x="1312" y="273" text-anchor="middle" fill="#146b2d" font-family="Courier New, monospace" font-size="44" font-weight="800" letter-spacing="4">${escapeXml(rightSerial)}</text>
 
-  <g fill="#17361f" font-family="Georgia, 'Times New Roman', serif" font-weight="900">
-    <text x="202" y="190" font-size="86">1</text>
-    <text x="1398" y="190" text-anchor="end" font-size="86">1</text>
-    <text x="202" y="840" font-size="86">1</text>
-    <text x="1398" y="840" text-anchor="end" font-size="86">1</text>
-  </g>
-  <g fill="#315f3b" font-family="Courier New, monospace" font-size="29" font-weight="800">
-    <text x="472" y="262" letter-spacing="3">${escapeXml(leftSerial)}</text>
-    <text x="1128" y="262" text-anchor="end" letter-spacing="3">${escapeXml(rightSerial)}</text>
-  </g>
+    ${sealOverlay({ x: 1328, y: 457, ticker })}
 
-  <g transform="translate(268 318)">
-    <circle cx="0" cy="0" r="82" fill="none" stroke="#17361f" stroke-width="8"/>
-    <circle cx="0" cy="0" r="62" fill="none" stroke="#4f7547" stroke-width="3"/>
-    <text x="0" y="-10" text-anchor="middle" fill="#17361f" font-family="Georgia, serif" font-size="38" font-weight="900">P</text>
-    <text x="0" y="32" text-anchor="middle" fill="#17361f" font-family="Arial, sans-serif" font-size="15" font-weight="800">PUMP-R</text>
-  </g>
+    ${fieldBackplate(282, 566, 430, 150, 0.96)}
+    <text x="497" y="628" text-anchor="middle" fill="#11170d" font-size="${nameSize}" font-weight="700">${escapeXml(name)}</text>
+    <text x="497" y="686" text-anchor="middle" fill="#11170d" font-family="Arial Black, Arial, sans-serif" font-size="${tickerSize}" font-weight="900">$${escapeXml(ticker)}</text>
 
-  <g transform="translate(1332 318)">
-    <circle cx="0" cy="0" r="82" fill="none" stroke="#17361f" stroke-width="8"/>
-    <circle cx="0" cy="0" r="62" fill="none" stroke="#4f7547" stroke-width="3"/>
-    <text x="0" y="-8" text-anchor="middle" fill="#17361f" font-family="Georgia, serif" font-size="34" font-weight="900">${escapeXml(denomination)}</text>
-    <text x="0" y="32" text-anchor="middle" fill="#17361f" font-family="Arial, sans-serif" font-size="14" font-weight="800">SERIES ${escapeXml(issuedAt.slice(0, 4))}</text>
-  </g>
+    ${fieldBackplate(1184, 580, 356, 122, 0.96)}
+    <text x="1362" y="632" text-anchor="middle" fill="#11170d" font-family="Arial Black, Arial, sans-serif" font-size="${tickerSize}" font-weight="900">$${escapeXml(ticker)}</text>
+    <text x="1362" y="678" text-anchor="middle" fill="#11170d" font-family="Arial, sans-serif" font-size="20" font-weight="800">${escapeXml(chain)}</text>
 
-  <g>
-    <ellipse cx="800" cy="452" rx="214" ry="274" fill="#efe9cf" stroke="#17361f" stroke-width="8"/>
-    <ellipse cx="800" cy="452" rx="192" ry="248" fill="none" stroke="#4f7547" stroke-width="3" stroke-dasharray="12 12"/>
-    <ellipse cx="800" cy="452" rx="158" ry="214" fill="#0b120d" opacity="0.92"/>
-    ${hasPortrait ? `<image href="${escapeXml(sourceImageUrl)}" x="650" y="248" width="300" height="408" preserveAspectRatio="xMidYMid slice" clip-path="url(#portraitClip)" opacity="0.96"/>` : `
-      <ellipse cx="800" cy="452" rx="144" ry="198" fill="#d7d0ad" stroke="#17361f" stroke-width="3"/>
-      <text x="800" y="428" text-anchor="middle" fill="#17361f" font-family="Georgia, serif" font-size="96" font-weight="900">${escapeXml(mono)}</text>
-      <text x="800" y="496" text-anchor="middle" fill="#315f3b" font-family="Arial, sans-serif" font-size="22" font-weight="800" letter-spacing="4">SIGNED BILL</text>
-    `}
-  </g>
+    ${fieldBackplate(296, 704, 392, 88, 0.96)}
+    <text x="492" y="760" text-anchor="middle" fill="#10170d" font-family="Brush Script MT, Segoe Script, cursive" font-size="${signatureSize}">${escapeXml(signer)}</text>
 
-  <g fill="#17361f">
-    <rect x="552" y="646" width="496" height="112" rx="18" fill="#eee7cb" fill-opacity="0.78" stroke="#17361f" stroke-width="3"/>
-    <text x="800" y="690" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="42" font-weight="900">${escapeXml(name)}</text>
-    <text x="800" y="732" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="35" font-weight="900">$${escapeXml(ticker)}</text>
-    <text x="800" y="756" text-anchor="middle" font-family="Georgia, serif" font-size="18" font-style="italic">${escapeXml(description)}</text>
-  </g>
+    ${fieldBackplate(1190, 704, 392, 88, 0.96)}
+    <text x="1386" y="760" text-anchor="middle" fill="#10170d" font-family="Brush Script MT, Segoe Script, cursive" font-size="42">Pump-r Reserve</text>
 
-  <g font-family="Arial, sans-serif" font-size="21" fill="#17361f" font-weight="800">
-    <text x="210" y="468">CHAIN</text>
-    <text x="210" y="500" font-size="27">${escapeXml(chain)}</text>
-    <text x="210" y="566">ISSUED</text>
-    <text x="210" y="598" font-size="27">${escapeXml(issuedAt)}</text>
-    <text x="210" y="664">IDENTITY</text>
-    <text x="210" y="696" font-size="25">${escapeXml(xIdLine)}</text>
-
-    <text x="1390" y="468" text-anchor="end">SIGNER</text>
-    <text x="1390" y="500" text-anchor="end" font-size="27">${escapeXml(signer)}</text>
-    <text x="1390" y="566" text-anchor="end">SERIAL</text>
-    <text x="1390" y="598" text-anchor="end" font-size="27">${escapeXml(serial)}</text>
-    <text x="1390" y="664" text-anchor="end">CONTRACT</text>
-    <text x="1390" y="696" text-anchor="end" font-size="25">${escapeXml(caLine)}</text>
-  </g>
-
-  <g fill="#17361f">
-    <path d="M266 762C356 722 448 722 538 762" fill="none" stroke="#17361f" stroke-width="3"/>
-    <text x="402" y="786" text-anchor="middle" font-family="Brush Script MT, Segoe Script, cursive" font-size="43">${escapeXml(signer)}</text>
-    <text x="402" y="820" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" letter-spacing="3">CREATOR SIGNATURE</text>
-
-    <path d="M1062 762C1152 722 1244 722 1334 762" fill="none" stroke="#17361f" stroke-width="3"/>
-    <text x="1198" y="786" text-anchor="middle" font-family="Brush Script MT, Segoe Script, cursive" font-size="43">Pump-r Reserve</text>
-    <text x="1198" y="820" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" letter-spacing="3">ISSUANCE DESK</text>
-  </g>
-
-  <g opacity="0.28" fill="none" stroke="#17361f" stroke-width="1.4">
-    <path d="M156 500C250 442 344 558 438 500C532 442 626 558 720 500C814 442 908 558 1002 500C1096 442 1190 558 1284 500C1378 442 1472 558 1566 500"/>
-    <path d="M156 532C250 474 344 590 438 532C532 474 626 590 720 532C814 474 908 590 1002 532C1096 474 1190 590 1284 532C1378 474 1472 590 1566 532"/>
+    ${fieldBackplate(704, 790, 466, 62, 0.96)}
+    <text x="937" y="826" text-anchor="middle" fill="#11170d" font-family="Arial, sans-serif" font-size="${caSize}" font-weight="800">${escapeXml(caLine)}</text>
+    <text x="937" y="850" text-anchor="middle" fill="#11170d" font-family="Georgia, serif" font-size="16" font-style="italic">SPECIMEN - ${escapeXml(description)} - ${escapeXml(xIdLine)}</text>
   </g>
 </svg>`;
 }
@@ -258,13 +200,13 @@ async function renderSvgToJpegDataUrl(svg) {
     args: ["--disable-dev-shm-usage", "--no-sandbox"]
   });
   try {
-    const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 });
+    const page = await browser.newPage({ viewport: { width: BILL_TEMPLATE_WIDTH, height: BILL_TEMPLATE_HEIGHT }, deviceScaleFactor: 1 });
     await page.setContent(`<html><body style="margin:0;background:#05090d">${svg}</body></html>`, { waitUntil: "networkidle", timeout: 45_000 });
     for (const quality of [92, 84, 76]) {
       const buffer = await page.screenshot({
         type: "jpeg",
         quality,
-        clip: { x: 0, y: 0, width: 1600, height: 1000 }
+        clip: { x: 0, y: 0, width: BILL_TEMPLATE_WIDTH, height: BILL_TEMPLATE_HEIGHT }
       });
       if (buffer.length <= 980 * 1024 || quality === 76) {
         return `data:image/jpeg;base64,${buffer.toString("base64")}`;
