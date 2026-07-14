@@ -437,7 +437,13 @@ function launchReplyMediaUrl(request = {}, result = {}) {
   return String(result.metadataImageUrl || result.replyImageUrl || request.imageUrl || "").trim();
 }
 
-async function fetchMentionsWithBrowser() {
+function pendingDraftRows(state = {}) {
+  return Object.values(state.pendingByConversation || {})
+    .filter((row) => row && row.tweetId && row.authorUsername)
+    .slice(-8);
+}
+
+async function fetchMentionsWithBrowser(state = {}) {
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser mention watcher can open @pumpr_fun notifications.");
   const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim().toLowerCase();
@@ -454,7 +460,7 @@ async function fetchMentionsWithBrowser() {
     });
     await context.addCookies(browserCookiesFromHeader(cookie));
     const page = await context.newPage();
-    const scrapeCurrentPage = async () => page.evaluate((targetUsername) => {
+    const scrapeCurrentPage = async (allowContinuationReplies = false) => page.evaluate(({ targetUsername, allowContinuationReplies }) => {
       const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
       const articles = Array.from(document.querySelectorAll("article"));
       return articles.map((article) => {
@@ -488,22 +494,40 @@ async function fetchMentionsWithBrowser() {
       }).filter((row) => {
         if (!row.id || !row.text || !row.authorUsername) return false;
         if (row.authorUsername.toLowerCase() === targetUsername) return false;
-        return row.mentionsTarget || /create|launch|deploy|mint/i.test(row.text);
+        return row.mentionsTarget ||
+          /create|launch|deploy|mint/i.test(row.text) ||
+          (allowContinuationReplies && /\b(pump\s*fun|pump\.fun|pumpfun|robinhood(?:\s+chain)?|base|ethereum|eth|monad|pumpverse)\b/i.test(row.text));
       });
-    }, username);
-    const scrapeUrl = async (url) => {
+    }, { targetUsername: username, allowContinuationReplies });
+    const scrapeUrl = async (url, options = {}) => {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
       await page.waitForTimeout(3500);
       for (let i = 0; i < 2; i += 1) {
         await page.mouse.wheel(0, 900);
         await page.waitForTimeout(1200);
       }
-      return scrapeCurrentPage();
+      return scrapeCurrentPage(Boolean(options.allowContinuationReplies));
     };
     const rows = [
       ...(await scrapeUrl(BROWSER_MENTION_URL)),
       ...(await scrapeUrl(searchUrl))
     ];
+    for (const draft of pendingDraftRows(state)) {
+      const threadUrl = draft.sourceUrl || `https://x.com/i/status/${encodeURIComponent(String(draft.tweetId))}`;
+      const author = String(draft.authorUsername || "").replace(/^@/, "").toLowerCase();
+      const threadRows = (await scrapeUrl(threadUrl, { allowContinuationReplies: true }))
+        .filter((row) => String(row.id || "") !== String(draft.tweetId || ""))
+        .filter((row) => String(row.authorUsername || "").replace(/^@/, "").toLowerCase() === author)
+        .filter((row) => inferLaunchpad(row.text || ""))
+        .map((row) => ({
+          ...row,
+          conversationId: String(draft.conversationId || draft.tweetId || row.conversationId || row.id)
+        }));
+      if (threadRows.length) {
+        log(`Pending thread ${draft.tweetId} returned ${threadRows.length} launchpad continuation reply(s).`);
+        rows.push(...threadRows);
+      }
+    }
     log(`Browser mention scan returned ${rows.length} candidate tweet(s).`);
     return rows.map((row) => ({
       id: String(row.id || ""),
@@ -543,7 +567,7 @@ function dedupeMentions(tweets = [], state = {}) {
 async function fetchMentionsFromConfiguredSource(state) {
   const source = cleanText(process.env.X_LAUNCH_MENTION_SOURCE || "browser", 20).toLowerCase();
   if (source === "browser") {
-    const mentions = await fetchMentionsWithBrowser();
+    const mentions = await fetchMentionsWithBrowser(state);
     return dedupeMentions(mentions, state);
   }
   throw new Error(`Unsupported X_LAUNCH_MENTION_SOURCE=${source}. Use browser.`);
