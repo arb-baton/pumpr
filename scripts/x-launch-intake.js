@@ -1,6 +1,11 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const {
+  generateSignedBillImageDataUrl,
+  normalizeVisualMode,
+  serialForBill
+} = require("./signed-bill-image");
 
 const ROOT = path.resolve(__dirname, "..");
 const STATE_PATH = process.env.X_LAUNCH_INTAKE_STATE_PATH || path.join(ROOT, "cache", "x-launch-intake-state.json");
@@ -386,6 +391,48 @@ async function relayLaunchImage(imageUrl = "") {
   return direct;
 }
 
+async function generateSignedBillLaunchImage(request = {}, result = {}) {
+  const sourceImageUrl = request.imageUrl ? await relayLaunchImage(request.imageUrl).catch((error) => {
+    log(`Signed bill portrait relay skipped: ${error.message || error}`);
+    return "";
+  }) : "";
+  const tokenAddress = String(result.token || result.tokenAddress || result.mint || "").trim();
+  const dataUrl = await generateSignedBillImageDataUrl({
+    name: request.name,
+    ticker: request.ticker,
+    description: request.description,
+    launchpad: request.launchpad,
+    creatorHandle: request.authorUsername,
+    creatorId: request.authorId,
+    sourceImageUrl: sourceImageUrl || request.imageUrl || "",
+    serial: request.billSerial || serialForBill({
+      launchpad: request.launchpad,
+      tweetId: request.tweetId,
+      ticker: request.ticker
+    }),
+    issuedAt: result.issuedAt || new Date().toISOString(),
+    tokenAddress
+  });
+  const uploaded = await uploadImageDataUrl(dataUrl);
+  if (!uploaded) throw new Error("Signed bill image was generated but could not be hosted.");
+  log(`Generated signed bill image for $${normalizeTicker(request.ticker)}: ${uploaded}`);
+  return uploaded;
+}
+
+async function resolveLaunchImage(request = {}) {
+  if (request.visualMode === "signed_bill") {
+    return generateSignedBillLaunchImage(request);
+  }
+  return relayLaunchImage(request.imageUrl);
+}
+
+async function resolveReplyImage(request = {}, result = {}) {
+  if (request.visualMode === "signed_bill") {
+    return generateSignedBillLaunchImage(request, result);
+  }
+  return result.replyImageUrl || request.imageUrl || "";
+}
+
 async function fetchMentionsWithBrowser() {
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser mention watcher can open @pumpr_fun notifications.");
@@ -572,8 +619,8 @@ function inferLaunchpad(text = "") {
 function fallbackClassify(tweet, prior = {}) {
   const text = stripMentions(tweet.text || "");
   const lower = text.toLowerCase();
-  const hasLaunchVerb = /\b(create|launch|make|deploy|mint|start)\b/i.test(lower);
-  const hasTokenNoun = /\b(token|coin|memecoin|meme coin|ticker|ca)\b/i.test(lower);
+  const hasLaunchVerb = /\b(create|launch|make|deploy|mint|start|print|issue)\b/i.test(lower);
+  const hasTokenNoun = /\b(token|coin|memecoin|meme coin|ticker|ca|signed bill|treasury note|certificate|signed note)\b/i.test(lower);
   const launchpad = inferLaunchpad(text) || prior.launchpad || "";
   const name = normalizeName(
     extractLabeled(text, ["name", "anme", "called", "coin name", "token name"], ["ticker", "symbol", "description", "desc", "launchpad", "image", "on", "with"]) ||
@@ -591,6 +638,7 @@ function fallbackClassify(tweet, prior = {}) {
       ""
   );
   const imageUrl = firstImageUrl(tweet) || prior.imageUrl || "";
+  const visualMode = normalizeVisualMode(prior.visualMode || "", text);
   const isLaunchRequest = hasLaunchVerb && hasTokenNoun;
   return {
     isLaunchRequest,
@@ -600,6 +648,7 @@ function fallbackClassify(tweet, prior = {}) {
     ticker,
     description,
     imageUrl,
+    visualMode,
     missingFields: [],
     reason: isLaunchRequest ? "rule_match" : "not_a_launch_request"
   };
@@ -629,8 +678,9 @@ async function classifyWithOpenAI(tweet, prior = {}) {
     "Extract launchpad only if explicitly named. Normalize Pump.fun/Pumfun/pumpfun to pumpfun.",
     "Do not infer pumpfun from the @pumpr_fun account mention; if the tweet says Robinhood, Base, Ethereum, Monad, or PumpVerse, keep that launchpad.",
     "Extract name, ticker, and description even with typos such as anme for name.",
+    "If the user asks for a signed bill, bill token, treasury note, certificate token, or to print/issue a bill, set visualMode to signed_bill.",
     "If there is prior draft data, merge it with the new tweet when the conversation is continuing.",
-    "Return strict JSON only with keys: isLaunchRequest, confidence, launchpad, name, ticker, description, reason.",
+    "Return strict JSON only with keys: isLaunchRequest, confidence, launchpad, name, ticker, description, visualMode, reason.",
     "",
     `Tweet: ${tweet.text}`,
     `Author: @${tweet.authorUsername || tweet.authorId}`,
@@ -664,6 +714,7 @@ async function classifyWithOpenAI(tweet, prior = {}) {
       ticker: normalizeTicker(parsed.ticker || ""),
       description: normalizeDescription(parsed.description || ""),
       imageUrl: firstImageUrl(tweet) || prior.imageUrl || "",
+      visualMode: normalizeVisualMode(parsed.visualMode || parsed.imageMode || parsed.mode || "", tweet.text || ""),
       reason: cleanText(parsed.reason || "", 120)
     };
   } catch (error) {
@@ -683,6 +734,7 @@ function mergeClassification(aiResult, fallbackResult, prior = {}) {
     ticker: source.ticker || fallbackResult.ticker || prior.ticker || "",
     description: source.description || fallbackResult.description || prior.description || "",
     imageUrl: source.imageUrl || fallbackResult.imageUrl || prior.imageUrl || "",
+    visualMode: normalizeVisualMode(source.visualMode || fallbackResult.visualMode || prior.visualMode || "", ""),
     reason: source.reason || fallbackResult.reason || ""
   };
   const missing = [];
@@ -690,7 +742,7 @@ function mergeClassification(aiResult, fallbackResult, prior = {}) {
   if (!merged.name) missing.push("name");
   if (!merged.ticker) missing.push("ticker");
   if (!merged.description) missing.push("description");
-  if (!merged.imageUrl) missing.push("image");
+  if (!merged.imageUrl && merged.visualMode !== "signed_bill") missing.push("image");
   merged.missingFields = missing;
   return merged;
 }
@@ -1097,7 +1149,7 @@ async function signTransactionPayload(payload, keypair) {
 async function launchPumpFun(request) {
   const keypair = decodeLaunchKeypair();
   const creator = keypair.publicKey.toBase58();
-  const imageUri = await relayLaunchImage(request.imageUrl);
+  const imageUri = await resolveLaunchImage(request);
   const launchPayload = await fetchJson(`${APP_BASE_URL}/api/pumpfun/launch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1124,10 +1176,15 @@ async function launchPumpFun(request) {
       versionedTransaction: Boolean(launchPayload.versionedTransaction)
     })
   });
-  return {
+  const result = {
     ...finalized,
     replyImageUrl: imageUri || request.imageUrl || ""
   };
+  result.replyImageUrl = await resolveReplyImage(request, result).catch((error) => {
+    log(`Signed bill final reply image skipped: ${error.message || error}`);
+    return result.replyImageUrl;
+  });
+  return result;
 }
 
 function robinhoodRpcUrl() {
@@ -1202,7 +1259,7 @@ async function launchRobinhood(request) {
     throw new Error("Robinhood factory does not have a Uniswap V3 position manager configured.");
   }
   const launchFeeWei = BigInt(String(deployment.launchFeeWei || await factory.launchFeeWei()));
-  const imageUri = await relayLaunchImage(request.imageUrl) || `${APP_BASE_URL}/assets/pump-r-logo.png`;
+  const imageUri = await resolveLaunchImage(request) || `${APP_BASE_URL}/assets/pump-r-logo.png`;
   const creatorBps = BigInt(String(process.env.X_LAUNCH_ROBINHOOD_CREATOR_BPS || DEFAULT_CREATOR_ALLOCATION_BPS));
   const tradeFeeBps = BigInt(String(process.env.X_LAUNCH_ROBINHOOD_TRADE_FEE_BPS || DEFAULT_ROBINHOOD_TRADE_FEE_BPS));
   const args = [
@@ -1230,7 +1287,7 @@ async function launchRobinhood(request) {
   };
   const token = String(launchInfo.token || "");
   const tokenUrl = token ? `${APP_BASE_URL}/token?token=${encodeURIComponent(token)}&chainId=${RH_CHAIN_ID}` : `${APP_BASE_URL}/create`;
-  return {
+  const result = {
     ok: true,
     launchpad: "robinhood",
     chainId: RH_CHAIN_ID,
@@ -1245,6 +1302,11 @@ async function launchRobinhood(request) {
     explorerUrl: `${String(deployment.blockExplorerUrl || "https://robinhoodchain.blockscout.com").replace(/\/+$/, "")}/tx/${receipt?.hash || tx.hash}`,
     creator: signer.address
   };
+  result.replyImageUrl = await resolveReplyImage(request, result).catch((error) => {
+    log(`Signed bill final reply image skipped: ${error.message || error}`);
+    return result.replyImageUrl;
+  });
+  return result;
 }
 
 function publicRequest(tweet, classification) {
@@ -1259,6 +1321,10 @@ function publicRequest(tweet, classification) {
     ticker: classification.ticker,
     description: classification.description,
     imageUrl: classification.imageUrl,
+    visualMode: classification.visualMode || "",
+    billSerial: classification.visualMode === "signed_bill"
+      ? serialForBill({ launchpad: classification.launchpad, tweetId: tweet.id, ticker: classification.ticker })
+      : "",
     confidence: classification.confidence,
     missingFields: classification.missingFields || []
   };
@@ -1278,10 +1344,13 @@ function launchSuccessReply(tweet, request, result) {
   const url = isRobinhood ? String(result.tokenUrl || `${APP_BASE_URL}/token?token=${encodeURIComponent(String(result.token || result.tokenAddress || ""))}&chainId=${RH_CHAIN_ID}`) : pumpFunCoinUrl(result);
   const txUrl = isRobinhood ? String(result.explorerUrl || "").trim() : "";
   const launchLabel = isRobinhood ? "Robinhood Chain" : "Pump.fun";
+  const signedBill = request.visualMode === "signed_bill";
   const baseLines = [
-    `${mention} launched on ${launchLabel}`,
+    signedBill ? `${mention} issued a signed bill on ${launchLabel}` : `${mention} launched on ${launchLabel}`,
     `Name: ${cleanText(request.name, 32)}`,
     `Ticker: $${normalizeTicker(request.ticker)}`,
+    signedBill && request.billSerial ? `Serial: ${cleanText(request.billSerial, 24)}` : "",
+    signedBill ? `Signed by: ${mention}` : "",
     `Desc: ${cleanText(request.description, 72)}`,
     url,
     txUrl ? `Tx: ${txUrl}` : ""
@@ -1289,13 +1358,16 @@ function launchSuccessReply(tweet, request, result) {
   let reply = baseLines.join("\n");
   if (reply.length <= 270) return reply;
   const shortLines = [
-    `${mention} launched on ${launchLabel}`,
+    signedBill ? `${mention} issued a signed bill on ${launchLabel}` : `${mention} launched on ${launchLabel}`,
     `Name: ${cleanText(request.name, 32)}`,
     `Ticker: $${normalizeTicker(request.ticker)}`,
+    signedBill && request.billSerial ? `Serial: ${cleanText(request.billSerial, 24)}` : "",
     url
-  ];
+  ].filter(Boolean);
   reply = shortLines.join("\n");
-  return reply.length <= 270 ? reply : `${mention} launched $${normalizeTicker(request.ticker)} on ${launchLabel}\n${url}`;
+  return reply.length <= 270
+    ? reply
+    : `${mention} ${signedBill ? "issued" : "launched"} $${normalizeTicker(request.ticker)} on ${launchLabel}\n${url}`;
 }
 
 function unsupportedLaunchpadReply(tweet, request) {

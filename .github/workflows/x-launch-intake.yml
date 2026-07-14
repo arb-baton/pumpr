@@ -20,6 +20,7 @@ on:
       - ".github/workflows/x-launch-intake.yml"
       - "scripts/x-launch-intake.js"
       - "scripts/x-launch-intake-loop.js"
+      - "scripts/signed-bill-image.js"
 
 permissions:
   contents: read
