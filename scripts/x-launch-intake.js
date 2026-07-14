@@ -439,8 +439,8 @@ function launchReplyMediaUrl(request = {}, result = {}) {
 
 async function fetchMentionsWithBrowser() {
   const cookie = pumprCookie();
-  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser mention watcher can open @pumpr_launch notifications.");
-  const username = String(process.env.PUMPR_X_USERNAME || "pumpr_launch").replace(/^@/, "").trim().toLowerCase();
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser mention watcher can open @pumpr_fun notifications.");
+  const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim().toLowerCase();
   const searchUrl = `${BROWSER_SEARCH_BASE_URL}?q=${encodeURIComponent(`@${username} (create OR launch OR deploy OR mint)`)}&src=typed_query&f=live`;
   const { chromium } = loadPlaywright();
   const browser = await chromium.launch({
@@ -968,7 +968,7 @@ async function waitForPostedReply(page, tweetId, text) {
 
 async function replyWithBrowser(tweetId, text, mediaUrl = "") {
   const cookie = pumprCookie();
-  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser reply worker can open @pumpr_launch.");
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser reply worker can open @pumpr_fun.");
   if (!isTruthy(process.env.X_LAUNCH_REPLY_UI_FIRST)) {
     try {
       const result = await postWithXWebCookie(cookie, text, tweetId);
@@ -1055,7 +1055,7 @@ async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
   const token = twexApiToken();
   if (!token) throw new Error("Set TWEXAPI_BEARER_TOKEN before using TwexAPI replies.");
   const cookie = pumprCookie();
-  if (!cookie) throw new Error("Set PUMPR_X_COOKIE or PUMPR_TWEX_X_COOKIE so TwexAPI can post from @pumpr_launch.");
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE or PUMPR_TWEX_X_COOKIE so TwexAPI can post from @pumpr_fun.");
   const payload = {
     tweet_content: text,
     cookie,
