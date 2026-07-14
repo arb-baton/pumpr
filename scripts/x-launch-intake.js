@@ -270,6 +270,19 @@ function pumprCookie() {
   ).trim();
 }
 
+function twexApiToken() {
+  return String(
+    process.env.TWEXAPI_BEARER_TOKEN ||
+      process.env.TWEXAPI_API_KEY ||
+      process.env.PUMPR_TWEXAPI_BEARER_TOKEN ||
+      ""
+  ).trim();
+}
+
+function twexApiProxy() {
+  return String(process.env.TWEXAPI_PROXY || process.env.PUMPR_TWEXAPI_PROXY || "").trim();
+}
+
 function mediaCandidate(value = "") {
   const raw = String(value || "").trim();
   if (!raw || !/^https?:\/\//i.test(raw)) return "";
@@ -982,10 +995,54 @@ async function clickXButton(page, locator, label, logger = () => {}) {
   throw lastError || new Error(`Could not click ${label}.`);
 }
 
+async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
+  const token = twexApiToken();
+  if (!token) throw new Error("Set TWEXAPI_BEARER_TOKEN before using TwexAPI replies.");
+  const cookie = pumprCookie();
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE or PUMPR_TWEX_X_COOKIE so TwexAPI can post from @pumpr_fun.");
+  const payload = {
+    tweet_content: text,
+    cookie,
+    reply_tweet_id: String(tweetId)
+  };
+  const directMediaUrl = String(mediaUrl || "").trim();
+  if (directMediaUrl && /^https?:\/\//i.test(directMediaUrl)) payload.media_url = directMediaUrl;
+  const proxy = twexApiProxy();
+  if (proxy) payload.proxy = proxy;
+
+  const response = await fetch("https://api.twexapi.io/twitter/tweets/create", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "User-Agent": "PumpR-X-Launch-Intake/1.0"
+    },
+    body: JSON.stringify(payload)
+  });
+  const body = await response.json().catch(async () => ({ raw: await response.text().catch(() => "") }));
+  if (!response.ok || body?.success === false || body?.error) {
+    const detail = body?.message || body?.error || body?.detail || body?.raw || `HTTP ${response.status}`;
+    throw new Error(`TwexAPI reply failed: ${cleanText(detail, 220)}`);
+  }
+  log(`TwexAPI reply posted to ${tweetId}.`);
+  return {
+    ok: true,
+    method: "twexapi",
+    tweetId: body?.data?.tweet_id || body?.data?.id || body?.tweet_id || ""
+  };
+}
+
 async function postReply(tweetId, text, mediaUrl = "") {
   if (isTruthy(process.env.X_LAUNCH_DRY_RUN)) {
     log(`Dry run reply to ${tweetId}: ${text}`);
     return { skipped: true, reason: "dry_run" };
+  }
+  if (!/^false$/i.test(process.env.X_LAUNCH_REPLY_TWEXAPI_FIRST || "true") && twexApiToken()) {
+    try {
+      return await replyWithTwexApi(tweetId, text, mediaUrl);
+    } catch (error) {
+      log(`TwexAPI reply failed, trying browser/cookie fallback: ${cleanText(error.message || error, 220)}`);
+    }
   }
   return replyWithBrowser(tweetId, text, mediaUrl);
 }
