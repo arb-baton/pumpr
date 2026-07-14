@@ -19668,6 +19668,12 @@ button[disabled] {
   .pumpr-assistant-companion {
     width: 186px;
     height: 248px;
+    outline-offset: 4px;
+    outline: none;
+  }
+  .pumpr-assistant-companion:focus-visible {
+    outline: 3px solid #67f2aa;
+    outline-offset: 4px;
   }
 
   .pumpr-assistant-companion-reaction {
