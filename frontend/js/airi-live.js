@@ -155,7 +155,7 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use slightly smaller scroll increments for smoother keyboard scroll
-    const lineHeight = 20; // reduced line height for finer control
+    const lineHeight = 16; // reduced line height for finer control
     const pageScroll = Math.floor(el.clientHeight * 0.75); // smaller page scroll for smoother navigation
     let handled = false;
     switch (event.key) {
