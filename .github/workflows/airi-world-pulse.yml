@@ -28,12 +28,15 @@ jobs:
       AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
       AIRI_TWEET_REQUIRE_POST: ${{ vars.AIRI_TWEET_REQUIRE_POST || 'true' }}
       AIRI_TWEET_UI_FIRST: ${{ vars.AIRI_TWEET_UI_FIRST || 'true' }}
+      AIRI_TWEET_TWEXAPI_ONLY: ${{ vars.AIRI_TWEET_TWEXAPI_ONLY || 'true' }}
       AIRI_TWEET_MAX_CHARS: ${{ vars.AIRI_TWEET_MAX_CHARS || '125' }}
       AIRI_WORLD_POST_CHANCE: ${{ vars.AIRI_WORLD_POST_CHANCE || '0.9' }}
       AIRI_WORLD_MIN_HOURS: ${{ vars.AIRI_WORLD_MIN_HOURS || '1' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_AIRI_TWEET_MODEL: ${{ vars.OPENAI_AIRI_TWEET_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
       AIRI_X_COOKIE: ${{ secrets.AIRI_X_COOKIE || secrets.AIRI_TWITTER_COOKIE || secrets.TWITTER_X_COOKIE || secrets.X_COOKIE || secrets.TWEXAPI_X_COOKIE }}
+      TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN || secrets.AIRI_TWEXAPI_BEARER_TOKEN }}
+      TWEXAPI_PROXY: ${{ secrets.TWEXAPI_PROXY || secrets.AIRI_TWEXAPI_PROXY || vars.TWEXAPI_PROXY || '' }}
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -42,11 +45,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      - name: Install browser poster
-        run: |
-          npm install --no-save --package-lock=false playwright@1.49.1
-          npx playwright install chromium
 
       - name: Restore Airi tweet memory
         uses: actions/cache/restore@v4

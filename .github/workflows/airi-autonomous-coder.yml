@@ -38,6 +38,8 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       AIRI_X_COOKIE: ${{ secrets.AIRI_X_COOKIE || secrets.AIRI_TWITTER_COOKIE || secrets.TWITTER_X_COOKIE || secrets.X_COOKIE || secrets.TWEXAPI_X_COOKIE }}
+      TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN || secrets.AIRI_TWEXAPI_BEARER_TOKEN }}
+      TWEXAPI_PROXY: ${{ secrets.TWEXAPI_PROXY || secrets.AIRI_TWEXAPI_PROXY || vars.TWEXAPI_PROXY || '' }}
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -189,6 +191,7 @@ jobs:
           AIRI_TWEET_CONTEXT: "Airi shipped and merged a tested self-improvement into Pump-r."
           AIRI_TWEET_FORCE: "true"
           AIRI_TWEET_UI_FIRST: ${{ vars.AIRI_TWEET_UI_FIRST || 'true' }}
+          AIRI_TWEET_TWEXAPI_ONLY: ${{ vars.AIRI_TWEET_TWEXAPI_ONLY || 'true' }}
           AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
         run: node scripts/airi-tweet-on-push.js
 

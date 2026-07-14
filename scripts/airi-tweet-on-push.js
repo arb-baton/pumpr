@@ -64,9 +64,24 @@ function airiCookie() {
       process.env.AIRI_TWITTER_COOKIE ||
       process.env.TWITTER_X_COOKIE ||
       process.env.X_COOKIE ||
+      process.env.AIRI_TWEX_X_COOKIE ||
       process.env.TWEXAPI_X_COOKIE ||
       ""
   ).trim();
+}
+
+function twexApiToken() {
+  return String(
+    process.env.AIRI_TWEXAPI_BEARER_TOKEN ||
+      process.env.TWEXAPI_BEARER_TOKEN ||
+      process.env.TWITTERX_API_KEY ||
+      process.env.TWEX_API_KEY ||
+      ""
+  ).trim();
+}
+
+function twexApiProxy() {
+  return String(process.env.AIRI_TWEXAPI_PROXY || process.env.TWEXAPI_PROXY || "").trim();
 }
 
 function loadPlaywright() {
@@ -203,6 +218,47 @@ async function postTweetWithXWebCookie(cookieHeader, text, replyToTweetId = "") 
     ok: true,
     method: duplicate ? "x_web_cookie_duplicate" : "x_web_cookie",
     tweetId: payload?.data?.create_tweet?.tweet_results?.result?.rest_id || ""
+  };
+}
+
+async function postTweetWithTwexApi(text) {
+  const token = twexApiToken();
+  if (!token) throw new Error("Set TWEXAPI_BEARER_TOKEN or AIRI_TWEXAPI_BEARER_TOKEN before posting Airi tweets through TwexAPI.");
+  const cookie = airiCookie();
+  if (!cookie) throw new Error("Set AIRI_X_COOKIE so TwexAPI can post from Airi's X account.");
+
+  const payload = {
+    tweet_content: text,
+    cookie
+  };
+  const proxy = twexApiProxy();
+  if (proxy) payload.proxy = proxy;
+
+  const response = await fetch("https://api.twexapi.io/twitter/tweets/create", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "User-Agent": "Airi-Tweet/1.0"
+    },
+    body: JSON.stringify(payload)
+  });
+  const bodyText = await response.text();
+  let payloadBody = {};
+  try {
+    payloadBody = bodyText ? JSON.parse(bodyText) : {};
+  } catch {
+    payloadBody = { raw: bodyText };
+  }
+  if (!response.ok || Number(payloadBody?.code || response.status) >= 400 || payloadBody?.success === false || payloadBody?.error) {
+    const detail = payloadBody?.msg || payloadBody?.message || payloadBody?.error || payloadBody?.detail || payloadBody?.raw || `HTTP ${response.status}`;
+    throw new Error(`TwexAPI tweet failed: ${cleanText(detail, 220)}`);
+  }
+  console.log(`[airi-tweet] Tweet posted through TwexAPI: ${payloadBody?.data?.tweet_id || payloadBody?.tweet_id || "ok"}`);
+  return {
+    ok: true,
+    method: "twexapi",
+    tweetId: payloadBody?.data?.tweet_id || payloadBody?.data?.id || payloadBody?.tweet_id || ""
   };
 }
 
@@ -680,10 +736,25 @@ async function postTweet(tweet) {
   }
 
   if (!cookie) {
-    const message = "[airi-tweet] Airi X cookie is missing. Set AIRI_X_COOKIE so the browser post comes from Airi's X account.";
+    const message = "[airi-tweet] Airi X cookie is missing. Set AIRI_X_COOKIE so TwexAPI can post from Airi's X account.";
     if (requirePost) throw new Error(message);
     console.log(message);
     return { skipped: true, reason: "missing_airi_cookie" };
+  }
+
+  const twexOnly = !/^false$/i.test(process.env.AIRI_TWEET_TWEXAPI_ONLY || "true");
+  if (twexApiToken()) {
+    try {
+      return await postTweetWithTwexApi(tweet);
+    } catch (twexError) {
+      if (twexOnly) throw twexError;
+      console.log(`[airi-tweet] TwexAPI post failed, trying browser/X-web fallback: ${cleanText(twexError.message || twexError, 220)}`);
+    }
+  } else if (twexOnly) {
+    const message = "[airi-tweet] TwexAPI token is missing. Set TWEXAPI_BEARER_TOKEN so Airi tweets do not use browser automation.";
+    if (requirePost) throw new Error(message);
+    console.log(message);
+    return { skipped: true, reason: "missing_twexapi_token" };
   }
 
   const uiFirst = !/^false$/i.test(process.env.AIRI_TWEET_UI_FIRST || "true");
