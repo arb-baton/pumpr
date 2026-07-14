@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 
-const SIGNED_BILL_KEYWORDS = /\b(signed\s+bill|bill\s+token|signed\s+note|treasury\s+note|print\s+(?:a\s+)?(?:signed\s+)?bill|issue\s+(?:a\s+)?(?:signed\s+)?bill|certificate\s+token)\b/i;
+const SIGNED_BILL_KEYWORDS = /\b(signed\s+bill|bill\s+token|signed\s+note|treasury\s+note|treasury\s+bill|bond\s+note|note\s+token|bill\s+style|certificate\s+token|print\s+(?:a\s+)?(?:signed\s+)?bill|issue\s+(?:a\s+)?(?:signed\s+)?bill)\b/i;
 
 function cleanText(value, max = 120) {
   return String(value || "")
@@ -24,7 +24,8 @@ function isSignedBillRequested(text = "") {
 
 function normalizeVisualMode(value = "", text = "") {
   const explicit = cleanText(value, 40).toLowerCase().replace(/[-_]+/g, " ");
-  if (["signed bill", "signature bill", "bill", "treasury note", "certificate"].includes(explicit)) return "signed_bill";
+  if (["signed bill", "signature bill", "bill", "treasury", "treasury note", "treasury bill", "note", "certificate"].includes(explicit)) return "signed_bill";
+  if (/\b(?:treasury|bill|certificate)\b/i.test(String(text || "")) && /\b(?:token|coin|ticker|launch|create|mint|deploy|issue|print|note)\b/i.test(String(text || ""))) return "signed_bill";
   return isSignedBillRequested(text) ? "signed_bill" : "";
 }
 
