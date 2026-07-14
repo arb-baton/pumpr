@@ -554,6 +554,7 @@ function advance() {
   renderMemory();
 
   dom.progress.style.width = `${Math.max(8, state.progress)}%`;
+  dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
   dom.cycles.textContent = String(state.cycle);
   dom.signals.textContent = String(state.signals);
   dom.changes.textContent = String(activeChanges().length);
