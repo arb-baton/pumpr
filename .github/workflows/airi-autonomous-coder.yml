@@ -40,6 +40,7 @@ jobs:
       AIRI_X_COOKIE: ${{ secrets.AIRI_X_COOKIE || secrets.AIRI_TWITTER_COOKIE || secrets.TWITTER_X_COOKIE || secrets.X_COOKIE || secrets.TWEXAPI_X_COOKIE }}
       TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN || secrets.AIRI_TWEXAPI_BEARER_TOKEN }}
       TWEXAPI_PROXY: ${{ secrets.TWEXAPI_PROXY || secrets.AIRI_TWEXAPI_PROXY || vars.TWEXAPI_PROXY || '' }}
+      AIRI_CODE_STATUS_TWEET_ENABLED: ${{ vars.AIRI_CODE_STATUS_TWEET_ENABLED || 'true' }}
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -192,6 +193,21 @@ jobs:
           AIRI_TWEET_FORCE: "true"
           AIRI_TWEET_UI_FIRST: ${{ vars.AIRI_TWEET_UI_FIRST || 'true' }}
           AIRI_TWEET_TWEXAPI_ONLY: ${{ vars.AIRI_TWEET_TWEXAPI_ONLY || 'true' }}
+          AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
+        run: node scripts/airi-tweet-on-push.js
+
+      - name: Tweet clean Airi code audit
+        if: steps.write.outputs.changed == 'false' && env.AIRI_CODE_STATUS_TWEET_ENABLED == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          AIRI_TWEET_MODE: thought
+          AIRI_TWEET_CONTEXT: "Airi completed a repo and live UI audit cycle, found no safe patch worth merging, and is keeping watch for the next useful fix."
+          AIRI_TWEET_FORCE: "false"
+          AIRI_TWEET_UI_FIRST: ${{ vars.AIRI_TWEET_UI_FIRST || 'true' }}
+          AIRI_TWEET_TWEXAPI_ONLY: ${{ vars.AIRI_TWEET_TWEXAPI_ONLY || 'true' }}
+          AIRI_THOUGHT_TWEET_CHANCE: ${{ vars.AIRI_CODE_STATUS_TWEET_CHANCE || '0.45' }}
+          AIRI_THOUGHT_MIN_HOURS: ${{ vars.AIRI_CODE_STATUS_MIN_HOURS || '3' }}
           AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
         run: node scripts/airi-tweet-on-push.js
 
