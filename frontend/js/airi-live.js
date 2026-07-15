@@ -143,6 +143,7 @@ if (dom.terminal) {
   dom.terminal.setAttribute("role", "log");
   dom.terminal.setAttribute("aria-live", "polite");
   dom.terminal.setAttribute("aria-atomic", "false");
+  dom.terminal.setAttribute("aria-label", "Airi live terminal output");
   dom.terminal.style.outline = "none";
   dom.terminal.addEventListener("focus", () => {
     dom.terminal.style.outline = "3px solid #67f2aa";
