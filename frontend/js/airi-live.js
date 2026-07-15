@@ -145,7 +145,7 @@ if (dom.terminal) {
   dom.terminal.setAttribute("aria-atomic", "false");
   dom.terminal.style.outline = "none";
   dom.terminal.addEventListener("focus", () => {
-    dom.terminal.style.outline = "4px solid #67f2aa";
+    dom.terminal.style.outline = "3px solid #67f2aa";
     dom.terminal.style.outlineOffset = "4px";
   });
   dom.terminal.addEventListener("blur", () => {
