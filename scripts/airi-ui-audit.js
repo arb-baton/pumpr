@@ -29,6 +29,7 @@ const REPORT_LEVEL = String(process.env.AIRI_UI_AUDIT_REPORT_LEVEL || "error").t
 const SOFT_FAIL = String(process.env.AIRI_UI_AUDIT_SOFT_FAIL || "false").toLowerCase() === "true";
 const FAIL_ON = String(process.env.AIRI_UI_AUDIT_FAIL_ON || "error").toLowerCase();
 const MAX_REPORTS = Math.max(1, Math.min(20, Number(process.env.AIRI_UI_AUDIT_MAX_REPORTS || 8)));
+const SLOW_ROUTE_MS = Math.max(1000, Number(process.env.AIRI_UI_AUDIT_SLOW_ROUTE_MS || 7000));
 const ROUTES = String(process.env.AIRI_UI_AUDIT_ROUTES || "")
   .split(",")
   .map((route) => route.trim())
@@ -276,6 +277,17 @@ async function auditRoute(browser, route) {
       routeIssues.push(issue("ui_route_http", httpStatus >= 500 ? "error" : "warning", normalizedRoute, `Route returned HTTP ${httpStatus || "no response"}`, { httpStatus }));
     }
     layout = await collectPageLayout(page);
+    const navigation = await page.evaluate(() => {
+      const entry = performance.getEntriesByType("navigation")[0];
+      return entry ? {
+        durationMs: Math.round(entry.duration),
+        domContentLoadedMs: Math.round(entry.domContentLoadedEventEnd),
+        transferSize: Number(entry.transferSize || 0)
+      } : null;
+    });
+    if (navigation?.durationMs >= SLOW_ROUTE_MS) {
+      routeIssues.push(issue("ui_slow_route", "warning", normalizedRoute, `Page took ${(navigation.durationMs / 1000).toFixed(1)}s to finish loading`, navigation));
+    }
     if (layout.bodyTextLength < 40) {
       routeIssues.push(issue("ui_empty_page", "error", normalizedRoute, "Page rendered with almost no readable content", { bodyTextLength: layout.bodyTextLength }));
     }

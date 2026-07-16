@@ -1620,6 +1620,7 @@ function installAiriIssueMonitor() {
           }
         })();
         const ignored = /^\/api\/airi\/(event|tick|issue|state|backroom)/.test(path);
+        const durationMs = Date.now() - startedAt;
         if (!ignored && response && response.status >= 400) {
           window.setTimeout(() => {
             reportAiriIssue(
@@ -1629,9 +1630,24 @@ function installAiriIssueMonitor() {
                 endpoint: path,
                 status: response.status,
                 method: String(init?.method || "GET").toUpperCase(),
-                durationMs: Date.now() - startedAt
+                durationMs
               },
               { severity: response.status >= 500 ? "error" : "warning", speak: response.status >= 500 }
+            );
+          }, 0);
+        }
+        if (!ignored && response?.ok && durationMs >= 5000) {
+          window.setTimeout(() => {
+            reportAiriIssue(
+              "slow_api",
+              `API response took ${(durationMs / 1000).toFixed(1)}s on ${path || "request"}`,
+              {
+                endpoint: path,
+                status: response.status,
+                method: String(init?.method || "GET").toUpperCase(),
+                durationMs
+              },
+              { severity: "warning", speak: false, cooldownMs: 10 * 60_000 }
             );
           }, 0);
         }
@@ -1688,6 +1704,25 @@ function installAiriIssueMonitor() {
       { severity: "error", speak: true }
     );
   });
+
+  window.addEventListener("load", () => {
+    window.setTimeout(() => {
+      const navigation = performance.getEntriesByType?.("navigation")?.[0];
+      const durationMs = Math.round(Number(navigation?.duration || 0));
+      if (durationMs < 7000) return;
+      reportAiriIssue(
+        "slow_page",
+        `${currentPageName()} took ${(durationMs / 1000).toFixed(1)}s to finish loading`,
+        {
+          durationMs,
+          domContentLoadedMs: Math.round(Number(navigation?.domContentLoadedEventEnd || 0)),
+          transferSize: Number(navigation?.transferSize || 0),
+          navigationType: navigation?.type || "navigate"
+        },
+        { severity: "warning", speak: false, cooldownMs: 30 * 60_000 }
+      );
+    }, 0);
+  }, { once: true });
 }
 
 function watchPotentiallyStuckAction(label = "", kind = "action") {

@@ -25,7 +25,8 @@ jobs:
       AIRI_UI_AUDIT_OUTPUT: .airi-ui-audit.json
       AIRI_UI_AUDIT_SCREENSHOTS_DIR: airi-ui-screenshots
       AIRI_UI_AUDIT_REPORT_ISSUES: ${{ vars.AIRI_UI_AUDIT_REPORT_ISSUES || 'true' }}
-      AIRI_UI_AUDIT_REPORT_LEVEL: ${{ vars.AIRI_UI_AUDIT_REPORT_LEVEL || 'error' }}
+      AIRI_UI_AUDIT_REPORT_LEVEL: ${{ vars.AIRI_UI_AUDIT_REPORT_LEVEL || 'warning' }}
+      AIRI_UI_AUDIT_SLOW_ROUTE_MS: ${{ vars.AIRI_UI_AUDIT_SLOW_ROUTE_MS || '7000' }}
       AIRI_UI_AUDIT_SOFT_FAIL: "true"
       AIRI_UI_AUDIT_FAIL_ON: none
     steps:
