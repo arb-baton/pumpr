@@ -1,4 +1,5 @@
 const TWEX_CREATE_URL = "https://api.twexapi.io/twitter/tweets/create";
+const { createdTweetId, verifyTweetOnX } = require("./x-post-verification");
 
 function cleanText(value, max = 280) {
   return String(value || "")
@@ -67,7 +68,10 @@ async function postTweet(text) {
   if (!response.ok || Number(payload?.code || response.status) >= 400) {
     throw new Error(payload?.msg || payload?.message || payload?.raw || `TwexAPI returned ${response.status}`);
   }
-  console.log(`[pumpr-tweet] Tweet posted: ${payload?.data?.tweet_id || "ok"}`);
+  const tweetId = createdTweetId(payload);
+  if (!tweetId) throw new Error("TwexAPI accepted the create request but did not return a created tweet ID.");
+  const verified = await verifyTweetOnX(tweetId, "pumpr_fun");
+  console.log(`[pumpr-tweet] Tweet posted and verified: https://x.com/${verified.authorUsername || "pumpr_fun"}/status/${tweetId}`);
   return payload;
 }
 

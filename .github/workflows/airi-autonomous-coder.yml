@@ -40,7 +40,8 @@ jobs:
       AIRI_X_COOKIE: ${{ secrets.AIRI_X_COOKIE || secrets.AIRI_TWITTER_COOKIE || secrets.TWITTER_X_COOKIE || secrets.X_COOKIE || secrets.TWEXAPI_X_COOKIE }}
       TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN || secrets.AIRI_TWEXAPI_BEARER_TOKEN }}
       TWEXAPI_PROXY: ${{ secrets.TWEXAPI_PROXY || secrets.AIRI_TWEXAPI_PROXY || vars.TWEXAPI_PROXY || '' }}
-      AIRI_CODE_STATUS_TWEET_ENABLED: ${{ vars.AIRI_CODE_STATUS_TWEET_ENABLED || 'true' }}
+      AIRI_CODE_STATUS_TWEET_ENABLED: ${{ vars.AIRI_CODE_STATUS_TWEET_ENABLED || 'false' }}
+      AIRI_CODE_MERGE_TWEET_ENABLED: ${{ vars.AIRI_CODE_MERGE_TWEET_ENABLED || 'false' }}
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -184,7 +185,7 @@ jobs:
         run: npm run deploy:prod
 
       - name: Tweet merged Airi fix
-        if: steps.write.outputs.changed == 'true' && env.AIRI_AUTO_MERGE == 'true'
+        if: steps.write.outputs.changed == 'true' && env.AIRI_AUTO_MERGE == 'true' && env.AIRI_CODE_MERGE_TWEET_ENABLED == 'true'
         continue-on-error: true
         shell: bash
         env:

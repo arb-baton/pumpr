@@ -1,4 +1,5 @@
 const fs = require("fs");
+const { createdTweetId, verifyTweetOnX } = require("./x-post-verification");
 const path = require("path");
 
 const HISTORY_PATH = process.env.AIRI_TWEET_HISTORY_PATH || path.join(process.cwd(), ".airi-tweet-history.json");
@@ -254,11 +255,14 @@ async function postTweetWithTwexApi(text) {
     const detail = payloadBody?.msg || payloadBody?.message || payloadBody?.error || payloadBody?.detail || payloadBody?.raw || `HTTP ${response.status}`;
     throw new Error(`TwexAPI tweet failed: ${cleanText(detail, 220)}`);
   }
-  console.log(`[airi-tweet] Tweet posted through TwexAPI: ${payloadBody?.data?.tweet_id || payloadBody?.tweet_id || "ok"}`);
+  const tweetId = createdTweetId(payloadBody);
+  if (!tweetId) throw new Error("TwexAPI accepted the create request but did not return a created tweet ID.");
+  const verified = await verifyTweetOnX(tweetId, airiUsername());
+  console.log(`[airi-tweet] Tweet posted and verified on X: https://x.com/${verified.authorUsername || airiUsername()}/status/${tweetId}`);
   return {
     ok: true,
     method: "twexapi",
-    tweetId: payloadBody?.data?.tweet_id || payloadBody?.data?.id || payloadBody?.tweet_id || ""
+    tweetId
   };
 }
 
@@ -506,6 +510,12 @@ function shouldSkipWorld(history) {
   const minHours = Math.max(1, Number(process.env.AIRI_WORLD_MIN_HOURS || 3));
   const latestWorld = latestByMode(history, "world");
   return latestWorld && Date.now() - latestWorld < minHours * 60 * 60 * 1000;
+}
+
+function shouldSkipPush(history) {
+  const minHours = Math.max(1, Number(process.env.AIRI_PUSH_MIN_HOURS || 3));
+  const latestPush = latestByMode(history, "push");
+  return latestPush && Date.now() - latestPush < minHours * 60 * 60 * 1000;
 }
 
 async function fetchText(url, timeoutMs = 6500) {
@@ -880,7 +890,7 @@ async function main() {
   const event = readPushEvent();
   const mode = cleanText(process.env.AIRI_TWEET_MODE || "", 40).toLowerCase() || "push";
   const manualContext = cleanText(process.env.AIRI_TWEET_CONTEXT || "", 500);
-  const forceTweet = isTruthy(process.env.AIRI_TWEET_FORCE) || String(process.env.GITHUB_EVENT_NAME || "").toLowerCase() === "workflow_dispatch";
+  const forceTweet = isTruthy(process.env.AIRI_TWEET_FORCE);
 
   if (!forceTweet && mode === "thought" && shouldSkipThought(history)) {
     console.log("[airi-tweet] Thought window opened, but Airi chose silence this time.");
@@ -888,6 +898,10 @@ async function main() {
   }
   if (!forceTweet && mode === "world" && shouldSkipWorld(history)) {
     console.log("[airi-tweet] World pulse opened, but Airi chose to keep watching.");
+    return;
+  }
+  if (!forceTweet && mode === "push" && shouldSkipPush(history)) {
+    console.log("[airi-tweet] A recent push was already tweeted. Waiting for the next push window.");
     return;
   }
 

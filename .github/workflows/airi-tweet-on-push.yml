@@ -20,7 +20,7 @@ on:
       force:
         description: "Ignore prior tweet memory for this manual run"
         required: false
-        default: "true"
+        default: "false"
         type: choice
         options:
           - "true"
@@ -33,7 +33,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: airi-tweet-on-push-${{ github.ref }}
+  group: airi-tweet-publisher
   cancel-in-progress: false
 
 jobs:
@@ -50,6 +50,7 @@ jobs:
       AIRI_TWEET_UI_FIRST: ${{ vars.AIRI_TWEET_UI_FIRST || 'true' }}
       AIRI_TWEET_TWEXAPI_ONLY: ${{ vars.AIRI_TWEET_TWEXAPI_ONLY || 'true' }}
       AIRI_THOUGHT_TWEET_CHANCE: ${{ vars.AIRI_THOUGHT_TWEET_CHANCE || '0.35' }}
+      AIRI_PUSH_MIN_HOURS: ${{ vars.AIRI_PUSH_MIN_HOURS || '3' }}
       AIRI_X_USERNAME: ${{ vars.AIRI_X_USERNAME || 'airi_agi' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_AIRI_TWEET_MODEL: ${{ vars.OPENAI_AIRI_TWEET_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}

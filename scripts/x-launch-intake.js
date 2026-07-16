@@ -1,6 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { createdTweetId, verifyTweetOnX } = require("./x-post-verification");
 const {
   generateContractAddressImageDataUrl,
   generateSignedBillImageDataUrl,
@@ -1121,11 +1122,14 @@ async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
     const detail = body?.message || body?.error || body?.detail || body?.raw || `HTTP ${response.status}`;
     throw new Error(`TwexAPI reply failed: ${cleanText(detail, 220)}`);
   }
-  log(`TwexAPI reply posted to ${tweetId}.`);
+  const createdId = createdTweetId(body);
+  if (!createdId) throw new Error("TwexAPI accepted the reply request but did not return a created tweet ID.");
+  const verified = await verifyTweetOnX(createdId, process.env.PUMPR_X_USERNAME || "pumpr_launch");
+  log(`TwexAPI reply posted and verified: https://x.com/${verified.authorUsername || "pumpr_launch"}/status/${createdId}`);
   return {
     ok: true,
     method: "twexapi",
-    tweetId: body?.data?.tweet_id || body?.data?.id || body?.tweet_id || ""
+    tweetId: createdId
   };
 }
 

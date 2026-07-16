@@ -8,13 +8,13 @@ on:
         required: false
         default: ""
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "17 */6 * * *"
 
 permissions:
   contents: read
 
 concurrency:
-  group: airi-world-pulse
+  group: airi-tweet-publisher
   cancel-in-progress: false
 
 jobs:
@@ -30,8 +30,8 @@ jobs:
       AIRI_TWEET_UI_FIRST: ${{ vars.AIRI_TWEET_UI_FIRST || 'true' }}
       AIRI_TWEET_TWEXAPI_ONLY: ${{ vars.AIRI_TWEET_TWEXAPI_ONLY || 'true' }}
       AIRI_TWEET_MAX_CHARS: ${{ vars.AIRI_TWEET_MAX_CHARS || '125' }}
-      AIRI_WORLD_POST_CHANCE: ${{ vars.AIRI_WORLD_POST_CHANCE || '0.9' }}
-      AIRI_WORLD_MIN_HOURS: ${{ vars.AIRI_WORLD_MIN_HOURS || '1' }}
+      AIRI_WORLD_POST_CHANCE: ${{ vars.AIRI_WORLD_POST_CHANCE || '0.75' }}
+      AIRI_WORLD_MIN_HOURS: ${{ vars.AIRI_WORLD_MIN_HOURS || '6' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_AIRI_TWEET_MODEL: ${{ vars.OPENAI_AIRI_TWEET_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
       AIRI_X_COOKIE: ${{ secrets.AIRI_X_COOKIE || secrets.AIRI_TWITTER_COOKIE || secrets.TWITTER_X_COOKIE || secrets.X_COOKIE || secrets.TWEXAPI_X_COOKIE }}
