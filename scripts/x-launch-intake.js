@@ -2,6 +2,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const {
+  generateContractAddressImageDataUrl,
   generateSignedBillImageDataUrl,
   normalizeVisualMode,
   serialForBill
@@ -427,10 +428,20 @@ async function resolveLaunchImage(request = {}) {
 }
 
 async function resolveReplyImage(request = {}, result = {}) {
-  if (request.visualMode === "signed_bill") {
+  if (result.contractAddressEmbedded) {
     return result.metadataImageUrl || result.replyImageUrl || request.imageUrl || "";
   }
-  return result.metadataImageUrl || result.replyImageUrl || request.imageUrl || "";
+  if (request.visualMode === "signed_bill") {
+    return generateSignedBillLaunchImage(request, result);
+  }
+  const sourceImageUrl = String(result.metadataImageUrl || result.replyImageUrl || request.imageUrl || "").trim();
+  const tokenAddress = String(result.token || result.tokenAddress || result.mint || "").trim();
+  if (!sourceImageUrl || !tokenAddress) return sourceImageUrl;
+  const dataUrl = await generateContractAddressImageDataUrl({ sourceImageUrl, tokenAddress });
+  const uploaded = await uploadImageDataUrl(dataUrl);
+  if (!uploaded) throw new Error("Contract-address image was generated but could not be hosted.");
+  log(`Added contract address to launch reply image: ${uploaded}`);
+  return uploaded;
 }
 
 function launchReplyMediaUrl(request = {}, result = {}) {
@@ -1174,10 +1185,32 @@ async function signTransactionPayload(payload, keypair) {
   return Buffer.from(tx.serialize({ requireAllSignatures: false, verifySignatures: false })).toString("base64");
 }
 
+function generatePreparedPumpFunMint(Keypair) {
+  const suffix = String(process.env.PUMPFUN_MINT_SUFFIX || "pr").trim();
+  const maxAttempts = Math.max(1, Math.min(100_000, Number(process.env.PUMPFUN_MINT_SUFFIX_MAX_ATTEMPTS || 25_000)));
+  let keypair;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    keypair = Keypair.generate();
+    if (!suffix || keypair.publicKey.toBase58().endsWith(suffix)) return keypair;
+  }
+  throw new Error(`Could not prepare a Pump.fun mint ending in ${suffix} after ${maxAttempts.toLocaleString()} attempts.`);
+}
+
 async function launchPumpFun(request) {
+  const { Keypair } = require("@solana/web3.js");
   const keypair = decodeLaunchKeypair();
   const creator = keypair.publicKey.toBase58();
-  const imageUri = await resolveLaunchImage(request);
+  const mintKeypair = generatePreparedPumpFunMint(Keypair);
+  const mint = mintKeypair.publicKey.toBase58();
+  let imageUri;
+  if (request.visualMode === "signed_bill") {
+    imageUri = await generateSignedBillLaunchImage(request, { mint });
+  } else {
+    const sourceImageUrl = await relayLaunchImage(request.imageUrl);
+    const dataUrl = await generateContractAddressImageDataUrl({ sourceImageUrl, tokenAddress: mint });
+    imageUri = await uploadImageDataUrl(dataUrl);
+    if (!imageUri) throw new Error("Contract-address metadata image could not be hosted.");
+  }
   const launchPayload = await fetchJson(`${APP_BASE_URL}/api/pumpfun/launch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1186,6 +1219,7 @@ async function launchPumpFun(request) {
       symbol: request.ticker,
       description: request.description,
       imageUri,
+      mintSecretKey: Buffer.from(mintKeypair.secretKey).toString("base64"),
       userPublicKey: creator,
       creatorWallet: creator,
       starterBuySol: "0",
@@ -1206,11 +1240,14 @@ async function launchPumpFun(request) {
   });
   const result = {
     ...finalized,
+    mint: finalized.mint || launchPayload.mint || mint,
+    tokenAddress: finalized.tokenAddress || launchPayload.tokenAddress || mint,
+    contractAddressEmbedded: true,
     metadataImageUrl: imageUri || request.imageUrl || "",
     replyImageUrl: imageUri || request.imageUrl || ""
   };
   result.replyImageUrl = await resolveReplyImage(request, result).catch((error) => {
-    log(`Signed bill final reply image skipped: ${error.message || error}`);
+    log(`Contract-address reply image skipped: ${error.message || error}`);
     return result.replyImageUrl;
   });
   return result;
@@ -1333,7 +1370,7 @@ async function launchRobinhood(request) {
     creator: signer.address
   };
   result.replyImageUrl = await resolveReplyImage(request, result).catch((error) => {
-    log(`Signed bill final reply image skipped: ${error.message || error}`);
+    log(`Contract-address reply image skipped: ${error.message || error}`);
     return result.replyImageUrl;
   });
   return result;

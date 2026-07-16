@@ -34,7 +34,8 @@ concurrency:
 jobs:
   intake:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # 360 passes at 30 seconds take about three hours. Leave room for setup and cleanup.
+    timeout-minutes: 200
     env:
       APP_BASE_URL: ${{ vars.APP_BASE_URL || vars.PUBLIC_BASE_URL || 'https://pump-r.fun' }}
       PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL || 'https://pump-r.fun' }}
@@ -48,7 +49,11 @@ jobs:
       X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES: ${{ vars.X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES || '0' }}
       X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES: ${{ vars.X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES || '0' }}
       X_LAUNCH_LOOP_INTERVAL_SECONDS: ${{ vars.X_LAUNCH_LOOP_INTERVAL_SECONDS || '30' }}
-      X_LAUNCH_LOOP_RUNS: ${{ vars.X_LAUNCH_LOOP_RUNS || '60' }}
+      X_LAUNCH_LOOP_RUNS: ${{ vars.X_LAUNCH_LOOP_RUNS || '360' }}
+      X_LAUNCH_SELF_DISPATCH: ${{ vars.X_LAUNCH_SELF_DISPATCH || 'true' }}
+      X_LAUNCH_WORKFLOW: x-launch-intake.yml
+      X_LAUNCH_WORKFLOW_REF: ${{ github.ref_name }}
+      GITHUB_TOKEN: ${{ github.token }}
       X_LAUNCH_ROBINHOOD_RPC_URL: ${{ vars.X_LAUNCH_ROBINHOOD_RPC_URL || vars.ROBINHOOD_RPC_URL || '' }}
       X_LAUNCH_ROBINHOOD_CREATOR_BPS: ${{ vars.X_LAUNCH_ROBINHOOD_CREATOR_BPS || '0' }}
       X_LAUNCH_ROBINHOOD_TRADE_FEE_BPS: ${{ vars.X_LAUNCH_ROBINHOOD_TRADE_FEE_BPS || '50' }}

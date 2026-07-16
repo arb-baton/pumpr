@@ -80,12 +80,6 @@ function monogramFor(name = "", ticker = "") {
   return raw.slice(0, 4) || "PR";
 }
 
-function shortAddress(value = "") {
-  const raw = cleanText(value, 80);
-  if (!raw) return "";
-  return raw.length > 18 ? `${raw.slice(0, 8)}...${raw.slice(-6)}` : raw;
-}
-
 function formatDate(value = "") {
   const date = value ? new Date(value) : new Date();
   if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
@@ -150,7 +144,7 @@ function buildSignedBillSvg(options = {}) {
   const creatorId = cleanText(options.creatorId || "", 40);
   const signer = creatorHandle ? `@${creatorHandle}` : "X requester";
   const serial = cleanText(options.serial || serialForBill(options), 24);
-  const tokenAddress = shortAddress(options.tokenAddress || options.contractAddress || "");
+  const tokenAddress = cleanText(options.tokenAddress || options.contractAddress || "", 80);
   const sourceImageUrl = cleanText(options.sourceImageUrl || "", 500);
   const chain = chainLabel(launchpad);
   const hasPortrait = /^https?:\/\//i.test(sourceImageUrl);
@@ -195,6 +189,30 @@ function buildSignedBillSvg(options = {}) {
 </svg>`;
 }
 
+function buildContractAddressOverlaySvg(options = {}) {
+  const sourceImageUrl = cleanText(options.sourceImageUrl || "", 1000);
+  const tokenAddress = cleanText(options.tokenAddress || options.contractAddress || "", 80);
+  if (!/^https?:\/\//i.test(sourceImageUrl)) throw new Error("A hosted source image is required for the contract-address overlay.");
+  if (!tokenAddress) throw new Error("A token contract address is required for the image overlay.");
+  const addressSize = fitFontSize(tokenAddress, 31, 18, 44);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <defs>
+    <linearGradient id="caBar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#070a0e" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#111827" stop-opacity="0.96"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="1200" fill="#080b10"/>
+  <image href="${escapeXml(sourceImageUrl)}" x="0" y="0" width="1200" height="1010" preserveAspectRatio="xMidYMid meet"/>
+  <rect x="0" y="1010" width="1200" height="190" fill="url(#caBar)"/>
+  <rect x="0" y="1010" width="1200" height="5" fill="#7cf7c9"/>
+  <text x="600" y="1071" text-anchor="middle" fill="#7cf7c9" font-family="Arial, sans-serif" font-size="27" font-weight="800" letter-spacing="4">CONTRACT ADDRESS</text>
+  <text x="600" y="1144" text-anchor="middle" fill="#ffffff" font-family="Courier New, monospace" font-size="${addressSize}" font-weight="700">${escapeXml(tokenAddress)}</text>
+</svg>`;
+}
+
 async function renderSvgToJpegDataUrl(svg) {
   let chromium;
   try {
@@ -231,8 +249,14 @@ async function generateSignedBillImageDataUrl(options = {}) {
   return renderSvgToJpegDataUrl(svg);
 }
 
+async function generateContractAddressImageDataUrl(options = {}) {
+  return renderSvgToJpegDataUrl(buildContractAddressOverlaySvg(options));
+}
+
 module.exports = {
+  buildContractAddressOverlaySvg,
   buildSignedBillSvg,
+  generateContractAddressImageDataUrl,
   generateSignedBillImageDataUrl,
   isSignedBillRequested,
   normalizeVisualMode,

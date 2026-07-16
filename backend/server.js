@@ -10724,6 +10724,20 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       { retryAll: true }
     );
 
+    let suppliedMintKeypair = null;
+    const suppliedMintSecret = String(req.body?.mintSecretKey || "").trim();
+    if (suppliedMintSecret) {
+      try {
+        suppliedMintKeypair = SolanaKeypair.fromSecretKey(Uint8Array.from(Buffer.from(suppliedMintSecret, "base64")));
+      } catch {
+        return res.status(400).json({ error: "Invalid prepared Pump.fun mint signer" });
+      }
+    }
+    const vanityMint = suppliedMintKeypair
+      ? { keypair: suppliedMintKeypair, suffix: "", attempts: 1, durationMs: 0 }
+      : generatePumpFunMintKeypair(SolanaKeypair);
+    const mintKeypair = vanityMint.keypair;
+
     const metadataUri = await createPumpFunMetadataUri(req, {
       name,
       symbol,
@@ -10734,8 +10748,6 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       return res.status(500).json({ error: "Pump.fun metadata URI is missing or too long" });
     }
 
-    const vanityMint = generatePumpFunMintKeypair(SolanaKeypair);
-    const mintKeypair = vanityMint.keypair;
     const requestedLatest = {
       blockhash: String(req.body?.blockhash || "").trim(),
       lastValidBlockHeight: Number(req.body?.lastValidBlockHeight || 0)
