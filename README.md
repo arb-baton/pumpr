@@ -177,7 +177,7 @@ X mention launch intake:
 
 ```env
 PUMPR_X_USERNAME=pumpr_fun
-TWEXAPI_BEARER_TOKEN=your-twexapi-token
+X_LAUNCH_TWEXAPI_BEARER_TOKEN=your-dedicated-x-launcher-twexapi-token
 PUMPR_TWEX_X_COOKIE=your-pumpr-fun-x-cookie
 OPENAI_API_KEY=your-openai-api-key
 X_LAUNCH_SOLANA_PRIVATE_KEY=store-only-as-a-secret

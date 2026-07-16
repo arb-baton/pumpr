@@ -278,16 +278,11 @@ function pumprCookie() {
 }
 
 function twexApiToken() {
-  return String(
-    process.env.TWEXAPI_BEARER_TOKEN ||
-      process.env.TWEXAPI_API_KEY ||
-      process.env.PUMPR_TWEXAPI_BEARER_TOKEN ||
-      ""
-  ).trim();
+  return String(process.env.X_LAUNCH_TWEXAPI_BEARER_TOKEN || "").trim();
 }
 
 function twexApiProxy() {
-  return String(process.env.TWEXAPI_PROXY || process.env.PUMPR_TWEXAPI_PROXY || "").trim();
+  return String(process.env.X_LAUNCH_TWEXAPI_PROXY || "").trim();
 }
 
 function mediaCandidate(value = "") {
@@ -1095,7 +1090,7 @@ async function clickXButton(page, locator, label, logger = () => {}) {
 
 async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
   const token = twexApiToken();
-  if (!token) throw new Error("Set TWEXAPI_BEARER_TOKEN before using TwexAPI replies.");
+  if (!token) throw new Error("Set X_LAUNCH_TWEXAPI_BEARER_TOKEN before using TwexAPI launch replies.");
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_X_COOKIE or PUMPR_TWEX_X_COOKIE so TwexAPI can post from @pumpr_launch.");
   const payload = {
@@ -1147,7 +1142,7 @@ async function postReply(tweetId, text, mediaUrl = "") {
       log(`TwexAPI reply failed, trying browser/cookie fallback: ${cleanText(error.message || error, 220)}`);
     }
   } else if (twexOnly) {
-    throw new Error("Set TWEXAPI_BEARER_TOKEN before posting X launch replies through TwexAPI.");
+    throw new Error("Set X_LAUNCH_TWEXAPI_BEARER_TOKEN before posting X launch replies through TwexAPI.");
   }
   return replyWithBrowser(tweetId, text, mediaUrl);
 }
