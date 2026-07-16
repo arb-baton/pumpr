@@ -220,6 +220,11 @@ if (dom.terminal) {
       event.preventDefault();
     }
   });
+
+  // Add aria-label for progress bar for screen readers
+  if (dom.progress) {
+    dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
+  }
 }
 
 function safeParse(value, fallback) {
