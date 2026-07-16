@@ -142,15 +142,7 @@ async function loadMarkets(fresh = false) {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Unable to load market");
     state.assets = (payload.assets || []).map((asset) => ({ ...asset, category: asset.category || classifyAsset(asset) }));
-    const categoryCounts = state.assets.reduce((counts, asset) => {
-      counts[asset.category] = (counts[asset.category] || 0) + 1;
-      return counts;
-    }, {});
-    $("rwaCategories").querySelectorAll("button[data-category]").forEach((button) => {
-      const category = button.dataset.category;
-      const count = category === "All" ? state.assets.length : Number(categoryCounts[category] || 0);
-      button.querySelector("span").textContent = String(count);
-    });
+    updateCategoryCounts();
     $("rwaMarketCap").textContent = compact(payload.stats?.marketCap);
     $("rwaVolume").textContent = compact(payload.stats?.volume24h);
     $("rwaTracked").textContent = String(payload.stats?.tracked || 0);
