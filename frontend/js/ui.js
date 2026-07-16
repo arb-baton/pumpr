@@ -2522,7 +2522,9 @@ function sharedWalletMarkup() {
         <span class="profile-menu-item-left"><span class="profile-menu-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.2" r="3.7"></circle><path d="M4.6 20c1.8-3.9 4.4-5.9 7.4-5.9s5.6 2 7.4 5.9"></path></svg></span><span>View profile</span></span>
         <span class="profile-menu-item-arrow">></span>
       </a>
-      <button class="profile-menu-link profile-menu-btn profile-menu-item profile-menu-item-danger" id="menuLogoutBtn" type="button">Log out</button>
+      <button class="profile-menu-link profile-menu-btn profile-menu-item profile-menu-item-danger" id="menuLogoutBtn" type="button">
+        <span class="profile-menu-item-left"><span class="profile-menu-item-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 5H5v14h5"></path><path d="M14 8l4 4-4 4"></path><path d="M8 12h10"></path></svg></span><span>Log out</span></span>
+      </button>
     </div>
   `;
 }
@@ -2853,8 +2855,16 @@ export function initTopbarWalletProfile({
     setProfileOpen(false);
   });
   els.menuLogoutBtn?.addEventListener("click", async () => {
-    await controls.disconnect();
-    await update();
+    if (els.menuLogoutBtn.disabled) return;
+    setProfileOpen(false);
+    els.menuLogoutBtn.disabled = true;
+    els.menuLogoutBtn.classList.add("is-busy");
+    try {
+      await controls.disconnect();
+    } finally {
+      els.menuLogoutBtn.disabled = false;
+      els.menuLogoutBtn.classList.remove("is-busy");
+    }
   });
 
   update();

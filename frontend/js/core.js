@@ -71,6 +71,12 @@ const WALLET_SESSION_KEY = "etherpump.wallet.session.v1";
 const PHANTOM_SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const PHANTOM_ACTIVITY_WRITE_INTERVAL_MS = 60 * 1000;
 const SOCIAL_AUTH_SESSION_KEY = "pumpr.social.session.v1";
+const SHARED_SOCIAL_AUTH_KEYS = [
+  SOCIAL_AUTH_SESSION_KEY,
+  "etherpump.alpha.xauth.v1",
+  "etherpump.go.xauth.v1",
+  "Pump-r.community.xauth.v2"
+];
 const SOCIAL_WALLET_STORE_KEY = "pumpr.social.wallets.v1";
 const PROFILE_STORAGE_KEY = "etherpump.profile.v1";
 const PROFILE_REMOTE_FRESH_KEY = "etherpump.profile.remotefresh.v1";
@@ -413,7 +419,7 @@ function saveSocialAuthSession(value = {}) {
 
 function clearSocialAuthSession() {
   try {
-    localStorage.removeItem(SOCIAL_AUTH_SESSION_KEY);
+    for (const key of SHARED_SOCIAL_AUTH_KEYS) localStorage.removeItem(key);
   } catch {
     // ignore storage failures
   }
