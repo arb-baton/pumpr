@@ -194,22 +194,13 @@ function buildContractAddressOverlaySvg(options = {}) {
   const tokenAddress = cleanText(options.tokenAddress || options.contractAddress || "", 80);
   if (!/^https?:\/\//i.test(sourceImageUrl)) throw new Error("A hosted source image is required for the contract-address overlay.");
   if (!tokenAddress) throw new Error("A token contract address is required for the image overlay.");
-  const addressSize = fitFontSize(tokenAddress, 31, 18, 44);
+  const addressSize = fitFontSize(`CA: ${tokenAddress}`, 16, 15, 70);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
-  <defs>
-    <linearGradient id="caBar" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#070a0e" stop-opacity="0.96"/>
-      <stop offset="1" stop-color="#111827" stop-opacity="0.96"/>
-    </linearGradient>
-  </defs>
   <rect width="1200" height="1200" fill="#080b10"/>
-  <image href="${escapeXml(sourceImageUrl)}" x="0" y="0" width="1200" height="1010" preserveAspectRatio="xMidYMid meet"/>
-  <rect x="0" y="1010" width="1200" height="190" fill="url(#caBar)"/>
-  <rect x="0" y="1010" width="1200" height="5" fill="#7cf7c9"/>
-  <text x="600" y="1071" text-anchor="middle" fill="#7cf7c9" font-family="Arial, sans-serif" font-size="27" font-weight="800" letter-spacing="4">CONTRACT ADDRESS</text>
-  <text x="600" y="1144" text-anchor="middle" fill="#ffffff" font-family="Courier New, monospace" font-size="${addressSize}" font-weight="700">${escapeXml(tokenAddress)}</text>
+  <image href="${escapeXml(sourceImageUrl)}" x="0" y="0" width="1200" height="1200" preserveAspectRatio="xMidYMid meet"/>
+  <text x="600" y="1174" text-anchor="middle" fill="#ffffff" fill-opacity="0.92" stroke="#000000" stroke-opacity="0.9" stroke-width="3" paint-order="stroke" font-family="Courier New, monospace" font-size="${addressSize}" font-weight="700">CA: ${escapeXml(tokenAddress)}</text>
 </svg>`;
 }
 

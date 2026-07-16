@@ -14,7 +14,9 @@ describe("X launch reply images", function () {
       tokenAddress: solanaMint
     });
 
-    expect(svg).to.include("CONTRACT ADDRESS");
+    expect(svg).not.to.include("CONTRACT ADDRESS");
+    expect(svg).to.include(`CA: ${solanaMint}`);
+    expect(svg).to.include('height="1200" preserveAspectRatio="xMidYMid meet"');
     expect(svg).to.include(solanaMint);
     expect(svg).to.include("https://example.com/user-image.png");
   });
