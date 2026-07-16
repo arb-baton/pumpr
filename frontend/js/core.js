@@ -68,6 +68,8 @@ let eip6963Requested = false;
 const providerIds = new WeakMap();
 let providerIdCounter = 0;
 const WALLET_SESSION_KEY = "etherpump.wallet.session.v1";
+const PHANTOM_SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const PHANTOM_ACTIVITY_WRITE_INTERVAL_MS = 60 * 1000;
 const SOCIAL_AUTH_SESSION_KEY = "pumpr.social.session.v1";
 const SOCIAL_WALLET_STORE_KEY = "pumpr.social.wallets.v1";
 const PROFILE_STORAGE_KEY = "etherpump.profile.v1";
@@ -262,7 +264,13 @@ function loadWalletSession() {
     const address = type === "solana" || type === "social"
       ? String(parsed.address || "").trim()
       : normalizeProfileAddress(parsed.address || "");
-    return { connected: Boolean(parsed.connected), choice, address, type };
+    return {
+      connected: Boolean(parsed.connected),
+      choice,
+      address,
+      type,
+      lastActiveAt: Math.max(0, Number(parsed.lastActiveAt || 0))
+    };
   } catch {
     return { connected: false, choice: "", address: "", type: "evm" };
   }
@@ -287,13 +295,67 @@ function saveWalletSession(partial = {}) {
         ? type === "solana" || type === "social"
           ? partial.address.trim()
           : normalizeProfileAddress(partial.address)
-        : prev.address || ""
+        : prev.address || "",
+    lastActiveAt:
+      partial.connected === false
+        ? 0
+        : Number.isFinite(Number(partial.lastActiveAt)) && Number(partial.lastActiveAt) > 0
+        ? Number(partial.lastActiveAt)
+        : prev.lastActiveAt || 0
   };
   try {
     localStorage.setItem(WALLET_SESSION_KEY, JSON.stringify(next));
   } catch {
     // ignore storage write failures
   }
+}
+
+function phantomSessionExpired(session = loadWalletSession(), now = Date.now()) {
+  if (!session.connected || session.type !== "solana" || session.choice !== "phantom") return false;
+  const lastActiveAt = Number(session.lastActiveAt || 0);
+  // Existing sessions without a lease get one migration window instead of being disconnected immediately.
+  if (!lastActiveAt) return false;
+  return Number(now) - lastActiveAt >= PHANTOM_SESSION_IDLE_TIMEOUT_MS;
+}
+
+let lastPhantomActivityWriteAt = 0;
+
+function recordPhantomActivity(force = false) {
+  const session = loadWalletSession();
+  if (!session.connected || session.type !== "solana" || session.choice !== "phantom") return;
+  const now = Date.now();
+  if (!force && now - lastPhantomActivityWriteAt < PHANTOM_ACTIVITY_WRITE_INTERVAL_MS) return;
+  lastPhantomActivityWriteAt = now;
+  saveWalletSession({ lastActiveAt: now });
+}
+
+function enforcePhantomIdleTimeout() {
+  const session = loadWalletSession();
+  if (!phantomSessionExpired(session)) return false;
+  try {
+    getSolanaProvider()?.disconnect?.();
+  } catch {
+    // The app session is still cleared if the extension is unavailable or locked.
+  }
+  disconnectWallet();
+  window.dispatchEvent(new CustomEvent("etherpump:walletSessionExpired", {
+    detail: { wallet: "phantom", reason: "inactive" }
+  }));
+  return true;
+}
+
+if (typeof window !== "undefined") {
+  for (const eventName of ["pointerdown", "keydown", "touchstart"]) {
+    window.addEventListener(eventName, () => {
+      if (!enforcePhantomIdleTimeout()) recordPhantomActivity();
+    }, { passive: true });
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      if (!enforcePhantomIdleTimeout()) recordPhantomActivity(true);
+    }
+  });
+  window.setInterval(enforcePhantomIdleTimeout, PHANTOM_ACTIVITY_WRITE_INTERVAL_MS);
 }
 
 function readSocialAuthSession() {
@@ -1149,7 +1211,7 @@ export async function connectSolanaWallet(options = {}) {
     }
   }
   if (!silent) {
-    saveWalletSession({ connected: true, choice: "phantom", type: "solana", address: publicKey });
+    saveWalletSession({ connected: true, choice: "phantom", type: "solana", address: publicKey, lastActiveAt: Date.now() });
     window.dispatchEvent(new CustomEvent("etherpump:solanaWalletChanged", { detail: solanaWalletState() }));
     window.dispatchEvent(new CustomEvent("etherpump:walletChanged", { detail: walletState() }));
   }
@@ -1199,6 +1261,14 @@ export async function restoreWalletFromSession(choice = "") {
   const session = loadWalletSession();
   if (!session.connected) {
     return null;
+  }
+
+  if (session.type === "solana" && (session.choice === "phantom" || choice === "phantom")) {
+    if (phantomSessionExpired(session)) {
+      disconnectWallet();
+      return null;
+    }
+    if (!session.lastActiveAt) recordPhantomActivity(true);
   }
 
   const target = choice || session.choice || "metamask";
