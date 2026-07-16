@@ -2,11 +2,16 @@
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  padding: 16px 22px;
+  padding: 16px 22px 13px;
   border-bottom: 1px solid var(--rwa-line);
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: #526647 transparent;
+  scrollbar-gutter: stable;
 }
-.rwa-categories::-webkit-scrollbar { display: none; }
+.rwa-categories::-webkit-scrollbar { height: 5px; }
+.rwa-categories::-webkit-scrollbar-track { background: transparent; }
+.rwa-categories::-webkit-scrollbar-thumb { border-radius: 999px; background: linear-gradient(90deg, #35422f, #657e57); }
+.rwa-categories::-webkit-scrollbar-thumb:hover { background: linear-gradient(90deg, #526b46, #8ab972); }
 .rwa-categories button {
   flex: 0 0 auto;
   border: 1px solid #2b302a;
@@ -31,8 +36,26 @@
   font-weight: 700;
   white-space: nowrap;
 }
-@media (max-width: 600px) { .rwa-categories { padding: 13px 14px; } }
-.rwa-table-wrap { max-height: 760px; }
+@media (max-width: 600px) {
+  .rwa-categories { padding: 13px 14px; scrollbar-width: none; }
+  .rwa-categories::-webkit-scrollbar { display: none; }
+}
+.rwa-table-wrap {
+  max-height: 760px;
+  scrollbar-width: thin;
+  scrollbar-color: #526647 #0b0e0b;
+  scrollbar-gutter: stable both-edges;
+}
+.rwa-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
+.rwa-table-wrap::-webkit-scrollbar-track { background: #0b0e0b; border-radius: 999px; }
+.rwa-table-wrap::-webkit-scrollbar-thumb {
+  min-height: 44px;
+  border: 2px solid #0b0e0b;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #3d4c36, #627b54);
+}
+.rwa-table-wrap::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #58724b, #8ab972); }
+.rwa-table-wrap::-webkit-scrollbar-corner { background: #0b0e0b; }
 .rwa-table thead { position: sticky; top: 0; z-index: 2; background: #111411; }
 .rwa-table td { padding-top: 13px; padding-bottom: 13px; }
 .rwa-pagination { min-height: 58px; padding: 11px 24px; border-top: 1px solid var(--rwa-line); display: flex; align-items: center; justify-content: space-between; color: #6f776e; font-size: 10px; }
