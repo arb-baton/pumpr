@@ -2340,6 +2340,57 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+async function generatePreparedPumpFunMint(solanaWeb3) {
+  const suffix = "pr";
+  const maxAttempts = 25_000;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const keypair = solanaWeb3.Keypair.generate();
+    if (keypair.publicKey.toBase58().endsWith(suffix)) return keypair;
+    if (attempt % 250 === 0) await new Promise((resolve) => window.setTimeout(resolve, 0));
+  }
+  throw new Error(`Could not prepare a Pump.fun mint ending in ${suffix}. Try launching again.`);
+}
+
+async function stampContractAddressOnImage(sourceUrl, tokenAddress) {
+  const response = await fetch(String(sourceUrl || ""), { cache: "no-store" });
+  if (!response.ok) throw new Error(`Could not load the launch image (${response.status}).`);
+  const blob = await response.blob();
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 1200;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#080b10";
+    context.fillRect(0, 0, 1200, 1200);
+    const imageAreaHeight = 1010;
+    const scale = Math.min(1200 / bitmap.width, imageAreaHeight / bitmap.height);
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    context.drawImage(bitmap, Math.round((1200 - width) / 2), Math.round((imageAreaHeight - height) / 2), width, height);
+    const gradient = context.createLinearGradient(0, imageAreaHeight, 1200, 1200);
+    gradient.addColorStop(0, "#070a0e");
+    gradient.addColorStop(1, "#111827");
+    context.fillStyle = gradient;
+    context.fillRect(0, imageAreaHeight, 1200, 190);
+    context.fillStyle = "#7cf7c9";
+    context.fillRect(0, imageAreaHeight, 1200, 5);
+    context.textAlign = "center";
+    context.fillStyle = "#7cf7c9";
+    context.font = "800 27px Arial, sans-serif";
+    context.fillText("CONTRACT ADDRESS", 600, 1071);
+    context.fillStyle = "#ffffff";
+    context.font = `${tokenAddress.length > 44 ? 22 : 25}px 'Courier New', monospace`;
+    context.fillText(tokenAddress, 600, 1144);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
+    const uploaded = await api.uploadImage(dataUrl, { requireHosted: true });
+    if (!uploaded?.url) throw new Error("The CA-stamped launch image could not be hosted.");
+    return uploaded.url;
+  } finally {
+    bitmap.close?.();
+  }
+}
+
 function normalizePumpFunHomeLaunch(row = {}) {
   const mint = String(row.mint || row.token || row.tokenAddress || "").trim();
   if (!mint) return null;
@@ -3004,6 +3055,13 @@ async function ensureAttachedRhFundingBeforeLaunch(details) {
 async function launchPumpFun(details) {
   const { provider, publicKey } = await connectSolanaWallet();
   const solanaWeb3 = await loadSolanaWeb3();
+  setAlert(ui.alert, "Preparing mint address and engraving it onto the token image...");
+  const mintKeypair = await generatePreparedPumpFunMint(solanaWeb3);
+  const preparedMint = mintKeypair.publicKey.toBase58();
+  const stampedImageUri = await stampContractAddressOnImage(details.imageUri, preparedMint);
+  details.imageUri = stampedImageUri;
+  if (ui.image) ui.image.value = stampedImageUri;
+  const mintSecretKey = bytesToBase64(mintKeypair.secretKey);
   let signature = "";
   let devBuySignature = "";
   let kolBuySignature = "";
@@ -3029,6 +3087,7 @@ async function launchPumpFun(details) {
         symbol: details.symbol,
         description: details.description,
         imageUri: details.imageUri,
+        mintSecretKey,
         totalSupply: details.totalSupply?.toString?.() || String(details.totalSupply || ""),
         creatorBps: details.creatorBps?.toString?.() || String(details.creatorBps || "0"),
         starterBuy: details.pumpfunDevBuyLamports?.toString?.() || "0",
@@ -3041,6 +3100,7 @@ async function launchPumpFun(details) {
         kolApplication: details.kolApplication || null
       });
       mint = String(payload?.mint || payload?.tokenAddress || payload?.token || "");
+      if (mint !== preparedMint) throw new Error("Pump.fun returned a different mint than the address engraved on the image.");
       pumpfunUrl = String(payload?.pumpfunUrl || payload?.url || (mint ? `https://pump.fun/coin/${mint}` : ""));
       const transactionBase64 = String(payload?.transactionBase64 || "");
       const signingToken = String(payload?.signingToken || "");

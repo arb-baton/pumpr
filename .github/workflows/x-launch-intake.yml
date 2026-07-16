@@ -57,7 +57,7 @@ jobs:
       X_LAUNCH_ROBINHOOD_RPC_URL: ${{ vars.X_LAUNCH_ROBINHOOD_RPC_URL || vars.ROBINHOOD_RPC_URL || '' }}
       X_LAUNCH_ROBINHOOD_CREATOR_BPS: ${{ vars.X_LAUNCH_ROBINHOOD_CREATOR_BPS || '0' }}
       X_LAUNCH_ROBINHOOD_TRADE_FEE_BPS: ${{ vars.X_LAUNCH_ROBINHOOD_TRADE_FEE_BPS || '50' }}
-      PUMPR_X_USERNAME: ${{ vars.PUMPR_X_USERNAME || 'pumpr_fun' }}
+      PUMPR_X_USERNAME: pumpr_launch
       PUMPR_X_USER_ID: ${{ vars.PUMPR_X_USER_ID || '' }}
       X_LAUNCH_INTAKE_STATE_PATH: cache/x-launch-intake-state.json
       X_LAUNCH_INTAKE_QUEUE_PATH: cache/x-launch-queue.json
@@ -99,7 +99,7 @@ jobs:
           restore-keys: |
             x-launch-intake-
 
-      - name: Fetch @pumpr_fun mentions every 30 seconds
+      - name: Fetch @pumpr_launch mentions every 30 seconds
         run: node scripts/x-launch-intake-loop.js
 
       - name: Save X launch intake memory

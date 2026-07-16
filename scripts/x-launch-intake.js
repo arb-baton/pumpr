@@ -456,9 +456,9 @@ function pendingDraftRows(state = {}) {
 
 async function fetchMentionsWithBrowser(state = {}) {
   const cookie = pumprCookie();
-  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser mention watcher can open @pumpr_fun notifications.");
-  const username = String(process.env.PUMPR_X_USERNAME || "pumpr_fun").replace(/^@/, "").trim().toLowerCase();
-  const searchUrl = `${BROWSER_SEARCH_BASE_URL}?q=${encodeURIComponent(`@${username} (create OR launch OR deploy OR mint)`)}&src=typed_query&f=live`;
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser mention watcher can open @pumpr_launch notifications.");
+  const username = String(process.env.PUMPR_X_USERNAME || "pumpr_launch").replace(/^@/, "").trim().toLowerCase();
+  const searchUrl = `${BROWSER_SEARCH_BASE_URL}?q=${encodeURIComponent(`@${username}`)}&src=typed_query&f=live`;
   const { chromium } = loadPlaywright();
   const browser = await chromium.launch({
     headless: true,
@@ -491,6 +491,7 @@ async function fetchMentionsWithBrowser(state = {}) {
           .filter(Boolean)
           .map((url) => ({ type: "photo", url }));
         const time = article.querySelector("time");
+        const contextText = `${tweetText} ${fullText}`;
         return {
           id: statusMatch?.[2] || "",
           text: tweetText || fullText,
@@ -500,20 +501,21 @@ async function fetchMentionsWithBrowser(state = {}) {
           createdAt: time?.getAttribute("datetime") || "",
           media,
           sourceUrl: statusUrl,
-        mentionsTarget: new RegExp(`@${targetUsername}\\b`, "i").test(tweetText || fullText)
+        mentionsTarget: new RegExp(`@${targetUsername}\\b`, "i").test(contextText),
+        replyingToTarget: new RegExp(`replying to\\s+@${targetUsername}\\b`, "i").test(fullText)
       };
       }).filter((row) => {
         if (!row.id || !row.text || !row.authorUsername) return false;
         if (row.authorUsername.toLowerCase() === targetUsername) return false;
-        return row.mentionsTarget ||
+        return row.mentionsTarget || row.replyingToTarget ||
           /create|launch|deploy|mint/i.test(row.text) ||
-          (allowContinuationReplies && /\b(pump\s*fun|pump\.fun|pumpfun|robinhood(?:\s+chain)?|base|ethereum|eth|monad|pumpverse)\b/i.test(row.text));
+          allowContinuationReplies;
       });
     }, { targetUsername: username, allowContinuationReplies });
     const scrapeUrl = async (url, options = {}) => {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
       await page.waitForTimeout(3500);
-      for (let i = 0; i < 2; i += 1) {
+      for (let i = 0; i < 4; i += 1) {
         await page.mouse.wheel(0, 900);
         await page.waitForTimeout(1200);
       }
@@ -529,7 +531,11 @@ async function fetchMentionsWithBrowser(state = {}) {
       const threadRows = (await scrapeUrl(threadUrl, { allowContinuationReplies: true }))
         .filter((row) => String(row.id || "") !== String(draft.tweetId || ""))
         .filter((row) => String(row.authorUsername || "").replace(/^@/, "").toLowerCase() === author)
-        .filter((row) => inferLaunchpad(row.text || ""))
+        .filter((row) => {
+          const text = String(row.text || "");
+          const suppliesLaunchDetail = /\b(name|anme|ticker|symbol|description|desc|image|launchpad|pump\s*fun|pump\.fun|pumpfun|robinhood|base|ethereum|eth|monad|pumpverse)\b/i.test(text);
+          return row.mentionsTarget || row.replyingToTarget || suppliesLaunchDetail || (Array.isArray(row.media) && row.media.length > 0);
+        })
         .map((row) => ({
           ...row,
           conversationId: String(draft.conversationId || draft.tweetId || row.conversationId || row.id)
@@ -1003,7 +1009,7 @@ async function waitForPostedReply(page, tweetId, text) {
 
 async function replyWithBrowser(tweetId, text, mediaUrl = "") {
   const cookie = pumprCookie();
-  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser reply worker can open @pumpr_fun.");
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser reply worker can open @pumpr_launch.");
   if (!isTruthy(process.env.X_LAUNCH_REPLY_UI_FIRST)) {
     try {
       const result = await postWithXWebCookie(cookie, text, tweetId);
@@ -1090,7 +1096,7 @@ async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
   const token = twexApiToken();
   if (!token) throw new Error("Set TWEXAPI_BEARER_TOKEN before using TwexAPI replies.");
   const cookie = pumprCookie();
-  if (!cookie) throw new Error("Set PUMPR_X_COOKIE or PUMPR_TWEX_X_COOKIE so TwexAPI can post from @pumpr_fun.");
+  if (!cookie) throw new Error("Set PUMPR_X_COOKIE or PUMPR_TWEX_X_COOKIE so TwexAPI can post from @pumpr_launch.");
   const payload = {
     tweet_content: text,
     cookie,
