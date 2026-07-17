@@ -525,12 +525,14 @@ function advance() {
 
   dom.progress.style.width = `${Math.max(8, state.progress)}%`;
   // Add aria-label and role for progress bar for screen readers
-  dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
-  dom.progress.setAttribute("role", "progressbar");
-  dom.progress.setAttribute("aria-valuemin", "0");
-  dom.progress.setAttribute("aria-valuemax", "100");
-  dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
-  dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
+  if (dom.progress) {
+    dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
+    dom.progress.setAttribute("role", "progressbar");
+    dom.progress.setAttribute("aria-valuemin", "0");
+    dom.progress.setAttribute("aria-valuemax", "100");
+    dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
+    dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
+  }
 
   dom.cycles.textContent = String(state.cycle);
   dom.signals.textContent = String(state.signals);
