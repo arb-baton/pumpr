@@ -225,7 +225,7 @@ if (dom.terminal) {
     }
   });
 
-  // Add aria-label for progress bar for screen readers
+  // Add aria-label and role for progress bar for screen readers
   if (dom.progress) {
     dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
     dom.progress.setAttribute("role", "progressbar");
