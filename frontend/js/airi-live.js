@@ -218,22 +218,8 @@ if (dom.terminal) {
     }
   });
 
-  // Add ARIA roles and properties for accessibility
-  if (dom.terminal) {
-    dom.terminal.setAttribute("role", "log");
-    dom.terminal.setAttribute("aria-live", "polite");
-    dom.terminal.setAttribute("aria-atomic", "false");
-    dom.terminal.setAttribute("aria-label", "Airi live terminal output");
-    dom.terminal.style.lineHeight = "1.5em"; // improve readability with consistent line height
-    dom.terminal.setAttribute("tabindex", "0"); // Make terminal focusable for keyboard users
-  }
-
-  // Add ARIA roles for progress bar for screen readers
-  if (dom.progress) {
-    dom.progress.setAttribute("role", "progressbar");
-    dom.progress.setAttribute("aria-live", "polite");
-    dom.progress.setAttribute("aria-atomic", "true");
-  }
+  // Improve readability with consistent line height
+  dom.terminal.style.lineHeight = "1.5em";
 
   // Focus and blur outlines for keyboard users
   dom.terminal.addEventListener("focus", () => {
@@ -243,23 +229,6 @@ if (dom.terminal) {
   dom.terminal.addEventListener("blur", () => {
     dom.terminal.style.outline = "none";
   });
-
-  // Add aria-label and role for progress bar for screen readers
-  if (dom.progress) {
-    dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
-    dom.progress.setAttribute("role", "progressbar");
-    dom.progress.setAttribute("aria-valuemin", "0");
-    dom.progress.setAttribute("aria-valuemax", "100");
-    dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
-    dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
-    dom.progress.setAttribute("aria-live", "polite");
-    dom.progress.setAttribute("aria-atomic", "true");
-    if (dom.progress.parentElement) {
-      dom.progress.parentElement.setAttribute("role", "region");
-      dom.progress.parentElement.setAttribute("aria-live", "polite");
-      dom.progress.parentElement.setAttribute("aria-atomic", "true");
-    }
-  }
 
   // Keyboard shortcut hint for terminal focus
   dom.terminal.setAttribute("title", "Terminal output. Use arrow keys, Page Up/Down, Home/End, and Space to scroll.");
@@ -283,11 +252,21 @@ if (dom.terminal) {
   }
   dom.terminal.setAttribute("aria-describedby", instructionsId);
 
-  // Ensure progress bar has ARIA roles
+  // Add ARIA roles and properties for progress bar for screen readers
   if (dom.progress) {
     dom.progress.setAttribute("role", "progressbar");
     dom.progress.setAttribute("aria-live", "polite");
     dom.progress.setAttribute("aria-atomic", "true");
+    dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
+    dom.progress.setAttribute("aria-valuemin", "0");
+    dom.progress.setAttribute("aria-valuemax", "100");
+    dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
+    dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
+    if (dom.progress.parentElement) {
+      dom.progress.parentElement.setAttribute("role", "region");
+      dom.progress.parentElement.setAttribute("aria-live", "polite");
+      dom.progress.parentElement.setAttribute("aria-atomic", "true");
+    }
   }
 }
 
