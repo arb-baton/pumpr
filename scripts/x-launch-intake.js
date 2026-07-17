@@ -1276,12 +1276,16 @@ async function postReply(tweetId, text, mediaUrl = "") {
     log(`Dry run reply to ${tweetId}: ${text}`);
     return { skipped: true, reason: "dry_run" };
   }
+  const twexOnly = !/^false$/i.test(process.env.X_LAUNCH_REPLY_TWEXAPI_ONLY || "true");
   if (!/^false$/i.test(process.env.X_LAUNCH_REPLY_TWEXAPI_FIRST || "true") && twexApiToken()) {
     try {
       return await replyWithTwexApi(tweetId, text, mediaUrl);
     } catch (error) {
+      if (twexOnly) throw error;
       log(`TwexAPI reply failed, trying browser/cookie fallback: ${cleanText(error.message || error, 220)}`);
     }
+  } else if (twexOnly) {
+    throw new Error("Set X_LAUNCH_TWEXAPI_BEARER_TOKEN before posting X launch replies through TwexAPI.");
   }
   return replyWithBrowser(tweetId, text, mediaUrl);
 }
