@@ -161,12 +161,14 @@ if (dom.terminal) {
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
+      case "Down": // IE/Edge legacy
         if (el.scrollTop < el.scrollHeight - el.clientHeight) {
           el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + lineHeight);
           handled = true;
         }
         break;
       case "ArrowUp":
+      case "Up": // IE/Edge legacy
         if (el.scrollTop > 0) {
           el.scrollTop = Math.max(0, el.scrollTop - lineHeight);
           handled = true;
@@ -197,6 +199,7 @@ if (dom.terminal) {
         }
         break;
       case " ":
+      case "Spacebar": // IE/Edge legacy
         // Spacebar scrolls down, Shift+Space scrolls up
         if (event.shiftKey) {
           if (el.scrollTop > 0) {
@@ -236,6 +239,12 @@ if (dom.terminal) {
     // Add aria-live and aria-atomic for dynamic updates
     dom.progress.setAttribute("aria-live", "polite");
     dom.progress.setAttribute("aria-atomic", "true");
+    // Add role and aria-live to the progress bar container for screen readers
+    if (dom.progress.parentElement) {
+      dom.progress.parentElement.setAttribute("role", "region");
+      dom.progress.parentElement.setAttribute("aria-live", "polite");
+      dom.progress.parentElement.setAttribute("aria-atomic", "true");
+    }
   }
 
   // Add keyboard shortcut hint for terminal focus
