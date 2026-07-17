@@ -238,6 +238,23 @@ if (dom.terminal) {
     }
   }
 
+  // Add ARIA roles and properties for progress bar for screen readers
+  if (dom.progress) {
+    dom.progress.setAttribute("role", "progressbar");
+    dom.progress.setAttribute("aria-live", "polite");
+    dom.progress.setAttribute("aria-atomic", "true");
+    dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
+    dom.progress.setAttribute("aria-valuemin", "0");
+    dom.progress.setAttribute("aria-valuemax", "100");
+    dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
+    dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
+    if (dom.progress.parentElement) {
+      dom.progress.parentElement.setAttribute("role", "region");
+      dom.progress.parentElement.setAttribute("aria-live", "polite");
+      dom.progress.parentElement.setAttribute("aria-atomic", "true");
+    }
+  }
+
   // Improve readability with consistent line height
   dom.terminal.style.lineHeight = "1.75em";
 
