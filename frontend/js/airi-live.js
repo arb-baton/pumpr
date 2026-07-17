@@ -151,8 +151,8 @@ if (dom.terminal) {
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const lineHeight = 28; // increased line height for better readability and smoother scroll
-    const pageScroll = Math.floor(el.clientHeight * 0.8); // slightly larger page scroll for natural feel
+    const lineHeight = 24; // slightly smaller line height for smoother scroll
+    const pageScroll = Math.floor(el.clientHeight * 0.75); // slightly smaller page scroll for natural feel
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
@@ -241,22 +241,8 @@ if (dom.terminal) {
   // Improve readability with consistent line height
   dom.terminal.style.lineHeight = "1.75em";
 
-  // Add ARIA roles and properties for progress bar for screen readers
-  if (dom.progress) {
-    dom.progress.setAttribute("role", "progressbar");
-    dom.progress.setAttribute("aria-live", "polite");
-    dom.progress.setAttribute("aria-atomic", "true");
-    dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
-    dom.progress.setAttribute("aria-valuemin", "0");
-    dom.progress.setAttribute("aria-valuemax", "100");
-    dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
-    dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
-    if (dom.progress.parentElement) {
-      dom.progress.parentElement.setAttribute("role", "region");
-      dom.progress.parentElement.setAttribute("aria-live", "polite");
-      dom.progress.parentElement.setAttribute("aria-atomic", "true");
-    }
-  }
+  // Removed duplicate ARIA attribute setting for progress bar to avoid redundancy
+
 
   // Focus and blur outlines for keyboard users
   dom.terminal.addEventListener("focus", () => {
