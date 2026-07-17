@@ -151,8 +151,8 @@ if (dom.terminal) {
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const lineHeight = 20; // reduced line height for smoother scroll
-    const pageScroll = Math.floor(el.clientHeight * 0.75); // smaller page scroll for better control
+    const lineHeight = 16; // slightly smaller line height for smoother scroll
+    const pageScroll = Math.floor(el.clientHeight * 0.6); // smaller page scroll for better control
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
@@ -220,6 +220,10 @@ if (dom.terminal) {
 
   // Improve readability with consistent line height
   dom.terminal.style.lineHeight = "1.5em";
+  dom.terminal.setAttribute("role", "log");
+  dom.terminal.setAttribute("aria-live", "polite");
+  dom.terminal.setAttribute("aria-atomic", "false");
+  dom.terminal.setAttribute("aria-label", "Airi live terminal output");
 
   // Add ARIA roles and properties for progress bar for screen readers
   if (dom.progress) {
