@@ -236,6 +236,22 @@ if (dom.terminal) {
 
   // Add keyboard shortcut hint for terminal focus
   dom.terminal.setAttribute("title", "Terminal output. Use arrow keys, Page Up/Down, Home/End, and Space to scroll.");
+
+  // Add aria-describedby for instructions
+  const instructionsId = "airiLiveTerminalInstructions";
+  let instructionsEl = document.getElementById(instructionsId);
+  if (!instructionsEl) {
+    instructionsEl = document.createElement("div");
+    instructionsEl.id = instructionsId;
+    instructionsEl.style.position = "absolute";
+    instructionsEl.style.left = "-9999px";
+    instructionsEl.style.height = "1px";
+    instructionsEl.style.width = "1px";
+    instructionsEl.style.overflow = "hidden";
+    instructionsEl.textContent = "Use arrow keys, Page Up/Down, Home/End, and Space to scroll the terminal output.";
+    document.body.appendChild(instructionsEl);
+  }
+  dom.terminal.setAttribute("aria-describedby", instructionsId);
 }
 
 function safeParse(value, fallback) {
