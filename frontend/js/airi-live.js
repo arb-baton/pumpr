@@ -151,8 +151,8 @@ if (dom.terminal) {
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const lineHeight = 24; // slightly smaller line height for smoother scroll
-    const pageScroll = Math.floor(el.clientHeight * 0.75); // slightly smaller page scroll for natural feel
+    const lineHeight = 28; // slightly increased line height for better readability and smoother scroll
+    const pageScroll = Math.floor(el.clientHeight * 0.8); // slightly larger page scroll for natural feel
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
