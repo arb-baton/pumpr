@@ -234,7 +234,7 @@ if (dom.terminal) {
     dom.progress.setAttribute("aria-valuemin", "0");
     dom.progress.setAttribute("aria-valuemax", "100");
     dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
-    dom.progress.setAttribute("tabindex", "0");
+    dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
     dom.progress.setAttribute("aria-live", "polite");
     dom.progress.setAttribute("aria-atomic", "true");
     if (dom.progress.parentElement) {
