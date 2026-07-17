@@ -151,8 +151,8 @@ if (dom.terminal) {
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const lineHeight = 24; // consistent line height for better readability
-    const pageScroll = Math.floor(el.clientHeight * 0.85); // slightly smaller page scroll for better control
+    const lineHeight = 28; // increased line height for better readability
+    const pageScroll = Math.floor(el.clientHeight * 0.8); // slightly smaller page scroll for better control
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
@@ -219,7 +219,7 @@ if (dom.terminal) {
   });
 
   // Improve readability with consistent line height
-  dom.terminal.style.lineHeight = "1.5em";
+  dom.terminal.style.lineHeight = "1.6em";
 
   // Focus and blur outlines for keyboard users
   dom.terminal.addEventListener("focus", () => {
