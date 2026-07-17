@@ -233,6 +233,9 @@ if (dom.terminal) {
     dom.progress.setAttribute("aria-valuemax", "100");
     dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
   }
+
+  // Add keyboard shortcut hint for terminal focus
+  dom.terminal.setAttribute("title", "Terminal output. Use arrow keys, Page Up/Down, Home/End, and Space to scroll.");
 }
 
 function safeParse(value, fallback) {
