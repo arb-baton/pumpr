@@ -230,6 +230,17 @@ if (dom.terminal) {
   dom.terminal.setAttribute("aria-atomic", "false");
   dom.terminal.setAttribute("aria-label", "Airi live terminal output");
 
+  // Improve readability with consistent line height and monospace font
+  dom.terminal.style.lineHeight = "1.6em";
+  dom.terminal.style.fontFamily = "Consolas, 'Courier New', monospace";
+  dom.terminal.style.fontSize = "14px";
+
+  // Add ARIA roles and properties for accessibility
+  dom.terminal.setAttribute("role", "log");
+  dom.terminal.setAttribute("aria-live", "polite");
+  dom.terminal.setAttribute("aria-atomic", "false");
+  dom.terminal.setAttribute("aria-label", "Airi live terminal output");
+
   // Add ARIA roles and properties for progress bar for screen readers
   if (dom.progress) {
     dom.progress.setAttribute("role", "progressbar");
