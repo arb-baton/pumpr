@@ -228,6 +228,13 @@ if (dom.terminal) {
     }
   });
 
+  // Add ARIA attributes for accessibility
+  dom.terminal.setAttribute("tabindex", "0");
+  dom.terminal.setAttribute("role", "log");
+  dom.terminal.setAttribute("aria-live", "polite");
+  dom.terminal.setAttribute("aria-atomic", "false");
+  dom.terminal.setAttribute("aria-label", "Airi live terminal output");
+
   // Add aria-label and role for progress bar for screen readers
   if (dom.progress) {
     dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
