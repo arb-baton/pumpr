@@ -151,8 +151,8 @@ if (dom.terminal) {
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const lineHeight = 28; // slightly increased line height for better readability and smoother scroll
-    const pageScroll = Math.floor(el.clientHeight * 0.8); // slightly larger page scroll for natural feel
+    const lineHeight = 24; // reduced line height for smoother scrolling
+    const pageScroll = Math.floor(el.clientHeight * 0.75); // slightly smaller page scroll for natural feel
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
@@ -219,7 +219,7 @@ if (dom.terminal) {
   });
 
   // Improve readability with consistent line height
-  dom.terminal.style.lineHeight = "1.75em";
+  dom.terminal.style.lineHeight = "1.5em";
 
   // Add ARIA roles and properties for progress bar for screen readers
   if (dom.progress) {
@@ -237,12 +237,6 @@ if (dom.terminal) {
       dom.progress.parentElement.setAttribute("aria-atomic", "true");
     }
   }
-
-  // Improve readability with consistent line height
-  dom.terminal.style.lineHeight = "1.75em";
-
-  // Removed duplicate ARIA attribute setting for progress bar to avoid redundancy
-
 
   // Focus and blur outlines for keyboard users
   dom.terminal.addEventListener("focus", () => {
