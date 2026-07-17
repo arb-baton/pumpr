@@ -151,8 +151,8 @@ if (dom.terminal) {
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const lineHeight = 12; // reduced line height for even smoother scroll
-    const pageScroll = Math.floor(el.clientHeight * 0.85); // page scroll amount
+    const lineHeight = 16; // slightly increased line height for better readability
+    const pageScroll = Math.floor(el.clientHeight * 0.9); // slightly larger page scroll for smoother navigation
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
@@ -217,6 +217,21 @@ if (dom.terminal) {
       event.preventDefault();
     }
   });
+
+  // Add ARIA roles and properties for accessibility
+  if (dom.terminal) {
+    dom.terminal.setAttribute("role", "log");
+    dom.terminal.setAttribute("aria-live", "polite");
+    dom.terminal.setAttribute("aria-atomic", "false");
+    dom.terminal.setAttribute("aria-label", "Airi live terminal output");
+  }
+
+  // Add ARIA roles for progress bar for screen readers
+  if (dom.progress) {
+    dom.progress.setAttribute("role", "progressbar");
+    dom.progress.setAttribute("aria-live", "polite");
+    dom.progress.setAttribute("aria-atomic", "true");
+  }
 
   // Focus and blur outlines for keyboard users
   dom.terminal.addEventListener("focus", () => {
