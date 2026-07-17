@@ -1151,6 +1151,41 @@ async function replyWithBrowser(tweetId, text, mediaUrl = "") {
   }
 }
 
+async function findExistingReplyWithBrowser(tweetId, text) {
+  const cookie = pumprCookie();
+  if (!cookie) return null;
+  const expectedUsername = String(process.env.PUMPR_X_USERNAME || "pumpr_launch").replace(/^@/, "").toLowerCase();
+  const needle = visibleReplyNeedle(text);
+  if (!needle) return null;
+  const { chromium } = loadPlaywright();
+  const browser = await chromium.launch({ headless: true, args: ["--disable-dev-shm-usage", "--no-sandbox"] });
+  try {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, userAgent: X_WEB_USER_AGENT });
+    await context.addCookies(browserCookiesFromHeader(cookie));
+    const page = await context.newPage();
+    const captured = new Map();
+    const pending = new Set();
+    page.on("response", (response) => {
+      if (!/\/i\/api\/graphql\//i.test(response.url()) || !/TweetDetail/i.test(response.url())) return;
+      const task = response.json().then((payload) => {
+        for (const row of browserGraphqlTweetRows(payload, "")) captured.set(row.id, row);
+      }).catch(() => {}).finally(() => pending.delete(task));
+      pending.add(task);
+    });
+    await page.goto(`https://x.com/i/status/${encodeURIComponent(String(tweetId))}`, { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.waitForTimeout(3500);
+    await page.mouse.wheel(0, 1000).catch(() => {});
+    await page.waitForTimeout(1200);
+    await Promise.all([...pending]);
+    return [...captured.values()].find((row) =>
+      String(row.authorUsername || "").toLowerCase() === expectedUsername &&
+      cleanText(row.text || "", 6000).includes(needle)
+    ) || null;
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
 async function clickXButton(page, locator, label, logger = () => {}) {
   await locator.waitFor({ state: "visible", timeout: 20_000 });
   await locator.scrollIntoViewIfNeeded().catch(() => {});
@@ -1179,6 +1214,12 @@ async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
   if (!token) throw new Error("Set X_LAUNCH_TWEXAPI_BEARER_TOKEN before using TwexAPI launch replies.");
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_X_COOKIE or PUMPR_TWEX_X_COOKIE so TwexAPI can post from @pumpr_launch.");
+  const existing = await findExistingReplyWithBrowser(tweetId, text);
+  if (existing?.id) {
+    const verified = await verifyTweetOnX(existing.id, process.env.PUMPR_X_USERNAME || "pumpr_launch");
+    log(`Found and verified existing launch reply: https://x.com/${verified.authorUsername || "pumpr_launch"}/status/${existing.id}`);
+    return { ok: true, method: "browser_reply_recovery", tweetId: existing.id };
+  }
   const payload = {
     tweet_content: text,
     cookie,
@@ -1203,8 +1244,15 @@ async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
     const detail = body?.message || body?.error || body?.detail || body?.raw || `HTTP ${response.status}`;
     throw new Error(`TwexAPI reply failed: ${cleanText(detail, 220)}`);
   }
-  const createdId = createdTweetId(body);
-  if (!createdId) throw new Error("TwexAPI accepted the reply request but did not return a created tweet ID.");
+  let createdId = createdTweetId(body);
+  if (!createdId) {
+    for (let attempt = 1; attempt <= 3 && !createdId; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const recovered = await findExistingReplyWithBrowser(tweetId, text);
+      createdId = String(recovered?.id || "");
+    }
+  }
+  if (!createdId) throw new Error("TwexAPI accepted the reply request but its tweet ID could not be recovered from the X thread.");
   const verified = await verifyTweetOnX(createdId, process.env.PUMPR_X_USERNAME || "pumpr_launch");
   log(`TwexAPI reply posted and verified: https://x.com/${verified.authorUsername || "pumpr_launch"}/status/${createdId}`);
   return {

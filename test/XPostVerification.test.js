@@ -8,6 +8,13 @@ describe("X post verification", function () {
     expect(createdTweetId({ success: true })).to.equal("");
   });
 
+  it("extracts IDs from GraphQL-style and camel-case TwexAPI responses", function () {
+    expect(createdTweetId({
+      data: { create_tweet: { tweet_results: { result: { rest_id: "2078152123569656154" } } } }
+    })).to.equal("2078152123569656154");
+    expect(createdTweetId({ data: { tweetId: "2078152123569656154" } })).to.equal("2078152123569656154");
+  });
+
   it("verifies the tweet ID and posting account on public X", async function () {
     const fetchImpl = async () => ({
       ok: true,
