@@ -156,7 +156,7 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use slightly larger scroll increments for smoother keyboard scroll
-    const lineHeight = 16; // increased line height for better keyboard scrolling
+    const lineHeight = 20; // increased line height for better keyboard scrolling
     const pageScroll = Math.floor(el.clientHeight * 0.9); // larger page scroll for better navigation
     let handled = false;
     switch (event.key) {
