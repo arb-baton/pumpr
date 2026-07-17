@@ -156,8 +156,8 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use slightly larger scroll increments for smoother keyboard scroll
-    const lineHeight = 28; // slightly larger line height for better keyboard scrolling
-    const pageScroll = Math.floor(el.clientHeight * 0.85); // slightly smaller page scroll for better navigation
+    const lineHeight = 24; // adjusted line height for smoother keyboard scrolling
+    const pageScroll = Math.floor(el.clientHeight * 0.8); // adjusted page scroll for better navigation
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
@@ -224,6 +224,10 @@ if (dom.terminal) {
   // Add aria-label for progress bar for screen readers
   if (dom.progress) {
     dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
+    dom.progress.setAttribute("role", "progressbar");
+    dom.progress.setAttribute("aria-valuemin", "0");
+    dom.progress.setAttribute("aria-valuemax", "100");
+    dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
   }
 }
 
