@@ -151,7 +151,7 @@ if (dom.terminal) {
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const lineHeight = 24; // increased line height for better readability and smoother scroll
+    const lineHeight = 28; // increased line height for better readability and smoother scroll
     const pageScroll = Math.floor(el.clientHeight * 0.95); // larger page scroll for smoother navigation
     let handled = false;
     switch (event.key) {
@@ -224,7 +224,7 @@ if (dom.terminal) {
     dom.terminal.setAttribute("aria-live", "polite");
     dom.terminal.setAttribute("aria-atomic", "false");
     dom.terminal.setAttribute("aria-label", "Airi live terminal output");
-    dom.terminal.style.lineHeight = "1.5em"; // improve readability with consistent line height
+    dom.terminal.style.lineHeight = "1.75em"; // improve readability with consistent line height
   }
 
   // Add ARIA roles for progress bar for screen readers
