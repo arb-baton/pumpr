@@ -215,13 +215,13 @@ function toBigIntOrZero(value) {
       return BigInt(String(value ?? "0"));
     } catch {
       return 0n;
-}
+    }
+  }
 
 function profileHrefForAddress(value) {
   const raw = String(value || "").trim();
   return /^0x[a-fA-F0-9]{40}$/.test(raw) ? `/profile?address=${raw}` : "/profile";
 }
-  }
 
   function poolUnitPriceWei(pool) {
     const graduated = Boolean(pool?.graduated) || String(pool?.priceSource || "").toLowerCase() === "dex";
