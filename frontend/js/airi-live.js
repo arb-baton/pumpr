@@ -152,9 +152,9 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     const computedStyle = window.getComputedStyle(el);
-    const lineHeightPx = parseFloat(computedStyle.lineHeight) || 24;
-    const lineHeight = Math.max(16, Math.min(24, lineHeightPx)); // clamp line height for scroll increments
-    const pageScroll = Math.floor(el.clientHeight * 0.75); // slightly larger page scroll for better control
+    // Use a fixed line height for consistent scroll increments
+    const lineHeight = 22; // fixed line height in pixels for smoother scroll
+    const pageScroll = Math.floor(el.clientHeight * 0.8); // slightly larger page scroll for better control
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
