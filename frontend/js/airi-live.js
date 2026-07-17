@@ -156,8 +156,8 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use slightly larger scroll increments for smoother keyboard scroll
-    const lineHeight = 24; // optimized line height for smooth keyboard scrolling
-    const pageScroll = Math.floor(el.clientHeight * 0.8); // optimized page scroll for better navigation
+    const lineHeight = 28; // increased line height for smoother keyboard scrolling
+    const pageScroll = Math.floor(el.clientHeight * 0.85); // slightly larger page scroll for better navigation
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
@@ -261,6 +261,9 @@ if (dom.terminal) {
     instructionsEl.style.height = "1px";
     instructionsEl.style.width = "1px";
     instructionsEl.style.overflow = "hidden";
+    instructionsEl.style.clip = "rect(0 0 0 0)";
+    instructionsEl.style.clipPath = "inset(50%)";
+    instructionsEl.style.whiteSpace = "nowrap";
     instructionsEl.textContent = "Use arrow keys, Page Up/Down, Home/End, and Space to scroll the terminal output.";
     document.body.appendChild(instructionsEl);
   }
