@@ -814,25 +814,34 @@ async function classifyWithOpenAI(tweet, prior = {}) {
     `Has attached image: ${firstImageUrl(tweet) ? "yes" : "no"}`,
     `Prior draft: ${JSON.stringify(prior || {})}`
   ].join("\n");
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model,
-      input: prompt,
-      temperature: 0.1,
-      max_output_tokens: 320
-    })
-  });
+  let response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        input: prompt,
+        temperature: 0.1,
+        max_output_tokens: 320
+      }),
+      signal: AbortSignal.timeout(30_000)
+    });
+  } catch (error) {
+    log(`OpenAI classifier request failed: ${cleanText(error?.message || error, 180)}`);
+    return null;
+  }
   if (!response.ok) {
-    log(`OpenAI classifier failed: ${response.status}`);
+    const errorBody = await response.json().catch(() => ({}));
+    log(`OpenAI classifier failed (${response.status}): ${cleanText(errorBody?.error?.message || "unknown API error", 180)}`);
     return null;
   }
   try {
     const parsed = parseOpenAIJson(await response.json());
+    log(`OpenAI classifier succeeded with ${model}.`);
     return {
       isLaunchRequest: Boolean(parsed.isLaunchRequest),
       confidence: Math.max(0, Math.min(1, Number(parsed.confidence || 0))),
@@ -1246,8 +1255,8 @@ async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
   }
   let createdId = createdTweetId(body);
   if (!createdId) {
-    for (let attempt = 1; attempt <= 3 && !createdId; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+    for (let attempt = 1; attempt <= 5 && !createdId; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
       const recovered = await findExistingReplyWithBrowser(tweetId, text);
       createdId = String(recovered?.id || "");
     }
@@ -1267,7 +1276,7 @@ async function postReply(tweetId, text, mediaUrl = "") {
     log(`Dry run reply to ${tweetId}: ${text}`);
     return { skipped: true, reason: "dry_run" };
   }
-  const twexOnly = !/^false$/i.test(process.env.X_LAUNCH_REPLY_TWEXAPI_ONLY || "true");
+  const twexOnly = !/^false$/i.test(process.env.X_LAUNCH_REPLY_TWEXAPI_ONLY || "false");
   if (!/^false$/i.test(process.env.X_LAUNCH_REPLY_TWEXAPI_FIRST || "true") && twexApiToken()) {
     try {
       return await replyWithTwexApi(tweetId, text, mediaUrl);
