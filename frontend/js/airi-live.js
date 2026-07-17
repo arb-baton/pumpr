@@ -220,7 +220,7 @@ if (dom.terminal) {
     }
   });
 
-  // Improve readability with consistent line height
+  // Improve readability with consistent line height and monospace font
   dom.terminal.style.lineHeight = "1.5em";
   dom.terminal.style.fontFamily = "Consolas, 'Courier New', monospace";
   dom.terminal.style.fontSize = "14px";
