@@ -220,10 +220,6 @@ if (dom.terminal) {
 
   // Improve readability with consistent line height
   dom.terminal.style.lineHeight = "1.6em";
-  dom.terminal.setAttribute("role", "log");
-  dom.terminal.setAttribute("aria-live", "polite");
-  dom.terminal.setAttribute("aria-atomic", "false");
-  dom.terminal.setAttribute("aria-label", "Airi live terminal output");
 
   // Add ARIA roles and properties for progress bar for screen readers
   if (dom.progress) {
@@ -272,23 +268,6 @@ if (dom.terminal) {
     document.body.appendChild(instructionsEl);
   }
   dom.terminal.setAttribute("aria-describedby", instructionsId);
-
-  // Add ARIA roles and properties for progress bar for screen readers
-  if (dom.progress) {
-    dom.progress.setAttribute("role", "progressbar");
-    dom.progress.setAttribute("aria-live", "polite");
-    dom.progress.setAttribute("aria-atomic", "true");
-    dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
-    dom.progress.setAttribute("aria-valuemin", "0");
-    dom.progress.setAttribute("aria-valuemax", "100");
-    dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
-    dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
-    if (dom.progress.parentElement) {
-      dom.progress.parentElement.setAttribute("role", "region");
-      dom.progress.parentElement.setAttribute("aria-live", "polite");
-      dom.progress.parentElement.setAttribute("aria-atomic", "true");
-    }
-  }
 }
 
 
