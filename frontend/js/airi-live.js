@@ -156,8 +156,8 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use slightly larger scroll increments for smoother keyboard scroll
-    const lineHeight = 28; // increased line height for even smoother keyboard scrolling
-    const pageScroll = Math.floor(el.clientHeight * 0.85); // slightly larger page scroll for better navigation
+    const lineHeight = 24; // optimized line height for smooth keyboard scrolling
+    const pageScroll = Math.floor(el.clientHeight * 0.8); // optimized page scroll for better navigation
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
@@ -233,6 +233,9 @@ if (dom.terminal) {
     dom.progress.setAttribute("aria-valuemax", "100");
     dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
     dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
+    // Add aria-live and aria-atomic for dynamic updates
+    dom.progress.setAttribute("aria-live", "polite");
+    dom.progress.setAttribute("aria-atomic", "true");
   }
 
   // Add keyboard shortcut hint for terminal focus
