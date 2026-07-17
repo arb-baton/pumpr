@@ -215,8 +215,25 @@ function isBlockedLegacyHomeToken(launch = {}) {
   return symbol === "job" || symbol === "getmeajob" || name === "getmeajob" || name.includes("get me a job");
 }
 
+function hasInjectionPayload(value = "") {
+  const text = String(value || "");
+  if (!text) return false;
+  return /<\s*\/?\s*[a-z][^>]*>/i.test(text)
+    || /\bon(?:error|load|click|mouseover|focus)\s*=/i.test(text)
+    || /\b(?:javascript|vbscript)\s*:/i.test(text)
+    || /\b(?:alert|confirm|prompt|eval)\s*\(/i.test(text)
+    || /(?:\$\{|\{\{|<%)[\s\S]*?(?:\}|%>)/.test(text)
+    || /(?:\/etc\/(?:passwd|shadow)|(?:^|[;&|`])\s*(?:cat|curl|wget|bash|sh|powershell|cmd)\b)/i.test(text);
+}
+
+function isUnsafeLaunchMetadata(launch = {}) {
+  return [launch?.name, launch?.symbol, launch?.description].some(hasInjectionPayload);
+}
+
 function filterHomeLaunchRows(rows = []) {
-  return (Array.isArray(rows) ? rows : []).filter((row) => row && !isBlockedLegacyHomeToken(row));
+  return (Array.isArray(rows) ? rows : []).filter(
+    (row) => row && !isBlockedLegacyHomeToken(row) && !isUnsafeLaunchMetadata(row)
+  );
 }
 
 function launchRankValue(launch = {}) {

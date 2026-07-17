@@ -9396,6 +9396,21 @@ function emptyPumpFunLaunchesStore() {
   return { launches: [] };
 }
 
+function hasLaunchInjectionPayload(value = "") {
+  const text = String(value || "");
+  if (!text) return false;
+  return /<\s*\/?\s*[a-z][^>]*>/i.test(text)
+    || /\bon(?:error|load|click|mouseover|focus)\s*=/i.test(text)
+    || /\b(?:javascript|vbscript)\s*:/i.test(text)
+    || /\b(?:alert|confirm|prompt|eval)\s*\(/i.test(text)
+    || /(?:\$\{|\{\{|<%)[\s\S]*?(?:\}|%>)/.test(text)
+    || /(?:\/etc\/(?:passwd|shadow)|(?:^|[;&|`])\s*(?:cat|curl|wget|bash|sh|powershell|cmd)\b)/i.test(text);
+}
+
+function hasUnsafeLaunchMetadata(row = {}) {
+  return [row?.name, row?.symbol, row?.description].some(hasLaunchInjectionPayload);
+}
+
 function waitMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
 }
@@ -9403,6 +9418,7 @@ function waitMs(ms) {
 function normalizePumpFunLaunch(row = {}) {
   const mint = String(row.mint || row.token || row.tokenAddress || "").trim();
   if (!mint || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) return null;
+  if (hasUnsafeLaunchMetadata(row)) return null;
   const symbol = String(row.symbol || "").trim().replace(/^\$/, "").toUpperCase().slice(0, 13);
   const marketCapUsd = toNumberSafe(row.marketCapUsd || row.usd_market_cap || row.market_cap_usd, 0);
   const marketCapSol = toNumberSafe(row.marketCapSol || row.market_cap_sol || row.market_cap, 0);
@@ -10684,6 +10700,9 @@ app.post("/api/pumpfun/launch", async (req, res) => {
     const symbol = String(req.body?.symbol || "").trim().toUpperCase().slice(0, 13);
     if (!name || !symbol) {
       return res.status(400).json({ error: "name and symbol are required" });
+    }
+    if (hasUnsafeLaunchMetadata({ name, symbol, description: req.body?.description })) {
+      return res.status(400).json({ error: "Coin metadata contains unsupported markup or code" });
     }
     await assertLaunchIdentityAvailable({ name, symbol });
     const userPublicKey = String(req.body?.userPublicKey || req.body?.creatorWallet || "").trim();
