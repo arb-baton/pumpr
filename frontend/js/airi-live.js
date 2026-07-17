@@ -151,7 +151,7 @@ if (dom.terminal) {
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const lineHeight = 16; // smaller line height for smoother scroll
+    const lineHeight = 12; // reduced line height for even smoother scroll
     const pageScroll = Math.floor(el.clientHeight * 0.85); // page scroll amount
     let handled = false;
     switch (event.key) {
@@ -533,6 +533,9 @@ function advance() {
     dom.progress.setAttribute("aria-valuemax", "100");
     dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
     dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
+    dom.progress.parentElement?.setAttribute("role", "region");
+    dom.progress.parentElement?.setAttribute("aria-live", "polite");
+    dom.progress.parentElement?.setAttribute("aria-atomic", "true");
   }
 
   dom.cycles.textContent = String(state.cycle);
