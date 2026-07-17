@@ -1,5 +1,6 @@
 const { expect } = require("chai");
 const { dispatchNextRun } = require("../scripts/x-launch-intake-loop");
+const { _test: intakeTest } = require("../scripts/x-launch-intake");
 
 describe("X launch intake loop", function () {
   const originalEnv = { ...process.env };
@@ -33,5 +34,15 @@ describe("X launch intake loop", function () {
       throw new Error("fetch should not be called");
     });
     expect(dispatched).to.equal(false);
+  });
+
+  it("reprocesses a complete launch request restored without a status", function () {
+    const tweet = {
+      id: "2078148349828469070",
+      text: "@pumpr_launch create token on pump fun name nftguy ticker nftguy description nftguy"
+    };
+    const state = { processedTweetIds: [tweet.id], processedStatusByTweetId: {} };
+
+    expect(intakeTest.shouldReprocessTweet(tweet, state)).to.equal(true);
   });
 });

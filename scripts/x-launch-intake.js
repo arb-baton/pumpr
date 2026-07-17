@@ -218,6 +218,10 @@ function latestLaunchForTweet(state, tweetId) {
 
 function shouldReprocessTweet(tweet, state) {
   const status = processedStatus(state, tweet.id);
+  if (!status) {
+    const fallback = fallbackClassify(tweet, {});
+    return Boolean(fallback.isLaunchRequest && fallback.launchpad && fallback.name && fallback.ticker);
+  }
   if (["launched_reply_failed", "reply_failed", "error_no_reply", "error"].includes(status) && latestLaunchForTweet(state, tweet.id)) {
     return true;
   }
@@ -454,7 +458,11 @@ async function fetchMentionsWithBrowser(state = {}) {
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser mention watcher can open @pumpr_launch notifications.");
   const username = String(process.env.PUMPR_X_USERNAME || "pumpr_launch").replace(/^@/, "").trim().toLowerCase();
-  const searchUrl = `${BROWSER_SEARCH_BASE_URL}?q=${encodeURIComponent(`@${username}`)}&src=typed_query&f=live`;
+  const searchQueries = [
+    `@${username}`,
+    `to:${username}`,
+    `"${username}"`
+  ];
   const { chromium } = loadPlaywright();
   const browser = await chromium.launch({
     headless: true,
@@ -478,7 +486,18 @@ async function fetchMentionsWithBrowser(state = {}) {
             return "";
           }
         }).filter(Boolean);
-        const statusUrl = links.find((href) => /\/status\/\d+/i.test(href)) || "";
+        const timestampUrl = (() => {
+          const anchor = article.querySelector("time")?.closest("a[href]");
+          if (!anchor) return "";
+          try {
+            return new URL(anchor.getAttribute("href"), "https://x.com").toString();
+          } catch {
+            return "";
+          }
+        })();
+        const statusUrl = /\/status\/\d+/i.test(timestampUrl)
+          ? timestampUrl
+          : links.find((href) => /\/status\/\d+(?:[/?#]|$)/i.test(href)) || "";
         const statusMatch = statusUrl.match(/x\.com\/([^/?#]+)\/status\/(\d+)/i);
         const tweetText = clean(article.querySelector('[data-testid="tweetText"]')?.innerText || "");
         const fullText = clean(article.innerText || "");
@@ -517,10 +536,16 @@ async function fetchMentionsWithBrowser(state = {}) {
       }
       return scrapeCurrentPage(Boolean(options.allowContinuationReplies));
     };
-    const rows = [
-      ...(await scrapeUrl(BROWSER_MENTION_URL)),
-      ...(await scrapeUrl(searchUrl))
-    ];
+    const notificationRows = await scrapeUrl(BROWSER_MENTION_URL);
+    log(`Browser notification timeline returned ${notificationRows.length} candidate tweet(s).`);
+    const searchRows = [];
+    for (const query of searchQueries) {
+      const searchUrl = `${BROWSER_SEARCH_BASE_URL}?q=${encodeURIComponent(query)}&src=typed_query&f=live`;
+      const queryRows = await scrapeUrl(searchUrl);
+      log(`Browser Live search ${JSON.stringify(query)} returned ${queryRows.length} candidate tweet(s).`);
+      searchRows.push(...queryRows);
+    }
+    const rows = [...notificationRows, ...searchRows];
     for (const draft of pendingDraftRows(state)) {
       const threadUrl = draft.sourceUrl || `https://x.com/i/status/${encodeURIComponent(String(draft.tweetId))}`;
       const author = String(draft.authorUsername || "").replace(/^@/, "").toLowerCase();
@@ -567,14 +592,23 @@ function sortTweetIdsAscending(a, b) {
 function dedupeMentions(tweets = [], state = {}) {
   const processed = new Set(state.processedTweetIds || []);
   const seen = new Set();
-  return tweets
-    .filter((tweet) => {
-      if (!tweet.id || seen.has(tweet.id)) return false;
-      if (processed.has(tweet.id) && !shouldReprocessTweet(tweet, state)) return false;
-      seen.add(tweet.id);
-      return true;
-    })
-    .sort(sortTweetIdsAscending);
+  let duplicateCount = 0;
+  let processedCount = 0;
+  const fresh = tweets.filter((tweet) => {
+    if (!tweet.id || seen.has(tweet.id)) {
+      duplicateCount += 1;
+      return false;
+    }
+    seen.add(tweet.id);
+    if (processed.has(tweet.id) && !shouldReprocessTweet(tweet, state)) {
+      processedCount += 1;
+      return false;
+    }
+    return true;
+  }).sort(sortTweetIdsAscending);
+  log(`Browser candidate filter: raw=${tweets.length} unique=${seen.size} previouslyProcessed=${processedCount} duplicates=${duplicateCount} fresh=${fresh.length}.`);
+  if (fresh.length) log(`Fresh browser tweet IDs: ${fresh.map((tweet) => tweet.id).join(", ")}`);
+  return fresh;
 }
 
 async function fetchMentionsFromConfiguredSource(state) {
