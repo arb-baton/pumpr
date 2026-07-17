@@ -230,9 +230,15 @@ function isUnsafeLaunchMetadata(launch = {}) {
   return [launch?.name, launch?.symbol, launch?.description].some(hasInjectionPayload);
 }
 
+function isImageMissingPumpFunRow(launch = {}) {
+  const isPumpFun = String(launch?.chainId || "").toLowerCase() === "pumpfun" || launch?.source === "pumpfun";
+  if (!isPumpFun) return false;
+  return !String(launch?.imageUri || launch?.imageURI || launch?.imageUrl || launch?.image || "").trim();
+}
+
 function filterHomeLaunchRows(rows = []) {
   return (Array.isArray(rows) ? rows : []).filter(
-    (row) => row && !isBlockedLegacyHomeToken(row) && !isUnsafeLaunchMetadata(row)
+    (row) => row && !isBlockedLegacyHomeToken(row) && !isUnsafeLaunchMetadata(row) && !isImageMissingPumpFunRow(row)
   );
 }
 

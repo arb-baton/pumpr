@@ -9558,7 +9558,7 @@ function sanitizePumpFunLaunchesStore(store = {}) {
   const seen = new Set();
   const launches = (Array.isArray(store?.launches) ? store.launches : [])
     .map(normalizePumpFunLaunch)
-    .filter(Boolean)
+    .filter((row) => row && String(row.imageUri || "").trim())
     .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
     .filter((row) => {
       const key = row.mint.toLowerCase();
@@ -11033,21 +11033,21 @@ app.post("/api/pumpfun/record-launch", async (req, res) => {
     }
     const signature = String(req.body?.signature || "").trim();
     const snapshot = await readPumpFunCoinSnapshot(mint).catch(() => null);
-    if (!snapshot && !signature) {
+    if (!snapshot) {
       return res.status(404).json({ error: "Pump.fun launch is not visible yet. Wait a few seconds and refresh Home." });
     }
     const recordedLaunch = await recordPumpFunLaunch({
-      ...(snapshot || {}),
+      ...snapshot,
       mint,
-      name: req.body?.name || snapshot?.name,
-      symbol: req.body?.symbol || snapshot?.symbol,
-      description: req.body?.description || snapshot?.description,
-      imageUri: req.body?.imageUri || req.body?.image || snapshot?.imageUri,
-      creator: req.body?.creator || req.body?.user || snapshot?.creator,
-      kolApplication: req.body?.kolApplication || snapshot?.kolApplication,
-      signature: signature || snapshot?.signature,
-      metadataUri: req.body?.metadataUri || snapshot?.metadataUri,
-      pumpfunUrl: req.body?.pumpfunUrl || snapshot?.pumpfunUrl,
+      name: snapshot.name,
+      symbol: snapshot.symbol,
+      description: snapshot.description,
+      imageUri: snapshot.imageUri,
+      creator: snapshot.creator,
+      kolApplication: snapshot.kolApplication,
+      signature: signature || snapshot.signature,
+      metadataUri: snapshot.metadataUri,
+      pumpfunUrl: snapshot.pumpfunUrl,
       createdAt: req.body?.createdAt || Math.floor(Date.now() / 1000)
     });
     if (!recordedLaunch) return res.status(400).json({ error: "Pump.fun launch record could not be normalized" });
@@ -12579,6 +12579,7 @@ app.get("/api/launches", async (req, res) => {
           });
         }
       }
+      pumpFunLaunches = pumpFunLaunches.filter((row) => String(row?.imageUri || row?.imageURI || row?.image || "").trim());
       const launches = pumpFunLaunches.slice(offset, offset + limit);
       const pumpFunPayload = { total: pumpFunLaunches.length, launches };
       return res.json(homeLite ? compactLaunchPayloadForHome(pumpFunPayload) : pumpFunPayload);
@@ -12676,12 +12677,12 @@ app.get("/api/launches", async (req, res) => {
       const fastNeedsImageHydration = fastHome && rawPumpFunLaunches.slice(0, limit).some((row) => {
         return !String(row?.imageUri || row?.imageURI || row?.image || "").trim();
       });
-      const pumpFunLaunches = fastHome && !fastNeedsImageHydration
+      const pumpFunLaunches = (fastHome && !fastNeedsImageHydration
         ? rawPumpFunLaunches
         : await hydratePumpFunLaunchMarketCaps(rawPumpFunLaunches, {
             fresh: forceFresh && !fastHome,
             imageOnlyLimit: fastHome ? Math.max(limit, 12) : 60
-          });
+          })).filter((row) => String(row?.imageUri || row?.imageURI || row?.image || "").trim());
       const launches = [...pumpFunLaunches, ...(Array.isArray(payload.launches) ? payload.launches : [])]
         .sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0))
         .slice(0, limit);
