@@ -151,8 +151,8 @@ if (dom.terminal) {
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const lineHeight = 24; // reduced line height for smoother scrolling
-    const pageScroll = Math.floor(el.clientHeight * 0.75); // slightly smaller page scroll for natural feel
+    const lineHeight = 28; // slightly increased line height for better readability
+    const pageScroll = Math.floor(el.clientHeight * 0.8); // slightly larger page scroll for natural feel
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
@@ -231,6 +231,14 @@ if (dom.terminal) {
     dom.progress.setAttribute("aria-valuemax", "100");
     dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
     dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
+    dom.progress.style.outline = "none";
+    dom.progress.addEventListener("focus", () => {
+      dom.progress.style.outline = "3px solid #67f2aa";
+      dom.progress.style.outlineOffset = "4px";
+    });
+    dom.progress.addEventListener("blur", () => {
+      dom.progress.style.outline = "none";
+    });
     if (dom.progress.parentElement) {
       dom.progress.parentElement.setAttribute("role", "region");
       dom.progress.parentElement.setAttribute("aria-live", "polite");
