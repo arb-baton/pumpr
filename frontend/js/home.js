@@ -473,7 +473,14 @@ function tokenUrl(launch) {
   const externalUrl = String(launch?.pumpfunUrl || launch?.pumpFunUrl || launch?.externalUrl || launch?.url || "").trim();
   const chainMarker = String(launch?.chainId || "").toLowerCase();
   if (externalUrl && (chainMarker === "pumpfun" || launch?.source === "pumpfun" || externalUrl.includes("pump.fun/coin/"))) {
-    return externalUrl;
+    try {
+      const parsed = new URL(externalUrl);
+      if (parsed.protocol === "https:" && (parsed.hostname === "pump.fun" || parsed.hostname.endsWith(".pump.fun"))) {
+        return parsed.href;
+      }
+    } catch {
+      // Ignore malformed or unsafe external URLs and use the canonical URL below.
+    }
   }
   if (chainMarker === "pumpfun") {
     const mint = String(launch?.token || launch?.mint || "").trim();
@@ -523,6 +530,21 @@ function escapeHtml(value = "") {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function setupImageFallbacks() {
+  document.addEventListener(
+    "error",
+    (event) => {
+      const image = event.target;
+      if (!(image instanceof HTMLImageElement)) return;
+      const fallback = String(image.dataset.fallbackSrc || "").trim();
+      if (!fallback || image.dataset.fallbackApplied === "true") return;
+      image.dataset.fallbackApplied = "true";
+      image.src = fallback;
+    },
+    true
+  );
 }
 
 function absoluteDate(tsSec) {
@@ -940,15 +962,15 @@ async function hydrateTrendingSparklines(items = []) {
 }
 
 function buildExploreCard(launch) {
-  const image = resolveCoinImage(launch);
-  const fallback = cardFallbackImage(launch);
+  const image = escapeHtml(resolveCoinImage(launch));
+  const fallback = escapeHtml(cardFallbackImage(launch));
   const watched = isWatched(launch);
   const sparkKey = getExploreSparkKey(launch);
-  const href = tokenUrl(launch);
+  const href = escapeHtml(tokenUrl(launch));
   const chain = chainMetaForLaunch(launch);
   const chainClass = chainClassForLaunch(launch);
   const quoteSymbol = launchQuoteSymbol(launch);
-  const tokenKey = getTokenId(launch);
+  const tokenKey = escapeHtml(getTokenId(launch));
   const pumpFunLaunch = isPumpFunLaunch(launch);
   const sourceBadge = launchSourceBadge(launch);
   const linkAttrs = pumpFunLaunch ? 'target="_blank" rel="noopener noreferrer"' : "";
@@ -956,8 +978,8 @@ function buildExploreCard(launch) {
     <article class="coin-card">
       <div class="coin-image-wrap">
         <a href="${href}" class="coin-image-link" ${linkAttrs}>
-          <img class="coin-image" src="${image}" alt="${launch.symbol} logo" onerror="this.onerror=null;this.src='${escapeHtml(fallback)}';" />
-          <span class="coin-image-spark" data-explore-spark="${sparkKey}" aria-hidden="true"></span>
+          <img class="coin-image" src="${image}" alt="${escapeHtml(launch.symbol)} logo" data-fallback-src="${fallback}" />
+          <span class="coin-image-spark" data-explore-spark="${escapeHtml(sparkKey)}" aria-hidden="true"></span>
         </a>
         <span class="coin-badge">${escapeHtml(sourceBadge)}</span>
         ${quoteSymbol ? `<span class="coin-badge quote-badge">${escapeHtml(quoteSymbol)}</span>` : ""}
@@ -968,8 +990,8 @@ function buildExploreCard(launch) {
       </div>
       <div class="coin-body">
         <div class="coin-head">
-          <h3><a href="${href}" ${linkAttrs}>${trimText(launch.name, 34)}</a></h3>
-          <span>$${trimText(launch.symbol, 14)}</span>
+          <h3><a href="${href}" ${linkAttrs}>${escapeHtml(trimText(launch.name, 34))}</a></h3>
+          <span>$${escapeHtml(trimText(launch.symbol, 14))}</span>
         </div>
         <strong class="coin-metric">${formatLaunchMarketCap(launch)}</strong>
         <div class="coin-meta">
@@ -977,18 +999,18 @@ function buildExploreCard(launch) {
           ${renderCreatorPill(launch.creator, 20, launch?.creatorProfile?.address)}
           <span title="${absoluteDate(launch.createdAt)}">${humanAgo(launch.createdAt)}</span>
         </div>
-        <p>${trimText(launch.description, 92)}</p>
+        <p>${escapeHtml(trimText(launch.description, 92))}</p>
       </div>
     </article>
   `;
 }
 
 function buildTrendingCard(launch) {
-  const image = resolveCoinImage(launch);
-  const fallback = cardFallbackImage(launch);
+  const image = escapeHtml(resolveCoinImage(launch));
+  const fallback = escapeHtml(cardFallbackImage(launch));
   const createdLabel = humanAgo(launch.createdAt);
   const sparkKey = getTrendingSparkKey(launch);
-  const href = tokenUrl(launch);
+  const href = escapeHtml(tokenUrl(launch));
   const chain = chainMetaForLaunch(launch);
   const chainClass = chainClassForLaunch(launch);
   const quoteSymbol = launchQuoteSymbol(launch);
@@ -997,20 +1019,20 @@ function buildTrendingCard(launch) {
   return `
     <article class="trend-item">
       <a href="${href}" class="trend-media-link" ${linkAttrs}>
-        <img src="${image}" alt="${launch.symbol} logo" onerror="this.onerror=null;this.src='${escapeHtml(fallback)}';" />
-        <span class="trend-image-spark" data-trending-spark="${sparkKey}" aria-hidden="true"></span>
+        <img src="${image}" alt="${escapeHtml(launch.symbol)} logo" data-fallback-src="${fallback}" />
+        <span class="trend-image-spark" data-trending-spark="${escapeHtml(sparkKey)}" aria-hidden="true"></span>
         <span class="trend-chain-badge ${chainClass}">${escapeHtml(chain.shortName)}</span>
         ${quoteSymbol ? `<span class="trend-chain-badge quote">${escapeHtml(quoteSymbol)}</span>` : ""}
         <div class="trend-overlay">
           <strong>${formatLaunchMarketCap(launch)}</strong>
-          <span>${trimText(launch.name, 18)}</span>
-          <span>$${trimText(launch.symbol, 14)}</span>
+          <span>${escapeHtml(trimText(launch.name, 18))}</span>
+          <span>$${escapeHtml(trimText(launch.symbol, 14))}</span>
         </div>
       </a>
       <div class="trend-copy">
-        <strong>${trimText(launch.name, 36)}</strong>
-        <span>${trimText(creatorHandle(launch.creator), 18)} | ${createdLabel}</span>
-        <p>${trimText(launch.description, 56)}</p>
+        <strong>${escapeHtml(trimText(launch.name, 36))}</strong>
+        <span>${escapeHtml(trimText(creatorHandle(launch.creator), 18))} | ${escapeHtml(createdLabel)}</span>
+        <p>${escapeHtml(trimText(launch.description, 56))}</p>
       </div>
     </article>
   `;
@@ -1027,18 +1049,18 @@ function communityRankValue(launch) {
 }
 
 function buildTopCommunityCard(launch, index) {
-  const image = resolveCoinImage(launch);
-  const fallback = cardFallbackImage(launch);
-  const href = tokenUrl(launch);
+  const image = escapeHtml(resolveCoinImage(launch));
+  const fallback = escapeHtml(cardFallbackImage(launch));
+  const href = escapeHtml(tokenUrl(launch));
   const positive = index % 4 !== 2;
   const change = positive ? `+${(0.4 + index * 0.3).toFixed(1)}%` : "-0.0%";
   return `
     <a class="top-community-card" href="${href}">
       <span class="top-community-rank">${index + 1}</span>
-      <img src="${image}" alt="${escapeHtml(launch.symbol || launch.name || "coin")} logo" onerror="this.onerror=null;this.src='${escapeHtml(fallback)}';" />
+      <img src="${image}" alt="${escapeHtml(launch.symbol || launch.name || "coin")} logo" data-fallback-src="${fallback}" />
       <span class="top-community-copy">
-        <strong>${trimText(launch.name || launch.symbol || "Community", 18)}</strong>
-        <small>$${trimText(launch.symbol || "TOKEN", 14)}</small>
+        <strong>${escapeHtml(trimText(launch.name || launch.symbol || "Community", 18))}</strong>
+        <small>$${escapeHtml(trimText(launch.symbol || "TOKEN", 14))}</small>
       </span>
       <span class="top-community-stat">
         <b>${formatLaunchMarketCap(launch).replace(" MC", "")}</b>
@@ -1762,6 +1784,7 @@ async function init() {
   initSupportWidget({ alertEl: ui.alert });
   setupTrendingNav();
   setupInteractions();
+  setupImageFallbacks();
   initCoinSearchOverlay({ triggerInputs: [ui.searchInput] });
 
   const bootCached = loadCachedLaunches();
