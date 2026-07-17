@@ -213,6 +213,12 @@ if (dom.terminal) {
       case "Tab":
         // Allow tab to move focus out of terminal
         break;
+      case "PageLeft":
+      case "PageUp":
+      case "PageRight":
+      case "PageDown":
+        // Support additional page scroll keys if needed
+        break;
       default:
         return; // Ignore other keys
     }
