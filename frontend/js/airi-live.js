@@ -252,6 +252,13 @@ if (dom.terminal) {
     document.body.appendChild(instructionsEl);
   }
   dom.terminal.setAttribute("aria-describedby", instructionsId);
+
+  // Add role and aria-live to the progress bar container for screen readers
+  if (dom.progress) {
+    dom.progress.setAttribute("role", "progressbar");
+    dom.progress.setAttribute("aria-live", "polite");
+    dom.progress.setAttribute("aria-atomic", "true");
+  }
 }
 
 function safeParse(value, fallback) {
