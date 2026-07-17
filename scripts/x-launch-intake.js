@@ -454,6 +454,45 @@ function pendingDraftRows(state = {}) {
     .slice(-8);
 }
 
+function browserGraphqlTweetRows(payload = {}, targetUsername = "") {
+  const target = String(targetUsername || "").replace(/^@/, "").toLowerCase();
+  const rows = new Map();
+  const visited = new Set();
+  const visit = (value) => {
+    if (!value || typeof value !== "object" || visited.has(value)) return;
+    visited.add(value);
+    const legacy = value.legacy;
+    const id = String(value.rest_id || legacy?.id_str || "").trim();
+    const text = String(legacy?.full_text || legacy?.text || "").trim();
+    const user = value.core?.user_results?.result || value.user_results?.result || {};
+    const authorUsername = String(user.legacy?.screen_name || user.core?.screen_name || "").replace(/^@/, "");
+    if (id && text && authorUsername && authorUsername.toLowerCase() !== target) {
+      const mentionsTarget = !target || new RegExp(`@${target}\\b`, "i").test(text);
+      const replyingToTarget = String(legacy?.in_reply_to_screen_name || "").replace(/^@/, "").toLowerCase() === target;
+      if (mentionsTarget || replyingToTarget) {
+        const mediaRows = Array.isArray(legacy?.extended_entities?.media)
+          ? legacy.extended_entities.media
+          : Array.isArray(legacy?.entities?.media) ? legacy.entities.media : [];
+        rows.set(id, {
+          id,
+          text,
+          authorId: String(user.rest_id || legacy?.user_id_str || ""),
+          authorUsername,
+          conversationId: String(legacy?.conversation_id_str || id),
+          createdAt: String(legacy?.created_at || ""),
+          media: mediaRows.map((media) => ({
+            type: String(media?.type || "photo"),
+            url: String(media?.media_url_https || media?.media_url || "")
+          })).filter((media) => media.url)
+        });
+      }
+    }
+    for (const child of Array.isArray(value) ? value : Object.values(value)) visit(child);
+  };
+  visit(payload);
+  return [...rows.values()];
+}
+
 async function fetchMentionsWithBrowser(state = {}) {
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser mention watcher can open @pumpr_launch notifications.");
@@ -475,6 +514,16 @@ async function fetchMentionsWithBrowser(state = {}) {
     });
     await context.addCookies(browserCookiesFromHeader(cookie));
     const page = await context.newPage();
+    const networkRows = new Map();
+    const pendingResponses = new Set();
+    page.on("response", (response) => {
+      const url = response.url();
+      if (!/\/i\/api\/graphql\//i.test(url) || !/(SearchTimeline|Notifications|TweetDetail)/i.test(url)) return;
+      const task = response.json().then((payload) => {
+        for (const row of browserGraphqlTweetRows(payload, username)) networkRows.set(row.id, row);
+      }).catch(() => {}).finally(() => pendingResponses.delete(task));
+      pendingResponses.add(task);
+    });
     const scrapeCurrentPage = async (allowContinuationReplies = false) => page.evaluate(({ targetUsername, allowContinuationReplies }) => {
       const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
       const articles = Array.from(document.querySelectorAll("article"));
@@ -545,7 +594,10 @@ async function fetchMentionsWithBrowser(state = {}) {
       log(`Browser Live search ${JSON.stringify(query)} returned ${queryRows.length} candidate tweet(s).`);
       searchRows.push(...queryRows);
     }
-    const rows = [...notificationRows, ...searchRows];
+    await Promise.all([...pendingResponses]);
+    const capturedRows = [...networkRows.values()];
+    log(`Browser GraphQL capture returned ${capturedRows.length} mention tweet(s).`);
+    const rows = [...capturedRows, ...notificationRows, ...searchRows];
     for (const draft of pendingDraftRows(state)) {
       const threadUrl = draft.sourceUrl || `https://x.com/i/status/${encodeURIComponent(String(draft.tweetId))}`;
       const author = String(draft.authorUsername || "").replace(/^@/, "").toLowerCase();
@@ -1670,6 +1722,7 @@ module.exports = {
     inferLaunchpad,
     launchReplyMediaUrl,
     mergeClassification,
+    browserGraphqlTweetRows,
     shouldReprocessTweet,
     unsupportedLaunchpadReply
   }

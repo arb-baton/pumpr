@@ -45,4 +45,34 @@ describe("X launch intake loop", function () {
 
     expect(intakeTest.shouldReprocessTweet(tweet, state)).to.equal(true);
   });
+
+  it("extracts a mention from X browser GraphQL responses", function () {
+    const payload = {
+      data: {
+        search_by_raw_query: {
+          tweet: {
+            rest_id: "2078152123569656154",
+            legacy: {
+              full_text: "Hi @pumpr_launch create token on pump fun name nft guy ticker nftguy",
+              conversation_id_str: "2078152123569656154",
+              created_at: "Fri Jul 17 16:17:31 +0000 2026",
+              extended_entities: {
+                media: [{ type: "photo", media_url_https: "https://pbs.twimg.com/media/example.jpg" }]
+              }
+            },
+            core: {
+              user_results: {
+                result: { rest_id: "1814688188352368640", legacy: { screen_name: "nftKingretard" } }
+              }
+            }
+          }
+        }
+      }
+    };
+
+    const rows = intakeTest.browserGraphqlTweetRows(payload, "pumpr_launch");
+    expect(rows).to.have.length(1);
+    expect(rows[0]).to.include({ id: "2078152123569656154", authorUsername: "nftKingretard" });
+    expect(rows[0].media[0].url).to.equal("https://pbs.twimg.com/media/example.jpg");
+  });
 });
