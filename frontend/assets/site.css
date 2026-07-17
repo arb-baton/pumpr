@@ -20000,6 +20000,12 @@ button[disabled] {
   align-items: baseline;
   gap: 10px;
   color: #8ea0c4;
+}
+
+/* Improve terminal line height for better readability and smoother keyboard scroll */
+.airi-live-terminal-lines {
+  line-height: 1.4em;
+}
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.12em;
