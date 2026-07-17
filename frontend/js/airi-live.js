@@ -552,6 +552,14 @@ function advance() {
     dom.progress.setAttribute("aria-valuemax", "100");
     dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
     dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
+    dom.progress.style.outline = "none";
+    dom.progress.addEventListener("focus", () => {
+      dom.progress.style.outline = "3px solid #67f2aa";
+      dom.progress.style.outlineOffset = "4px";
+    });
+    dom.progress.addEventListener("blur", () => {
+      dom.progress.style.outline = "none";
+    });
     dom.progress.parentElement?.setAttribute("role", "region");
     dom.progress.parentElement?.setAttribute("aria-live", "polite");
     dom.progress.parentElement?.setAttribute("aria-atomic", "true");
