@@ -1013,9 +1013,12 @@ function advance() {
     dom.progress.addEventListener("blur", () => {
       dom.progress.style.outline = "none";
     });
-    dom.progress.parentElement?.setAttribute("role", "region");
-    dom.progress.parentElement?.setAttribute("aria-live", "polite");
-    dom.progress.parentElement?.setAttribute("aria-atomic", "true");
+    if (dom.progress.parentElement) {
+      dom.progress.parentElement.setAttribute("role", "region");
+      dom.progress.parentElement.setAttribute("aria-live", "polite");
+      dom.progress.parentElement.setAttribute("aria-atomic", "true");
+      dom.progress.parentElement.setAttribute("tabindex", "-1");
+    }
   }
 
   dom.cycles.textContent = String(state.cycle);
