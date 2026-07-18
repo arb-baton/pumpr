@@ -220,17 +220,6 @@ if (dom.terminal) {
   });
 
   // Improve readability with consistent line height and monospace font
-  dom.terminal.style.lineHeight = "1.8em";
-  dom.terminal.style.fontFamily = "Consolas, 'Courier New', monospace";
-  dom.terminal.style.fontSize = "15px";
-
-  // Add ARIA roles and properties for accessibility
-  dom.terminal.setAttribute("role", "log");
-  dom.terminal.setAttribute("aria-live", "polite");
-  dom.terminal.setAttribute("aria-atomic", "false");
-  dom.terminal.setAttribute("aria-label", "Airi live terminal output");
-
-  // Improve readability with consistent line height and monospace font
   dom.terminal.style.lineHeight = "1.65em";
   dom.terminal.style.fontFamily = "Consolas, 'Courier New', monospace";
   dom.terminal.style.fontSize = "15px";
