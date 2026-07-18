@@ -441,6 +441,158 @@ if (dom.terminal) {
   dom.terminal.setAttribute("aria-describedby", instructionsId);
 }
 
+// Make terminal focusable and add keyboard scroll support
+if (dom.terminal) {
+  // Ensure terminal is focusable and has appropriate ARIA roles
+  dom.terminal.setAttribute("tabindex", "0");
+  dom.terminal.setAttribute("role", "log");
+  dom.terminal.setAttribute("aria-live", "polite");
+  dom.terminal.setAttribute("aria-atomic", "false");
+  dom.terminal.setAttribute("aria-label", "Airi live terminal output");
+  dom.terminal.style.outline = "none";
+
+  // Keyboard navigation for terminal scroll
+  dom.terminal.addEventListener("keydown", (event) => {
+    const el = dom.terminal;
+    if (!el) return;
+    // Use a fixed line height for consistent scroll increments
+    const lineHeight = 26; // slightly increased line height for smoother scroll
+    const pageScroll = Math.floor(el.clientHeight * 0.75); // natural page scroll
+    let handled = false;
+    switch (event.key) {
+      case "ArrowDown":
+      case "Down":
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + lineHeight);
+          handled = true;
+        }
+        break;
+      case "ArrowUp":
+      case "Up":
+        if (el.scrollTop > 0) {
+          el.scrollTop = Math.max(0, el.scrollTop - lineHeight);
+          handled = true;
+        }
+        break;
+      case "PageDown":
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + pageScroll);
+          handled = true;
+        }
+        break;
+      case "PageUp":
+        if (el.scrollTop > 0) {
+          el.scrollTop = Math.max(0, el.scrollTop - pageScroll);
+          handled = true;
+        }
+        break;
+      case "Home":
+        if (el.scrollTop > 0) {
+          el.scrollTop = 0;
+          handled = true;
+        }
+        break;
+      case "End":
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = el.scrollHeight - el.clientHeight;
+          handled = true;
+        }
+        break;
+      case " ":
+      case "Spacebar":
+        if (event.shiftKey) {
+          if (el.scrollTop > 0) {
+            el.scrollTop = Math.max(0, el.scrollTop - pageScroll);
+            handled = true;
+          }
+        } else {
+          if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+            el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + pageScroll);
+            handled = true;
+          }
+        }
+        break;
+      case "Tab":
+        // Allow tab to move focus out of terminal
+        break;
+      default:
+        return;
+    }
+    if (handled) {
+      event.preventDefault();
+    }
+  });
+
+  // Improve readability with consistent line height and monospace font
+  dom.terminal.style.lineHeight = "1.75em";
+  dom.terminal.style.fontFamily = "Consolas, 'Courier New', monospace";
+  dom.terminal.style.fontSize = "15px";
+
+  // Add ARIA roles and properties for accessibility
+  dom.terminal.setAttribute("role", "log");
+  dom.terminal.setAttribute("aria-live", "polite");
+  dom.terminal.setAttribute("aria-atomic", "false");
+  dom.terminal.setAttribute("aria-label", "Airi live terminal output");
+
+  // Add ARIA roles and properties for progress bar for screen readers
+  if (dom.progress) {
+    dom.progress.setAttribute("role", "progressbar");
+    dom.progress.setAttribute("aria-live", "polite");
+    dom.progress.setAttribute("aria-atomic", "true");
+    dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
+    dom.progress.setAttribute("aria-valuemin", "0");
+    dom.progress.setAttribute("aria-valuemax", "100");
+    dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
+    dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
+    dom.progress.style.outline = "none";
+    dom.progress.addEventListener("focus", () => {
+      dom.progress.style.outline = "3px solid #67f2aa";
+      dom.progress.style.outlineOffset = "4px";
+    });
+    dom.progress.addEventListener("blur", () => {
+      dom.progress.style.outline = "none";
+    });
+    if (dom.progress.parentElement) {
+      dom.progress.parentElement.setAttribute("role", "region");
+      dom.progress.parentElement.setAttribute("aria-live", "polite");
+      dom.progress.parentElement.setAttribute("aria-atomic", "true");
+      dom.progress.parentElement.setAttribute("aria-label", "Progress bar container");
+      dom.progress.parentElement.setAttribute("tabindex", "-1");
+    }
+  }
+
+  // Focus and blur outlines for keyboard users
+  dom.terminal.addEventListener("focus", () => {
+    dom.terminal.style.outline = "3px solid #67f2aa";
+    dom.terminal.style.outlineOffset = "4px";
+  });
+  dom.terminal.addEventListener("blur", () => {
+    dom.terminal.style.outline = "none";
+  });
+
+  // Keyboard shortcut hint for terminal focus
+  dom.terminal.setAttribute("title", "Terminal output. Use arrow keys, Page Up/Down, Home/End, and Space to scroll.");
+
+  // Hidden instructions for screen readers
+  const instructionsId = "airiLiveTerminalInstructions";
+  let instructionsEl = document.getElementById(instructionsId);
+  if (!instructionsEl) {
+    instructionsEl = document.createElement("div");
+    instructionsEl.id = instructionsId;
+    instructionsEl.style.position = "absolute";
+    instructionsEl.style.left = "-9999px";
+    instructionsEl.style.height = "1px";
+    instructionsEl.style.width = "1px";
+    instructionsEl.style.overflow = "hidden";
+    instructionsEl.style.clip = "rect(0 0 0 0)";
+    instructionsEl.style.clipPath = "inset(50%)";
+    instructionsEl.style.whiteSpace = "nowrap";
+    instructionsEl.textContent = "Use arrow keys, Page Up/Down, Home/End, and Space to scroll the terminal output.";
+    document.body.appendChild(instructionsEl);
+  }
+  dom.terminal.setAttribute("aria-describedby", instructionsId);
+}
+
 
 
 function safeParse(value, fallback) {
