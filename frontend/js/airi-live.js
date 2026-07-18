@@ -1241,6 +1241,8 @@ function advance() {
   if (dom.progress) {
     dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
     dom.progress.setAttribute("role", "progressbar");
+    dom.progress.setAttribute("aria-live", "polite");
+    dom.progress.setAttribute("aria-atomic", "true");
     dom.progress.setAttribute("aria-valuemin", "0");
     dom.progress.setAttribute("aria-valuemax", "100");
     dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
@@ -1257,6 +1259,7 @@ function advance() {
       dom.progress.parentElement.setAttribute("role", "region");
       dom.progress.parentElement.setAttribute("aria-live", "polite");
       dom.progress.parentElement.setAttribute("aria-atomic", "true");
+      dom.progress.parentElement.setAttribute("aria-label", "Progress bar container");
       dom.progress.parentElement.setAttribute("tabindex", "-1");
     }
   }
