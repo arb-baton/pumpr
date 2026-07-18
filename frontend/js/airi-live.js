@@ -209,9 +209,6 @@ const fallbackQueue = [
   "Prepare the next interface compression."
 ];
 
-// Remove duplicated terminal accessibility initialization below to avoid redundant setup and potential event handler duplication
-
-
 const streamTemplates = [
   "observed {signal} signal -> folded into working context",
   "checked approval boundary -> wallet and public actions remain gated",
