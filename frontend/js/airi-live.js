@@ -152,7 +152,7 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use a fixed line height for consistent scroll increments
-    const lineHeight = 24; // adjusted line height for smoother scroll
+    const lineHeight = 26; // slightly increased line height for smoother scroll
     const pageScroll = Math.floor(el.clientHeight * 0.75); // natural page scroll
     let handled = false;
     switch (event.key) {
@@ -220,7 +220,7 @@ if (dom.terminal) {
   });
 
   // Improve readability with consistent line height and monospace font
-  dom.terminal.style.lineHeight = "1.6em";
+  dom.terminal.style.lineHeight = "1.625em";
   dom.terminal.style.fontFamily = "Consolas, 'Courier New', monospace";
   dom.terminal.style.fontSize = "15px";
 
