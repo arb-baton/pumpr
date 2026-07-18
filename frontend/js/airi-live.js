@@ -1276,6 +1276,10 @@ function advance() {
   if (dom.progress && dom.progress.parentElement) {
     const container = dom.progress.parentElement;
     container.setAttribute("tabindex", "0");
+    container.setAttribute("role", "region");
+    container.setAttribute("aria-live", "polite");
+    container.setAttribute("aria-atomic", "true");
+    container.setAttribute("aria-label", "Progress bar container");
     container.style.outline = "none";
     container.addEventListener("focus", () => {
       container.style.outline = "3px solid #67f2aa";
