@@ -1272,6 +1272,20 @@ function advance() {
     }
   }
 
+  // Add keyboard focus outline for progress bar container for better accessibility
+  if (dom.progress && dom.progress.parentElement) {
+    const container = dom.progress.parentElement;
+    container.setAttribute("tabindex", "0");
+    container.style.outline = "none";
+    container.addEventListener("focus", () => {
+      container.style.outline = "3px solid #67f2aa";
+      container.style.outlineOffset = "4px";
+    });
+    container.addEventListener("blur", () => {
+      container.style.outline = "none";
+    });
+  }
+
   dom.cycles.textContent = String(state.cycle);
   dom.signals.textContent = String(state.signals);
   dom.changes.textContent = String(activeChanges().length);
