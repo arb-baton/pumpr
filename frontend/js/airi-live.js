@@ -137,8 +137,9 @@ const dom = {
   streamState: document.getElementById("airiLiveStreamState")
 };
 
-// Enhance terminal accessibility and keyboard scroll support
+// Make terminal focusable and add keyboard scroll support
 if (dom.terminal) {
+  // Ensure terminal is focusable and has appropriate ARIA roles
   dom.terminal.setAttribute("tabindex", "0");
   dom.terminal.setAttribute("role", "log");
   dom.terminal.setAttribute("aria-live", "polite");
@@ -146,11 +147,13 @@ if (dom.terminal) {
   dom.terminal.setAttribute("aria-label", "Airi live terminal output");
   dom.terminal.style.outline = "none";
 
+  // Keyboard navigation for terminal scroll
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    const lineHeight = 26;
-    const pageScroll = Math.floor(el.clientHeight * 0.75);
+    // Use a fixed line height for consistent scroll increments
+    const lineHeight = 26; // slightly increased line height for smoother scroll
+    const pageScroll = Math.floor(el.clientHeight * 0.75); // natural page scroll
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
@@ -216,10 +219,45 @@ if (dom.terminal) {
     }
   });
 
+  // Improve readability with consistent line height and monospace font
   dom.terminal.style.lineHeight = "1.75em";
   dom.terminal.style.fontFamily = "Consolas, 'Courier New', monospace";
   dom.terminal.style.fontSize = "15px";
 
+  // Add ARIA roles and properties for accessibility
+  dom.terminal.setAttribute("role", "log");
+  dom.terminal.setAttribute("aria-live", "polite");
+  dom.terminal.setAttribute("aria-atomic", "false");
+  dom.terminal.setAttribute("aria-label", "Airi live terminal output");
+
+  // Add ARIA roles and properties for progress bar for screen readers
+  if (dom.progress) {
+    dom.progress.setAttribute("role", "progressbar");
+    dom.progress.setAttribute("aria-live", "polite");
+    dom.progress.setAttribute("aria-atomic", "true");
+    dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
+    dom.progress.setAttribute("aria-valuemin", "0");
+    dom.progress.setAttribute("aria-valuemax", "100");
+    dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
+    dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
+    dom.progress.style.outline = "none";
+    dom.progress.addEventListener("focus", () => {
+      dom.progress.style.outline = "3px solid #67f2aa";
+      dom.progress.style.outlineOffset = "4px";
+    });
+    dom.progress.addEventListener("blur", () => {
+      dom.progress.style.outline = "none";
+    });
+    if (dom.progress.parentElement) {
+      dom.progress.parentElement.setAttribute("role", "region");
+      dom.progress.parentElement.setAttribute("aria-live", "polite");
+      dom.progress.parentElement.setAttribute("aria-atomic", "true");
+      dom.progress.parentElement.setAttribute("aria-label", "Progress bar container");
+      dom.progress.parentElement.setAttribute("tabindex", "-1");
+    }
+  }
+
+  // Focus and blur outlines for keyboard users
   dom.terminal.addEventListener("focus", () => {
     dom.terminal.style.outline = "3px solid #67f2aa";
     dom.terminal.style.outlineOffset = "4px";
@@ -228,8 +266,10 @@ if (dom.terminal) {
     dom.terminal.style.outline = "none";
   });
 
+  // Keyboard shortcut hint for terminal focus
   dom.terminal.setAttribute("title", "Terminal output. Use arrow keys, Page Up/Down, Home/End, and Space to scroll.");
 
+  // Hidden instructions for screen readers
   const instructionsId = "airiLiveTerminalInstructions";
   let instructionsEl = document.getElementById(instructionsId);
   if (!instructionsEl) {
