@@ -152,8 +152,8 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use a fixed line height for consistent scroll increments
-    const lineHeight = 26; // increased line height for clearer, smoother scroll
-    const pageScroll = Math.floor(el.clientHeight * 0.8); // slightly larger page scroll for natural paging
+    const lineHeight = 22; // slightly reduced line height for smoother scroll
+    const pageScroll = Math.floor(el.clientHeight * 0.75); // adjusted page scroll for natural paging
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
