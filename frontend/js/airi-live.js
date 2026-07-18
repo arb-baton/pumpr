@@ -137,6 +137,123 @@ const dom = {
   streamState: document.getElementById("airiLiveStreamState")
 };
 
+// Enhance terminal accessibility: make focusable, add ARIA roles, and keyboard scroll support
+if (dom.terminal) {
+  dom.terminal.setAttribute("tabindex", "0");
+  dom.terminal.setAttribute("role", "log");
+  dom.terminal.setAttribute("aria-live", "polite");
+  dom.terminal.setAttribute("aria-atomic", "false");
+  dom.terminal.setAttribute("aria-label", "Airi live terminal output");
+  dom.terminal.style.outline = "none";
+
+  dom.terminal.addEventListener("keydown", (event) => {
+    const el = dom.terminal;
+    if (!el) return;
+    const lineHeight = 26; // line height for scroll increments
+    const pageScroll = Math.floor(el.clientHeight * 0.75);
+    let handled = false;
+    switch (event.key) {
+      case "ArrowDown":
+      case "Down":
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + lineHeight);
+          handled = true;
+        }
+        break;
+      case "ArrowUp":
+      case "Up":
+        if (el.scrollTop > 0) {
+          el.scrollTop = Math.max(0, el.scrollTop - lineHeight);
+          handled = true;
+        }
+        break;
+      case "PageDown":
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + pageScroll);
+          handled = true;
+        }
+        break;
+      case "PageUp":
+        if (el.scrollTop > 0) {
+          el.scrollTop = Math.max(0, el.scrollTop - pageScroll);
+          handled = true;
+        }
+        break;
+      case "Home":
+        if (el.scrollTop > 0) {
+          el.scrollTop = 0;
+          handled = true;
+        }
+        break;
+      case "End":
+        if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+          el.scrollTop = el.scrollHeight - el.clientHeight;
+          handled = true;
+        }
+        break;
+      case " ":
+      case "Spacebar":
+        if (event.shiftKey) {
+          if (el.scrollTop > 0) {
+            el.scrollTop = Math.max(0, el.scrollTop - pageScroll);
+            handled = true;
+          }
+        } else {
+          if (el.scrollTop < el.scrollHeight - el.clientHeight) {
+            el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + pageScroll);
+            handled = true;
+          }
+        }
+        break;
+      case "Tab":
+        // Allow tab to move focus out of terminal
+        break;
+      default:
+        return;
+    }
+    if (handled) {
+      event.preventDefault();
+    }
+  });
+
+  // Style improvements for readability and focus
+  dom.terminal.style.lineHeight = "1.75em";
+  dom.terminal.style.fontFamily = "Consolas, 'Courier New', monospace";
+  dom.terminal.style.fontSize = "15px";
+
+  // Focus and blur outlines for keyboard users
+  dom.terminal.addEventListener("focus", () => {
+    dom.terminal.style.outline = "3px solid #67f2aa";
+    dom.terminal.style.outlineOffset = "4px";
+  });
+  dom.terminal.addEventListener("blur", () => {
+    dom.terminal.style.outline = "none";
+  });
+
+  // Keyboard shortcut hint for terminal focus
+  dom.terminal.setAttribute("title", "Terminal output. Use arrow keys, Page Up/Down, Home/End, and Space to scroll.");
+
+  // Hidden instructions for screen readers
+  const instructionsId = "airiLiveTerminalInstructions";
+  let instructionsEl = document.getElementById(instructionsId);
+  if (!instructionsEl) {
+    instructionsEl = document.createElement("div");
+    instructionsEl.id = instructionsId;
+    instructionsEl.style.position = "absolute";
+    instructionsEl.style.left = "-9999px";
+    instructionsEl.style.height = "1px";
+    instructionsEl.style.width = "1px";
+    instructionsEl.style.overflow = "hidden";
+    instructionsEl.style.clip = "rect(0 0 0 0)";
+    instructionsEl.style.clipPath = "inset(50%)";
+    instructionsEl.style.whiteSpace = "nowrap";
+    instructionsEl.textContent = "Use arrow keys, Page Up/Down, Home/End, and Space to scroll the terminal output.";
+    document.body.appendChild(instructionsEl);
+  }
+  dom.terminal.setAttribute("aria-describedby", instructionsId);
+}
+
+
 // Make terminal focusable and add keyboard scroll support
 if (dom.terminal) {
   // Ensure terminal is focusable and has appropriate ARIA roles
