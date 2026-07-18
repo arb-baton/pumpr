@@ -254,6 +254,8 @@ if (dom.terminal) {
 }
 
 
+
+
 // Make terminal focusable and add keyboard scroll support
 if (dom.terminal) {
   // Ensure terminal is focusable and has appropriate ARIA roles
