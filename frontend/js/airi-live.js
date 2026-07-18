@@ -152,8 +152,8 @@ if (dom.terminal) {
     const el = dom.terminal;
     if (!el) return;
     // Use a fixed line height for consistent scroll increments
-    const lineHeight = 20; // slightly reduced line height for smoother, less jumpy scroll
-    const pageScroll = Math.floor(el.clientHeight * 0.75); // slightly smaller page scroll for better control
+    const lineHeight = 24; // increased line height for better readability and smoother scroll
+    const pageScroll = Math.floor(el.clientHeight * 0.8); // slightly larger page scroll for more natural paging
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
@@ -220,9 +220,9 @@ if (dom.terminal) {
   });
 
   // Improve readability with consistent line height and monospace font
-  dom.terminal.style.lineHeight = "1.6em";
+  dom.terminal.style.lineHeight = "1.5em";
   dom.terminal.style.fontFamily = "Consolas, 'Courier New', monospace";
-  dom.terminal.style.fontSize = "14px";
+  dom.terminal.style.fontSize = "15px";
 
   // Add ARIA roles and properties for accessibility
   dom.terminal.setAttribute("role", "log");
