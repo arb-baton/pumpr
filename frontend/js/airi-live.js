@@ -1239,10 +1239,10 @@ function advance() {
   dom.progress.style.width = `${Math.max(8, state.progress)}%`;
   // Add aria-label and role for progress bar for screen readers
   if (dom.progress) {
-    dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
     dom.progress.setAttribute("role", "progressbar");
     dom.progress.setAttribute("aria-live", "polite");
     dom.progress.setAttribute("aria-atomic", "true");
+    dom.progress.setAttribute("aria-label", `Progress: ${Math.max(8, state.progress)} percent`);
     dom.progress.setAttribute("aria-valuemin", "0");
     dom.progress.setAttribute("aria-valuemax", "100");
     dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
@@ -1261,6 +1261,14 @@ function advance() {
       dom.progress.parentElement.setAttribute("aria-atomic", "true");
       dom.progress.parentElement.setAttribute("aria-label", "Progress bar container");
       dom.progress.parentElement.setAttribute("tabindex", "-1");
+      // Add focus outline for parent container for keyboard users
+      dom.progress.parentElement.addEventListener("focus", () => {
+        dom.progress.parentElement.style.outline = "3px solid #67f2aa";
+        dom.progress.parentElement.style.outlineOffset = "4px";
+      });
+      dom.progress.parentElement.addEventListener("blur", () => {
+        dom.progress.parentElement.style.outline = "none";
+      });
     }
   }
 
