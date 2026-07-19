@@ -1197,6 +1197,26 @@ function advance() {
     }
   }
 
+  // Ensure progress bar container is keyboard focusable and accessible
+  if (dom.progress && dom.progress.parentElement) {
+    const container = dom.progress.parentElement;
+    if (!container.hasAttribute("tabindex")) {
+      container.setAttribute("tabindex", "0");
+    }
+    if (!container.hasAttribute("role")) {
+      container.setAttribute("role", "region");
+    }
+    if (!container.hasAttribute("aria-live")) {
+      container.setAttribute("aria-live", "polite");
+    }
+    if (!container.hasAttribute("aria-atomic")) {
+      container.setAttribute("aria-atomic", "true");
+    }
+    if (!container.hasAttribute("aria-label")) {
+      container.setAttribute("aria-label", "Progress bar container");
+    }
+  }
+
   dom.cycles.textContent = String(state.cycle);
   dom.signals.textContent = String(state.signals);
   dom.changes.textContent = String(activeChanges().length);
