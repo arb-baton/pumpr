@@ -3,9 +3,6 @@ const AIRI_LIVE_STATE_KEY = "pumpr.airi.liveState.v2";
 const AIRI_LIVE_TERMINAL_KEY = "pumpr.airi.terminal.v2";
 const MAX_SAVED_TERMINAL_LINES = 20;
 
-// Accessibility and keyboard navigation improvements for the live terminal output
-
-// Make terminal focusable and add keyboard scroll support
 function enhanceTerminalAccessibility(dom, state) {
   if (!dom.terminal) return;
   const terminal = dom.terminal;
